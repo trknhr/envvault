@@ -1,0 +1,40 @@
+{
+  "version": "v26.2.0",
+  "source_url": "https://github.com/ory/talos/releases/tag/v26.2.0",
+  "checksums": {
+    "url": "https://github.com/ory/talos/releases/download/v26.2.0/checksums.txt",
+    "sha256": "90a006698489c0b1862aa4f345d7de2adcecae3249d0fdcc4ee2ed07014cbd88"
+  },
+  "artifacts": [
+    {
+      "os": "darwin",
+      "arch": "amd64",
+      "url": "https://github.com/ory/talos/releases/download/v26.2.0/talos_26.2.0-macOS_sqlite_64bit.tar.gz",
+      "sha256": "36813381052d18661eb5996ac872a6fae2eb6146e9213143aa10036ed094fc7d"
+    },
+    {
+      "os": "darwin",
+      "arch": "arm64",
+      "url": "https://github.com/ory/talos/releases/download/v26.2.0/talos_26.2.0-macOS_sqlite_arm64.tar.gz",
+      "sha256": "fb7318daee3c7a0e00496e57569991b4f5023029b2b4b2ba7f90212f1f460c9e"
+    },
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "url": "https://github.com/ory/talos/releases/download/v26.2.0/talos_26.2.0-linux_sqlite_64bit.tar.gz",
+      "sha256": "9a659029d0ffd060119288bdac3576977d560feb9c6199851b3c5d863ccd1895"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64",
+      "url": "https://github.com/ory/talos/releases/download/v26.2.0/talos_26.2.0-linux_sqlite_arm64.tar.gz",
+      "sha256": "e906f418cf5641686324b080e8c6f8388de1507e103a0d1bf4091883c465cbde"
+    },
+    {
+      "os": "windows",
+      "arch": "amd64",
+      "url": "https://github.com/ory/talos/releases/download/v26.2.0/talos_26.2.0-windows_sqlite_64bit.zip",
+      "sha256": "6d63a5cddf21729e797dfbe2bb88b5e8c2437f6f68d7286fe754c18269c5c717"
+    }
+  ]
+}

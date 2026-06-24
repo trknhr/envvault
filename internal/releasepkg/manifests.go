@@ -1,0 +1,232 @@
+package releasepkg
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+type PackageManagerManifestOptions struct {
+	DistDir   string
+	Version   string
+	BaseURL   string
+	Artifacts []Artifact
+}
+
+type PackageManagerManifestPaths struct {
+	HomebrewFormula string
+	ScoopManifest   string
+}
+
+type releaseArtifact struct {
+	Artifact
+	Platform Platform
+}
+
+var releaseSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+func WritePackageManagerManifests(options PackageManagerManifestOptions) (PackageManagerManifestPaths, error) {
+	if strings.TrimSpace(options.DistDir) == "" {
+		return PackageManagerManifestPaths{}, fmt.Errorf("dist directory is required")
+	}
+	if strings.TrimSpace(options.Version) == "" {
+		return PackageManagerManifestPaths{}, fmt.Errorf("version is required")
+	}
+	baseURL, err := normalizeReleaseBaseURL(options.BaseURL)
+	if err != nil {
+		return PackageManagerManifestPaths{}, err
+	}
+	artifacts, err := selectReleaseArtifacts(options.Version, options.Artifacts)
+	if err != nil {
+		return PackageManagerManifestPaths{}, err
+	}
+
+	homebrewPath := filepath.Join(options.DistDir, "homebrew", "credlease.rb")
+	scoopPath := filepath.Join(options.DistDir, "scoop", "credlease.json")
+	if err := writeAtomic(homebrewPath, []byte(renderHomebrewFormula(options.Version, baseURL, artifacts))); err != nil {
+		return PackageManagerManifestPaths{}, err
+	}
+	scoop, err := renderScoopManifest(options.Version, baseURL, artifacts)
+	if err != nil {
+		return PackageManagerManifestPaths{}, err
+	}
+	if err := writeAtomic(scoopPath, scoop); err != nil {
+		return PackageManagerManifestPaths{}, err
+	}
+	return PackageManagerManifestPaths{HomebrewFormula: homebrewPath, ScoopManifest: scoopPath}, nil
+}
+
+func normalizeReleaseBaseURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("base URL is required")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse base URL: %w", err)
+	}
+	if parsed.Scheme != "https" || parsed.Host == "" {
+		return "", fmt.Errorf("base URL must be an HTTPS URL")
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func selectReleaseArtifacts(version string, artifacts []Artifact) (map[Platform]releaseArtifact, error) {
+	byPlatform := map[Platform]releaseArtifact{}
+	for _, artifact := range artifacts {
+		parsed, ok, err := parseArchiveArtifact(version, artifact)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		if _, exists := byPlatform[parsed.Platform]; exists {
+			return nil, fmt.Errorf("duplicate artifact for %s/%s", parsed.Platform.OS, parsed.Platform.Arch)
+		}
+		byPlatform[parsed.Platform] = parsed
+	}
+	required := []Platform{
+		{OS: "darwin", Arch: "amd64"},
+		{OS: "darwin", Arch: "arm64"},
+		{OS: "linux", Arch: "amd64"},
+		{OS: "linux", Arch: "arm64"},
+		{OS: "windows", Arch: "amd64"},
+	}
+	var missing []string
+	for _, platform := range required {
+		if _, ok := byPlatform[platform]; !ok {
+			missing = append(missing, platform.OS+"/"+platform.Arch)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("missing release artifacts for %s", strings.Join(missing, ", "))
+	}
+	return byPlatform, nil
+}
+
+func parseArchiveArtifact(version string, artifact Artifact) (releaseArtifact, bool, error) {
+	name := strings.TrimSpace(artifact.Name)
+	if name == "" {
+		return releaseArtifact{}, false, nil
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return releaseArtifact{}, false, fmt.Errorf("artifact name must not contain path separators")
+	}
+	if artifact.SHA256 == "" {
+		return releaseArtifact{}, false, fmt.Errorf("artifact %s is missing sha256", name)
+	}
+	if !releaseSHA256Pattern.MatchString(artifact.SHA256) {
+		return releaseArtifact{}, false, fmt.Errorf("artifact %s has invalid sha256", name)
+	}
+
+	base := strings.TrimSuffix(name, ".tar.gz")
+	if base == name {
+		base = strings.TrimSuffix(name, ".zip")
+	}
+	if base == name {
+		return releaseArtifact{}, false, nil
+	}
+	parts := strings.Split(base, "_")
+	if len(parts) != 4 || parts[0] != "credlease" || parts[1] != version {
+		return releaseArtifact{}, false, nil
+	}
+	platform := Platform{OS: parts[2], Arch: parts[3]}
+	if platform.OS == "windows" && !strings.HasSuffix(name, ".zip") {
+		return releaseArtifact{}, false, fmt.Errorf("windows artifact %s must be a zip archive", name)
+	}
+	if platform.OS != "windows" && !strings.HasSuffix(name, ".tar.gz") {
+		return releaseArtifact{}, false, fmt.Errorf("%s/%s artifact %s must be a tar.gz archive", platform.OS, platform.Arch, name)
+	}
+	return releaseArtifact{Artifact: Artifact{Name: name, SHA256: artifact.SHA256}, Platform: platform}, true, nil
+}
+
+func renderHomebrewFormula(version, baseURL string, artifacts map[Platform]releaseArtifact) string {
+	artifact := func(osName, arch string) releaseArtifact {
+		return artifacts[Platform{OS: osName, Arch: arch}]
+	}
+
+	var builder strings.Builder
+	builder.WriteString("# Generated by credlease-release package-manifests. Do not edit by hand.\n")
+	builder.WriteString("class Credlease < Formula\n")
+	builder.WriteString("  desc \"Local-first credential launcher for short-lived scoped credentials\"\n")
+	builder.WriteString("  homepage \"https://github.com/trknhr/credlease\"\n")
+	fmt.Fprintf(&builder, "  version %q\n\n", strings.TrimPrefix(version, "v"))
+	builder.WriteString("  on_macos do\n")
+	writeHomebrewPlatform(&builder, "intel", baseURL, artifact("darwin", "amd64"))
+	writeHomebrewPlatform(&builder, "arm", baseURL, artifact("darwin", "arm64"))
+	builder.WriteString("  end\n\n")
+	builder.WriteString("  on_linux do\n")
+	writeHomebrewPlatform(&builder, "intel", baseURL, artifact("linux", "amd64"))
+	writeHomebrewPlatform(&builder, "arm", baseURL, artifact("linux", "arm64"))
+	builder.WriteString("  end\n\n")
+	builder.WriteString("  def install\n")
+	builder.WriteString("    bin.install \"credlease\"\n")
+	builder.WriteString("  end\n\n")
+	builder.WriteString("  test do\n")
+	builder.WriteString("    system \"#{bin}/credlease\", \"completion\", \"bash\"\n")
+	builder.WriteString("  end\n")
+	builder.WriteString("end\n")
+	return builder.String()
+}
+
+func writeHomebrewPlatform(builder *strings.Builder, cpu, baseURL string, artifact releaseArtifact) {
+	fmt.Fprintf(builder, "    on_%s do\n", cpu)
+	fmt.Fprintf(builder, "      url %q\n", baseURL+"/"+artifact.Name)
+	fmt.Fprintf(builder, "      sha256 %q\n", artifact.SHA256)
+	builder.WriteString("    end\n")
+}
+
+func renderScoopManifest(version, baseURL string, artifacts map[Platform]releaseArtifact) ([]byte, error) {
+	windows := artifacts[Platform{OS: "windows", Arch: "amd64"}]
+	type scoopArchitecture struct {
+		URL  string `json:"url"`
+		Hash string `json:"hash"`
+	}
+	type scoopManifest struct {
+		Version      string                       `json:"version"`
+		Description  string                       `json:"description"`
+		Homepage     string                       `json:"homepage"`
+		Architecture map[string]scoopArchitecture `json:"architecture"`
+		Bin          string                       `json:"bin"`
+	}
+	body, err := json.MarshalIndent(scoopManifest{
+		Version:     strings.TrimPrefix(version, "v"),
+		Description: "Local-first credential launcher for short-lived scoped credentials",
+		Homepage:    "https://github.com/trknhr/credlease",
+		Architecture: map[string]scoopArchitecture{
+			"64bit": {
+				URL:  baseURL + "/" + windows.Name,
+				Hash: windows.SHA256,
+			},
+		},
+		Bin: "credlease.exe",
+	}, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("render scoop manifest: %w", err)
+	}
+	return append(body, '\n'), nil
+}
+
+func writeAtomic(path string, body []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create manifest directory: %w", err)
+	}
+	tmpPath := path + ".tmp"
+	_ = os.Remove(tmpPath)
+	if err := os.WriteFile(tmpPath, body, 0o644); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("write manifest: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("install manifest: %w", err)
+	}
+	return nil
+}
