@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/config"
 	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/profile"
 	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 	"github.com/trknhr/envvault/internal/sqlite"
 )
@@ -200,6 +202,88 @@ func TestInitializerIsIdempotentAndDoesNotRotateExistingSecrets(t *testing.T) {
 	}
 	if !bytes.Equal(secondSigning, firstSigning) {
 		t.Fatalf("signing key rotated on idempotent init")
+	}
+}
+
+func TestInitializerCompletesUninitializedConfigAndPreservesLocalMetadata(t *testing.T) {
+	root := t.TempDir()
+	paths := config.Paths{
+		ConfigDir:  filepath.Join(root, "config"),
+		ConfigFile: filepath.Join(root, "config", "config.yaml"),
+		DataDir:    filepath.Join(root, "data"),
+		CacheDir:   filepath.Join(root, "cache"),
+	}
+	cfg, err := config.DefaultFile()
+	if err != nil {
+		t.Fatalf("DefaultFile() error = %v", err)
+	}
+	cfg.Installation.ID = "hex:existing-install"
+	cfg.Credentials = []string{"openai-key/dev"}
+	cfg.Profiles["openai/dev"] = config.Profile{
+		Kind:           profile.KindProviderProxy,
+		CredentialName: "openai-key/dev",
+		AuthMode:       "bearer",
+		Provider:       "generic",
+		TargetURL:      "https://api.openai.com/v1",
+		AllowedPaths:   []string{"/chat/completions"},
+		AllowedMethods: []string{"POST"},
+		LocalTokenTTL:  config.Duration(10 * time.Minute),
+		ProjectBinding: config.ProjectBinding{
+			Mode: profile.ProjectBindingNone,
+		},
+	}
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	secrets := keyring.NewMemoryStore()
+	installer := &fakeInstaller{}
+	_, err = bootstrap.Initializer{
+		Paths:         paths,
+		Secrets:       secrets,
+		Installer:     installer,
+		SQLiteMigrate: sqlite.Migrate,
+		Manifest: runtimetalos.Manifest{
+			Version: "talos-test-v1",
+			Artifacts: []runtimetalos.Artifact{{
+				OS:     "linux",
+				Arch:   "amd64",
+				URL:    "https://example.invalid/talos",
+				SHA256: "sha256",
+			}},
+		},
+		Platform: runtimetalos.Platform{OS: "linux", Arch: "amd64"},
+		JWKS:     func(context.Context) ([]byte, error) { return []byte(`{"keys":[]}`), nil },
+		NewInstallationID: func() (string, error) {
+			t.Fatal("NewInstallationID called for existing uninitialized config")
+			return "", nil
+		},
+		RandomBytes: deterministicGenerator(
+			[]byte("first-hmac"),
+			[]byte("first-signing"),
+		),
+	}.Init(context.Background())
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	if !installer.called {
+		t.Fatal("installer was not called for uninitialized config")
+	}
+	got, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.Installation.ID != "hex:existing-install" {
+		t.Fatalf("Installation.ID = %q, want existing id", got.Installation.ID)
+	}
+	if got.Runtime.Talos.Version != "talos-test-v1" {
+		t.Fatalf("Talos version = %q, want talos-test-v1", got.Runtime.Talos.Version)
+	}
+	if strings.Join(got.Credentials, ",") != "openai-key/dev" {
+		t.Fatalf("Credentials = %#v", got.Credentials)
+	}
+	if _, err := got.Profile("openai/dev"); err != nil {
+		t.Fatalf("Profile(openai/dev) error = %v", err)
 	}
 }
 

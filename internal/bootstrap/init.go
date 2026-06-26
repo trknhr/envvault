@@ -73,8 +73,14 @@ func (i Initializer) Init(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 
-	if _, err := config.Load(i.Paths.ConfigFile); err == nil {
-		return result, nil
+	existingConfig := config.File{}
+	hasExistingConfig := false
+	if cfg, err := config.Load(i.Paths.ConfigFile); err == nil {
+		if !isUninitializedConfig(cfg) {
+			return result, nil
+		}
+		existingConfig = cfg
+		hasExistingConfig = true
 	} else if !isConfigMissing(err) {
 		return Result{}, err
 	}
@@ -102,9 +108,13 @@ func (i Initializer) Init(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 
-	installationID, err := i.installationID()
-	if err != nil {
-		return Result{}, err
+	installationID := existingConfig.Installation.ID
+	if installationID == "" {
+		var err error
+		installationID, err = i.installationID()
+		if err != nil {
+			return Result{}, err
+		}
 	}
 
 	hmacSecret, err := i.randomBytes(defaultHMACBytes)
@@ -168,6 +178,12 @@ func (i Initializer) Init(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 
+	profiles := map[string]config.Profile{}
+	credentials := []string{}
+	if hasExistingConfig {
+		profiles = existingConfig.Profiles
+		credentials = existingConfig.Credentials
+	}
 	cfg := config.File{
 		Version: 1,
 		Installation: config.Installation{
@@ -184,7 +200,8 @@ func (i Initializer) Init(ctx context.Context) (Result, error) {
 			TokenTTL:    config.Duration(defaultTokenTTL),
 			MaxTokenTTL: config.Duration(defaultMaxTokenTTL),
 		},
-		Profiles: map[string]config.Profile{},
+		Credentials: credentials,
+		Profiles:    profiles,
 	}
 	if err := config.Save(i.Paths.ConfigFile, cfg); err != nil {
 		rollbackSecrets()
@@ -229,6 +246,10 @@ func isConfigMissing(err error) bool {
 		return false
 	}
 	return errors.Is(envvaultErr.Err, os.ErrNotExist)
+}
+
+func isUninitializedConfig(cfg config.File) bool {
+	return cfg.Runtime.Talos.Version == "uninitialized"
 }
 
 func zero(value []byte) {

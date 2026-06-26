@@ -95,7 +95,7 @@ func (s Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cfg, err := config.Load(s.ConfigPath)
+	cfg, err := config.LoadOrDefault(s.ConfigPath)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -120,6 +120,27 @@ func (s Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleCredentialList(w, r)
+	case http.MethodPost:
+		s.handleCredentialCreate(w, r)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s Server) handleCredentialList(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.LoadOrDefault(s.ConfigPath)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"credentials": cfg.CredentialNames()})
+}
+
+func (s Server) handleCredentialCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -145,6 +166,18 @@ func (s Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Secrets.Put(r.Context(), keyring.CredentialValue(request.Name), value); err != nil {
+		writeError(w, err)
+		return
+	}
+	cfg, err := config.LoadOrDefault(s.ConfigPath)
+	if err != nil {
+		_ = s.Secrets.Delete(r.Context(), keyring.CredentialValue(request.Name))
+		writeError(w, err)
+		return
+	}
+	cfg.AddCredential(request.Name)
+	if err := config.Save(s.ConfigPath, cfg); err != nil {
+		_ = s.Secrets.Delete(r.Context(), keyring.CredentialValue(request.Name))
 		writeError(w, err)
 		return
 	}
@@ -215,7 +248,7 @@ func (s Server) addProfile(_ context.Context, name string, stored config.Profile
 	if strings.TrimSpace(name) == "" {
 		return clerr.New(clerr.ConfigInvalid, "profile name is required")
 	}
-	cfg, err := config.Load(s.ConfigPath)
+	cfg, err := config.LoadOrDefault(s.ConfigPath)
 	if err != nil {
 		return err
 	}
@@ -475,7 +508,7 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
         <h2>Inject Profile</h2>
         <form id="inject-profile-form">
           <label>Name<input name="name" autocomplete="off" placeholder="database/dev"></label>
-          <label>Credential<input name="credential" autocomplete="off" placeholder="database-url/dev"></label>
+          <label>Credential<input name="credential" autocomplete="off" list="credential-options" placeholder="database-url/dev"></label>
           <label>Project Binding
             <select name="project_binding">
               <option value="none">none</option>
@@ -488,7 +521,7 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
         <h2>Proxy Profile</h2>
         <form id="proxy-profile-form">
           <label>Name<input name="name" autocomplete="off" placeholder="openai/dev"></label>
-          <label>Credential<input name="credential" autocomplete="off" placeholder="openai-key/dev"></label>
+          <label>Credential<input name="credential" autocomplete="off" list="credential-options" placeholder="openai-key/dev"></label>
           <label>Provider
             <select name="provider">
               <option value="generic">generic</option>
@@ -506,22 +539,36 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
           <button type="submit">Add Proxy Profile</button>
         </form>
       </section>
+      <datalist id="credential-options"></datalist>
     </div>
-    <section>
-      <h2>Profiles</h2>
-      <div class="toolbar"><button id="refresh" class="secondary" type="button">Refresh</button></div>
-      <table>
-        <thead>
-          <tr><th>Name</th><th>Kind</th><th>Credential</th><th>Target</th></tr>
-        </thead>
-        <tbody id="profiles"></tbody>
-      </table>
-    </section>
+    <div class="stack">
+      <section>
+        <h2>Credentials</h2>
+        <div class="toolbar"><button id="refresh" class="secondary" type="button">Refresh</button></div>
+        <table>
+          <thead>
+            <tr><th>Name</th></tr>
+          </thead>
+          <tbody id="credentials"></tbody>
+        </table>
+      </section>
+      <section>
+        <h2>Profiles</h2>
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Kind</th><th>Credential</th><th>Target</th></tr>
+          </thead>
+          <tbody id="profiles"></tbody>
+        </table>
+      </section>
+    </div>
   </main>
   <script>
     const envvaultToken = new URLSearchParams(location.search).get("token") || sessionStorage.getItem("envvaultAdminToken") || "";
     if (envvaultToken) sessionStorage.setItem("envvaultAdminToken", envvaultToken);
     const statusNode = document.getElementById("status");
+    const credentialsNode = document.getElementById("credentials");
+    const credentialOptionsNode = document.getElementById("credential-options");
     const profilesNode = document.getElementById("profiles");
     const headers = () => ({
       "Content-Type": "application/json",
@@ -537,6 +584,21 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
       }
       return response.json();
     };
+    const refreshCredentials = async () => {
+      const data = await request("/api/credentials", {method: "GET"});
+      credentialsNode.replaceChildren(...data.credentials.map((credential) => {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.textContent = credential;
+        row.appendChild(cell);
+        return row;
+      }));
+      credentialOptionsNode.replaceChildren(...data.credentials.map((credential) => {
+        const option = document.createElement("option");
+        option.value = credential;
+        return option;
+      }));
+    };
     const refreshProfiles = async () => {
       const data = await request("/api/profiles", {method: "GET"});
       profilesNode.replaceChildren(...data.profiles.map((profile) => {
@@ -549,13 +611,16 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
         return row;
       }));
     };
+    const refreshAll = async () => {
+      await Promise.all([refreshCredentials(), refreshProfiles()]);
+    };
     const bindForm = (id, path, payload) => {
       document.getElementById(id).addEventListener("submit", async (event) => {
         event.preventDefault();
         try {
           await request(path, {method: "POST", body: JSON.stringify(payload(new FormData(event.currentTarget)))});
           event.currentTarget.reset();
-          await refreshProfiles();
+          await refreshAll();
           setStatus("Saved");
         } catch (error) {
           setStatus("Error");
@@ -580,8 +645,8 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
       allowed_methods: splitList(form.get("allowed_methods") || "POST"),
       project_binding: form.get("project_binding")
     }));
-    document.getElementById("refresh").addEventListener("click", () => refreshProfiles().catch(() => setStatus("Error")));
-    refreshProfiles().catch(() => setStatus("Locked"));
+    document.getElementById("refresh").addEventListener("click", () => refreshAll().catch(() => setStatus("Error")));
+    refreshAll().catch(() => setStatus("Locked"));
   </script>
 </body>
 </html>`))

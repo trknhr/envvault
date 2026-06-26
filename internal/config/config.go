@@ -1,9 +1,14 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/trknhr/envvault/internal/clerr"
@@ -38,6 +43,7 @@ type File struct {
 	Installation Installation       `yaml:"installation"`
 	Runtime      Runtime            `yaml:"runtime"`
 	Defaults     Defaults           `yaml:"defaults"`
+	Credentials  []string           `yaml:"credentials,omitempty"`
 	Profiles     map[string]Profile `yaml:"profiles"`
 }
 
@@ -112,10 +118,48 @@ func Load(path string) (File, error) {
 	return cfg, nil
 }
 
+func LoadOrDefault(path string) (File, error) {
+	cfg, err := Load(path)
+	if err == nil {
+		return cfg, nil
+	}
+	if !isMissingConfig(err) {
+		return File{}, err
+	}
+	return DefaultFile()
+}
+
+func DefaultFile() (File, error) {
+	installationID, err := newInstallationID()
+	if err != nil {
+		return File{}, err
+	}
+	return File{
+		Version: 1,
+		Installation: Installation{
+			ID: installationID,
+		},
+		Runtime: Runtime{
+			Talos: TalosRuntime{
+				Mode:      "managed",
+				Version:   "uninitialized",
+				Lifecycle: "on-demand",
+			},
+		},
+		Defaults: Defaults{
+			TokenTTL:    Duration(10 * time.Minute),
+			MaxTokenTTL: Duration(time.Hour),
+		},
+		Credentials: []string{},
+		Profiles:    map[string]Profile{},
+	}, nil
+}
+
 func Save(path string, cfg File) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
+	cfg.Credentials = normalizeCredentialNames(cfg.Credentials)
 
 	raw, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -153,6 +197,19 @@ func Save(path string, cfg File) error {
 		return clerr.Wrap(clerr.ConfigInvalid, "set final config permissions", err)
 	}
 	return nil
+}
+
+func (f File) CredentialNames() []string {
+	return normalizeCredentialNames(f.Credentials)
+}
+
+func (f *File) AddCredential(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	f.Credentials = append(f.Credentials, name)
+	f.Credentials = normalizeCredentialNames(f.Credentials)
 }
 
 func (f File) Validate() error {
@@ -254,4 +311,38 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func normalizeCredentialNames(names []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func newInstallationID() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", clerr.Wrap(clerr.ConfigInvalid, "generate installation id", err)
+	}
+	return "hex:" + hex.EncodeToString(raw[:]), nil
+}
+
+func isMissingConfig(err error) bool {
+	var envvaultErr *clerr.Error
+	if !errors.As(err, &envvaultErr) || envvaultErr.Err == nil {
+		return false
+	}
+	return os.IsNotExist(envvaultErr.Err)
 }

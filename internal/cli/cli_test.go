@@ -462,8 +462,10 @@ func TestRunSecretAddStoresProviderAPIKey(t *testing.T) {
 
 func TestRunCredentialAddStoresCredentialValue(t *testing.T) {
 	ctx := context.Background()
+	paths := testPaths(t)
 	secrets := keyring.NewMemoryStore()
 	app := cli.New(cli.Options{
+		Paths:   paths,
 		Secrets: secrets,
 		Stdin:   strings.NewReader("postgres://user:pass@localhost/db\n"),
 	})
@@ -483,6 +485,13 @@ func TestRunCredentialAddStoresCredentialValue(t *testing.T) {
 	}
 	if string(got) != "postgres://user:pass@localhost/db" {
 		t.Fatalf("stored credential = %q", got)
+	}
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if strings.Join(cfg.Credentials, ",") != "database/dev" {
+		t.Fatalf("Credentials = %#v", cfg.Credentials)
 	}
 	if stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
@@ -544,6 +553,38 @@ func TestRunProxyAddStoresProviderProxyProfile(t *testing.T) {
 	}
 	if stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunProxyAddCreatesConfigWhenMissing(t *testing.T) {
+	paths := testPaths(t)
+	app := cli.New(cli.Options{
+		Paths: paths,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{
+		"proxy", "add", "openai/dev",
+		"--provider", "openai-compatible",
+		"--target", "https://api.openai.com/v1",
+		"--allow-path", "/chat/completions",
+		"--allow-method", "POST",
+		"--project-binding", "none",
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got, err := cfg.Profile("openai/dev")
+	if err != nil {
+		t.Fatalf("Profile() error = %v", err)
+	}
+	if got.Kind != profile.KindProviderProxy || got.CredentialName != "openai/dev" {
+		t.Fatalf("profile = %#v", got)
 	}
 }
 

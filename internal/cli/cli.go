@@ -399,6 +399,11 @@ func (a App) runSecret(ctx context.Context, args []string, _ io.Writer, stderr i
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	if err := a.recordCredentialName(request.Name); err != nil {
+		_ = a.secrets.Delete(ctx, keyring.CredentialValue(request.Name))
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
 	return 0
 }
 
@@ -435,6 +440,11 @@ func (a App) runCredential(ctx context.Context, args []string, _ io.Writer, stde
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	if err := a.recordCredentialName(request.Name); err != nil {
+		_ = a.secrets.Delete(ctx, keyring.CredentialValue(request.Name))
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
 	return 0
 }
 
@@ -455,7 +465,7 @@ func (a App) runProxy(ctx context.Context, args []string, _ io.Writer, stderr io
 	}
 	request.ProjectBinding = binding
 
-	cfg, err := config.Load(a.paths.ConfigFile)
+	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -503,7 +513,7 @@ func (a App) runInject(ctx context.Context, args []string, _ io.Writer, stderr i
 	}
 	request.ProjectBinding = binding
 
-	cfg, err := config.Load(a.paths.ConfigFile)
+	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -525,6 +535,18 @@ func (a App) runInject(ctx context.Context, args []string, _ io.Writer, stderr i
 		return 1
 	}
 	return 0
+}
+
+func (a App) recordCredentialName(name string) error {
+	if strings.TrimSpace(a.paths.ConfigFile) == "" {
+		return nil
+	}
+	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
+	if err != nil {
+		return err
+	}
+	cfg.AddCredential(name)
+	return config.Save(a.paths.ConfigFile, cfg)
 }
 
 func (a App) runAdmin(ctx context.Context, args []string, stdout, stderr io.Writer) int {

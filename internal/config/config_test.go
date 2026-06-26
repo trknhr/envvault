@@ -283,6 +283,81 @@ profiles:
 	}
 }
 
+func TestLoadOrDefaultReturnsValidEmptyConfigForMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "config.yaml")
+
+	cfg, err := config.LoadOrDefault(path)
+	if err != nil {
+		t.Fatalf("LoadOrDefault() error = %v", err)
+	}
+
+	if cfg.Version != 1 {
+		t.Fatalf("Version = %d, want 1", cfg.Version)
+	}
+	if !strings.HasPrefix(cfg.Installation.ID, "hex:") {
+		t.Fatalf("Installation.ID = %q, want hex prefix", cfg.Installation.ID)
+	}
+	if cfg.Runtime.Talos.Mode != "managed" || cfg.Runtime.Talos.Lifecycle != "on-demand" {
+		t.Fatalf("Runtime.Talos = %#v", cfg.Runtime.Talos)
+	}
+	if cfg.Defaults.TokenTTL.Duration() != 10*time.Minute {
+		t.Fatalf("TokenTTL = %s, want 10m", cfg.Defaults.TokenTTL.Duration())
+	}
+	if cfg.Defaults.MaxTokenTTL.Duration() != time.Hour {
+		t.Fatalf("MaxTokenTTL = %s, want 1h", cfg.Defaults.MaxTokenTTL.Duration())
+	}
+	if len(cfg.Profiles) != 0 {
+		t.Fatalf("Profiles = %#v, want empty", cfg.Profiles)
+	}
+	if len(cfg.Credentials) != 0 {
+		t.Fatalf("Credentials = %#v, want empty", cfg.Credentials)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("missing config was written during LoadOrDefault: %v", err)
+	}
+}
+
+func TestLoadOrDefaultDoesNotHideInvalidExistingConfig(t *testing.T) {
+	path := writeConfig(t, `version: 2`)
+
+	_, err := config.LoadOrDefault(path)
+
+	if err == nil {
+		t.Fatal("LoadOrDefault() error = nil, want invalid config error")
+	}
+	if code, _ := clerr.CodeOf(err); code != clerr.ConfigInvalid {
+		t.Fatalf("CodeOf(error) = %q, want %q", code, clerr.ConfigInvalid)
+	}
+}
+
+func TestLoadCredentialsMetadata(t *testing.T) {
+	path := writeConfig(t, `
+version: 1
+installation:
+  id: 01JTESTINSTALL
+runtime:
+  talos:
+    mode: managed
+    version: test-talos
+    lifecycle: on-demand
+defaults:
+  token_ttl: 10m
+  max_token_ttl: 60m
+credentials:
+  - openai-key/dev
+  - database-url/dev
+profiles: {}
+`)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if strings.Join(cfg.Credentials, ",") != "openai-key/dev,database-url/dev" {
+		t.Fatalf("Credentials = %#v", cfg.Credentials)
+	}
+}
+
 func TestSaveCreatesUserPrivateConfigFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "config.yaml")
 	cfg := config.File{
@@ -301,6 +376,7 @@ func TestSaveCreatesUserPrivateConfigFile(t *testing.T) {
 			TokenTTL:    config.Duration(10 * time.Minute),
 			MaxTokenTTL: config.Duration(time.Hour),
 		},
+		Credentials: []string{"database-url/dev"},
 		Profiles: map[string]config.Profile{
 			"backend-a/dev": {
 				Kind:        profile.KindProcess,
@@ -334,6 +410,9 @@ func TestSaveCreatesUserPrivateConfigFile(t *testing.T) {
 	text := string(raw)
 	if !strings.Contains(text, "token_ttl: 10m0s") {
 		t.Fatalf("saved config did not contain duration string: %s", text)
+	}
+	if !strings.Contains(text, "credentials:") || !strings.Contains(text, "database-url/dev") {
+		t.Fatalf("saved config did not contain credential metadata: %s", text)
 	}
 	if strings.Contains(strings.ToLower(text), "parent") || strings.Contains(strings.ToLower(text), "secret") {
 		t.Fatalf("saved config contains forbidden secret authority words: %s", text)
