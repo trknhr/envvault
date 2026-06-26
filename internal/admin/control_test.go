@@ -2,6 +2,8 @@ package admin_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,5 +169,41 @@ func TestControlStatusReturnsStoppedWithoutState(t *testing.T) {
 	}
 	if status.Running {
 		t.Fatalf("status = %#v, want stopped", status)
+	}
+}
+
+func TestControlStatusRequiresMatchingAdminToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.URL.Path == "/api/health" && r.Header.Get("Authorization") == "Bearer real-token" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	paths := testPaths(t)
+	state := admin.State{
+		PID:       12345,
+		Addr:      "127.0.0.1:17890",
+		Token:     "stale-token",
+		URL:       server.URL + "/?token=stale-token",
+		StartedAt: time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC),
+	}
+	if err := admin.WriteState(paths, state); err != nil {
+		t.Fatalf("WriteState() error = %v", err)
+	}
+
+	status, err := (admin.Control{Paths: paths}).Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if status.Running {
+		t.Fatalf("status = %#v, want stopped for mismatched token", status)
 	}
 }

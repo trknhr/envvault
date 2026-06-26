@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -264,7 +264,7 @@ func startBackgroundProcess(ctx context.Context, request ProcessRequest) (Proces
 		return Process{}, clerr.Wrap(clerr.ConfigInvalid, "open admin log", err)
 	}
 	defer logFile.Close()
-	cmd := exec.Command(request.Executable, request.Args...)
+	cmd := newBackgroundCommand(request.Executable, request.Args)
 	cmd.Env = append([]string(nil), request.Env...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -283,7 +283,7 @@ func waitHTTPReady(ctx context.Context, rawURL string) error {
 		if err := ctx.Err(); err != nil {
 			return clerr.Wrap(clerr.RuntimeUnavailable, "admin server did not become ready", err)
 		}
-		if rootOK(ctx, rawURL) {
+		if adminAPIHealthy(ctx, rawURL) {
 			return nil
 		}
 		timer := time.NewTimer(pollInterval)
@@ -300,7 +300,7 @@ func waitHTTPStopped(ctx context.Context, rawURL string) error {
 		if err := ctx.Err(); err != nil {
 			return clerr.Wrap(clerr.CleanupFailed, "admin server did not stop", err)
 		}
-		if !rootOK(ctx, rawURL) {
+		if !adminAPIHealthy(ctx, rawURL) {
 			return nil
 		}
 		timer := time.NewTimer(pollInterval)
@@ -312,17 +312,37 @@ func waitHTTPStopped(ctx context.Context, rawURL string) error {
 	}
 }
 
-func rootOK(ctx context.Context, rawURL string) bool {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+func adminAPIHealthy(ctx context.Context, rawURL string) bool {
+	healthURL, token, err := adminHealthURL(rawURL)
 	if err != nil {
 		return false
 	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+	if err != nil {
+		return false
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return false
 	}
 	defer response.Body.Close()
 	return response.StatusCode == http.StatusOK
+}
+
+func adminHealthURL(rawURL string) (string, string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", "", err
+	}
+	token := parsed.Query().Get("token")
+	if strings.TrimSpace(token) == "" {
+		return "", "", errors.New("admin token missing")
+	}
+	parsed.Path = "/api/health"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), token, nil
 }
 
 func isRandomPort(addr string) bool {

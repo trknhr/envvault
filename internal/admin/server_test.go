@@ -49,6 +49,28 @@ func TestServerRequiresAdminTokenAndLocalHost(t *testing.T) {
 	}
 }
 
+func TestServerHealthRequiresAdminToken(t *testing.T) {
+	server := admin.Server{Token: "admin-token"}
+
+	missingToken := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	missingToken.Host = "127.0.0.1:32123"
+	missingTokenRecorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(missingTokenRecorder, missingToken)
+	if missingTokenRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token status = %d, want %d", missingTokenRecorder.Code, http.StatusUnauthorized)
+	}
+
+	req := authorizedRequest(http.MethodGet, "/api/health", "")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%q", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"ok":true`) {
+		t.Fatalf("body = %q, want ok health", rec.Body.String())
+	}
+}
+
 func TestServerIndexContainsAdminFormsAndBearerAPIClient(t *testing.T) {
 	server := admin.Server{Token: "admin-token"}
 	req := httptest.NewRequest(http.MethodGet, "/?token=admin-token", nil)
