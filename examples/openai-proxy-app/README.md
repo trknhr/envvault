@@ -21,12 +21,12 @@ go build -o ./bin/envvault ./cmd/envvault
 Register a demo provider secret and proxy profile:
 
 ```bash
-printf 'sk-local-demo\n' | ./bin/envvault secret add openai/dev \
-  --provider openai-compatible \
-  --api-key-stdin
+printf 'sk-local-demo\n' | ./bin/envvault credential add openai-key/dev \
+  --value-stdin
 
 ./bin/envvault proxy add openai/dev \
-  --provider openai-compatible \
+  --credential openai-key/dev \
+  --provider generic \
   --target http://127.0.0.1:18080/v1 \
   --allow-path /chat/completions \
   --allow-method POST \

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trknhr/envvault/internal/admin"
 	"github.com/trknhr/envvault/internal/audit"
 	"github.com/trknhr/envvault/internal/bootstrap"
 	"github.com/trknhr/envvault/internal/browser"
@@ -69,6 +70,16 @@ type Resetter interface {
 	Reset(ctx context.Context, options resetpkg.Options) (resetpkg.Result, error)
 }
 
+type AdminServer interface {
+	Serve(ctx context.Context, request admin.ServeRequest) error
+}
+
+type AdminController interface {
+	Start(ctx context.Context, request admin.StartRequest) (admin.State, error)
+	Status(ctx context.Context) (admin.Status, error)
+	Stop(ctx context.Context) (admin.State, error)
+}
+
 type Doctor interface {
 	Check(ctx context.Context) (doctorpkg.Result, error)
 }
@@ -92,6 +103,9 @@ type Options struct {
 	Browser                 BrowserClient
 	ProfileManager          ProfileManager
 	ProjectBindingConfirmer ProjectBindingConfirmer
+	AdminServer             AdminServer
+	AdminController         AdminController
+	AdminTokenSource        func() (string, error)
 	StdoutIsTerminal        func() bool
 	Now                     func() time.Time
 }
@@ -111,6 +125,9 @@ type App struct {
 	browser                 BrowserClient
 	profileManager          ProfileManager
 	projectBindingConfirmer ProjectBindingConfirmer
+	adminServer             AdminServer
+	adminController         AdminController
+	adminTokenSource        func() (string, error)
 	stdoutIsTerminal        func() bool
 	now                     func() time.Time
 }
@@ -131,6 +148,9 @@ func New(options Options) App {
 		browser:                 options.Browser,
 		profileManager:          options.ProfileManager,
 		projectBindingConfirmer: options.ProjectBindingConfirmer,
+		adminServer:             options.AdminServer,
+		adminController:         options.AdminController,
+		adminTokenSource:        options.AdminTokenSource,
 		stdoutIsTerminal:        options.StdoutIsTerminal,
 		now:                     options.Now,
 	}
@@ -156,8 +176,11 @@ func defaultOptions(paths config.Paths) Options {
 			output:     os.Stderr,
 			isTerminal: stdinIsTerminal,
 		},
-		Resetter: resetpkg.Planner{Paths: paths, Secrets: secrets},
-		Doctor:   doctorpkg.Checker{Paths: paths, Secrets: secrets},
+		AdminServer:      admin.Service{ConfigPath: paths.ConfigFile, Secrets: secrets},
+		AdminController:  admin.Control{Paths: paths},
+		AdminTokenSource: admin.NewToken,
+		Resetter:         resetpkg.Planner{Paths: paths, Secrets: secrets},
+		Doctor:           doctorpkg.Checker{Paths: paths, Secrets: secrets},
 	}
 }
 
@@ -190,10 +213,16 @@ func (a App) Run(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return a.runDoctor(ctx, args[1:], stdout, stderr)
 	case "profile":
 		return a.runProfile(ctx, args[1:], stdout, stderr)
+	case "credential":
+		return a.runCredential(ctx, args[1:], stdout, stderr)
 	case "secret":
 		return a.runSecret(ctx, args[1:], stdout, stderr)
 	case "proxy":
 		return a.runProxy(ctx, args[1:], stdout, stderr)
+	case "inject":
+		return a.runInject(ctx, args[1:], stdout, stderr)
+	case "admin":
+		return a.runAdmin(ctx, args[1:], stdout, stderr)
 	case "token":
 		return a.runToken(ctx, args[1:], stdout, stderr)
 	case "exec":
@@ -366,7 +395,43 @@ func (a App) runSecret(ctx context.Context, args []string, _ io.Writer, stderr i
 	}
 	secret := []byte(apiKey)
 	defer zero(secret)
-	if err := a.secrets.Put(ctx, keyring.ProviderAPIKey(request.Name), secret); err != nil {
+	if err := a.secrets.Put(ctx, keyring.CredentialValue(request.Name), secret); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func (a App) runCredential(ctx context.Context, args []string, _ io.Writer, stderr io.Writer) int {
+	if len(args) < 2 || args[0] != "add" {
+		fmt.Fprintln(stderr, "envvault: usage: envvault credential add <name> --value-stdin")
+		return 2
+	}
+	if a.secrets == nil {
+		fmt.Fprintln(stderr, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable"))
+		return 1
+	}
+	request, err := parseCredentialAdd(args[1:])
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	input := a.stdin
+	if input == nil {
+		input = os.Stdin
+	}
+	raw, err := io.ReadAll(input)
+	if err != nil {
+		fmt.Fprintln(stderr, clerr.Wrap(clerr.ConfigInvalid, "read credential from stdin", err))
+		return 1
+	}
+	value := []byte(strings.TrimSpace(string(raw)))
+	defer zero(value)
+	if len(value) == 0 {
+		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "credential value is required"))
+		return 1
+	}
+	if err := a.secrets.Put(ctx, keyring.CredentialValue(request.Name), value); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
@@ -401,6 +466,8 @@ func (a App) runProxy(ctx context.Context, args []string, _ io.Writer, stderr io
 	}
 	stored := config.Profile{
 		Kind:           profile.KindProviderProxy,
+		CredentialName: request.CredentialName,
+		AuthMode:       request.AuthMode,
 		Provider:       request.Provider,
 		TargetURL:      request.TargetURL,
 		AllowedPaths:   append([]string(nil), request.AllowedPaths...),
@@ -416,6 +483,167 @@ func (a App) runProxy(ctx context.Context, args []string, _ io.Writer, stderr io
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	return 0
+}
+
+func (a App) runInject(ctx context.Context, args []string, _ io.Writer, stderr io.Writer) int {
+	if len(args) < 2 || args[0] != "add" {
+		fmt.Fprintln(stderr, "envvault: usage: envvault inject add <name> --credential <credential> [options]")
+		return 2
+	}
+	request, err := parseInjectAdd(args[1:])
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	binding, err := a.approveProjectBinding(ctx, request.ProjectBinding.Mode)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	request.ProjectBinding = binding
+
+	cfg, err := config.Load(a.paths.ConfigFile)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if _, exists := cfg.Profiles[request.Name]; exists {
+		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "profile already exists"))
+		return 1
+	}
+	if cfg.Profiles == nil {
+		cfg.Profiles = map[string]config.Profile{}
+	}
+	cfg.Profiles[request.Name] = config.Profile{
+		Kind:           profile.KindInject,
+		CredentialName: request.CredentialName,
+		ProjectBinding: toConfigProjectBinding(request.ProjectBinding),
+	}
+	if err := config.Save(a.paths.ConfigFile, cfg); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func (a App) runAdmin(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "envvault: usage: envvault admin <start|status|stop|serve>")
+		return 2
+	}
+	switch args[0] {
+	case "serve":
+		return a.runAdminServe(ctx, args[1:], stdout, stderr)
+	case "start":
+		return a.runAdminStart(ctx, args[1:], stdout, stderr)
+	case "status":
+		return a.runAdminStatus(ctx, args[1:], stdout, stderr)
+	case "stop":
+		return a.runAdminStop(ctx, args[1:], stdout, stderr)
+	default:
+		fmt.Fprintln(stderr, "envvault: usage: envvault admin <start|status|stop|serve>")
+		return 2
+	}
+}
+
+func (a App) runAdminServe(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if a.adminServer == nil {
+		fmt.Fprintln(stderr, "envvault: command \"admin\" is not implemented yet")
+		return 2
+	}
+	request, err := parseAdminServe(args)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if request.Token == "" && request.TokenEnv != "" {
+		request.Token = strings.TrimSpace(os.Getenv(request.TokenEnv))
+		if request.Token == "" {
+			fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "admin token env is empty"))
+			return 1
+		}
+	}
+	if request.Token == "" {
+		tokenSource := a.adminTokenSource
+		if tokenSource == nil {
+			tokenSource = admin.NewToken
+		}
+		token, err := tokenSource()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		request.Token = token
+	}
+	request.Stdout = stdout
+	if err := a.adminServer.Serve(ctx, request); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func (a App) runAdminStart(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if a.adminController == nil {
+		fmt.Fprintln(stderr, "envvault: command \"admin\" is not implemented yet")
+		return 2
+	}
+	request, err := parseAdminStart(args)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	state, err := a.adminController.Start(ctx, request)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "EnvVault admin: %s\n", state.URL)
+	return 0
+}
+
+func (a App) runAdminStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "envvault: usage: envvault admin status")
+		return 2
+	}
+	if a.adminController == nil {
+		fmt.Fprintln(stderr, "envvault: command \"admin\" is not implemented yet")
+		return 2
+	}
+	status, err := a.adminController.Status(ctx)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if !status.Running {
+		fmt.Fprintln(stdout, "stopped")
+		return 0
+	}
+	fmt.Fprintf(stdout, "running pid=%d url=%s\n", status.State.PID, status.State.URL)
+	return 0
+}
+
+func (a App) runAdminStop(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "envvault: usage: envvault admin stop")
+		return 2
+	}
+	if a.adminController == nil {
+		fmt.Fprintln(stderr, "envvault: command \"admin\" is not implemented yet")
+		return 2
+	}
+	state, err := a.adminController.Stop(ctx)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if state.PID == 0 {
+		fmt.Fprintln(stdout, "stopped")
+		return 0
+	}
+	fmt.Fprintf(stdout, "stopped pid=%d\n", state.PID)
 	return 0
 }
 
@@ -1058,6 +1286,30 @@ type secretAddRequest struct {
 	APIKeyStdin bool
 }
 
+type credentialAddRequest struct {
+	Name       string
+	ValueStdin bool
+}
+
+func parseCredentialAdd(args []string) (credentialAddRequest, error) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return credentialAddRequest{}, clerr.New(clerr.ConfigInvalid, "credential name is required")
+	}
+	request := credentialAddRequest{Name: args[0]}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--value-stdin":
+			request.ValueStdin = true
+		default:
+			return credentialAddRequest{}, clerr.New(clerr.ConfigInvalid, "unknown credential option")
+		}
+	}
+	if !request.ValueStdin {
+		return credentialAddRequest{}, clerr.New(clerr.ConfigInvalid, "credential value input is required")
+	}
+	return request, nil
+}
+
 func parseSecretAdd(args []string) (secretAddRequest, error) {
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return secretAddRequest{}, clerr.New(clerr.ConfigInvalid, "secret name is required")
@@ -1089,6 +1341,8 @@ func parseSecretAdd(args []string) (secretAddRequest, error) {
 
 type proxyAddRequest struct {
 	Name           string
+	CredentialName string
+	AuthMode       string
 	Provider       string
 	TargetURL      string
 	AllowedPaths   []string
@@ -1103,6 +1357,7 @@ func parseProxyAdd(args []string) (proxyAddRequest, error) {
 	}
 	request := proxyAddRequest{
 		Name:          args[0],
+		AuthMode:      "bearer",
 		LocalTokenTTL: 10 * time.Minute,
 		ProjectBinding: profile.ProjectBinding{
 			Mode: profile.ProjectBindingGitRemoteAndRoot,
@@ -1116,6 +1371,20 @@ func parseProxyAdd(args []string) (proxyAddRequest, error) {
 				return proxyAddRequest{}, err
 			}
 			request.Provider = value
+			i = next
+		case "--credential":
+			value, next, err := valueFlag(args, i, "--credential")
+			if err != nil {
+				return proxyAddRequest{}, err
+			}
+			request.CredentialName = value
+			i = next
+		case "--auth":
+			value, next, err := valueFlag(args, i, "--auth")
+			if err != nil {
+				return proxyAddRequest{}, err
+			}
+			request.AuthMode = value
 			i = next
 		case "--target":
 			value, next, err := valueFlag(args, i, "--target")
@@ -1157,10 +1426,19 @@ func parseProxyAdd(args []string) (proxyAddRequest, error) {
 		}
 	}
 	if request.Provider == "" {
-		request.Provider = "openai-compatible"
+		request.Provider = "generic"
 	}
-	if request.Provider != "openai-compatible" {
-		return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "provider must be openai-compatible")
+	if request.Provider != "generic" && request.Provider != "openai-compatible" {
+		return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "provider must be generic or openai-compatible")
+	}
+	if request.AuthMode == "" {
+		request.AuthMode = "bearer"
+	}
+	if request.AuthMode != "bearer" {
+		return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "auth must be bearer")
+	}
+	if strings.TrimSpace(request.CredentialName) == "" {
+		request.CredentialName = request.Name
 	}
 	if strings.TrimSpace(request.TargetURL) == "" {
 		return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "--target is required")
@@ -1173,6 +1451,123 @@ func parseProxyAdd(args []string) (proxyAddRequest, error) {
 	}
 	request.AllowedMethods = uniqueStrings(request.AllowedMethods)
 	request.AllowedPaths = uniqueStrings(request.AllowedPaths)
+	return request, nil
+}
+
+type injectAddRequest struct {
+	Name           string
+	CredentialName string
+	ProjectBinding profile.ProjectBinding
+}
+
+func parseInjectAdd(args []string) (injectAddRequest, error) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return injectAddRequest{}, clerr.New(clerr.ConfigInvalid, "inject profile name is required")
+	}
+	request := injectAddRequest{
+		Name: args[0],
+		ProjectBinding: profile.ProjectBinding{
+			Mode: profile.ProjectBindingGitRemoteAndRoot,
+		},
+	}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--credential":
+			value, next, err := valueFlag(args, i, "--credential")
+			if err != nil {
+				return injectAddRequest{}, err
+			}
+			request.CredentialName = value
+			i = next
+		case "--project-binding":
+			value, next, err := projectBindingFlag(args, i)
+			if err != nil {
+				return injectAddRequest{}, err
+			}
+			request.ProjectBinding = value
+			i = next
+		default:
+			return injectAddRequest{}, clerr.New(clerr.ConfigInvalid, "unknown inject option")
+		}
+	}
+	if strings.TrimSpace(request.CredentialName) == "" {
+		return injectAddRequest{}, clerr.New(clerr.ConfigInvalid, "--credential is required")
+	}
+	return request, nil
+}
+
+func parseAdminServe(args []string) (admin.ServeRequest, error) {
+	request := admin.ServeRequest{Addr: admin.DefaultAddr}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--addr":
+			value, next, err := valueFlag(args, i, "--addr")
+			if err != nil {
+				return admin.ServeRequest{}, err
+			}
+			request.Addr = value
+			i = next
+		case "--token":
+			value, next, err := valueFlag(args, i, "--token")
+			if err != nil {
+				return admin.ServeRequest{}, err
+			}
+			request.Token = value
+			i = next
+		case "--token-env":
+			value, next, err := valueFlag(args, i, "--token-env")
+			if err != nil {
+				return admin.ServeRequest{}, err
+			}
+			request.TokenEnv = value
+			i = next
+		default:
+			if strings.HasPrefix(args[i], "--addr=") {
+				request.Addr = strings.TrimPrefix(args[i], "--addr=")
+				continue
+			}
+			if strings.HasPrefix(args[i], "--token=") {
+				request.Token = strings.TrimPrefix(args[i], "--token=")
+				continue
+			}
+			if strings.HasPrefix(args[i], "--token-env=") {
+				request.TokenEnv = strings.TrimPrefix(args[i], "--token-env=")
+				continue
+			}
+			return admin.ServeRequest{}, clerr.New(clerr.ConfigInvalid, "unknown admin option")
+		}
+	}
+	if strings.TrimSpace(request.Addr) == "" {
+		return admin.ServeRequest{}, clerr.New(clerr.ConfigInvalid, "--addr requires an address")
+	}
+	if strings.TrimSpace(request.Token) == "" {
+		request.Token = ""
+	}
+	return request, nil
+}
+
+func parseAdminStart(args []string) (admin.StartRequest, error) {
+	request := admin.StartRequest{Addr: admin.DefaultAddr}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--addr":
+			value, next, err := valueFlag(args, i, "--addr")
+			if err != nil {
+				return admin.StartRequest{}, err
+			}
+			request.Addr = value
+			i = next
+		default:
+			if strings.HasPrefix(args[i], "--addr=") {
+				request.Addr = strings.TrimPrefix(args[i], "--addr=")
+				continue
+			}
+			return admin.StartRequest{}, clerr.New(clerr.ConfigInvalid, "unknown admin option")
+		}
+	}
+	if strings.TrimSpace(request.Addr) == "" {
+		return admin.StartRequest{}, clerr.New(clerr.ConfigInvalid, "--addr requires an address")
+	}
 	return request, nil
 }
 

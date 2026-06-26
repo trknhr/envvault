@@ -18,6 +18,7 @@ func TestSecretKeyNamesMatchSpecHierarchy(t *testing.T) {
 		{name: "hmac", got: keyring.TalosHMACKey(), want: "envvault/talos/hmac/current"},
 		{name: "signing", got: keyring.TalosSigningKey("kid-1"), want: "envvault/talos/signing/kid-1"},
 		{name: "parent", got: keyring.ProfileParentKey("backend-a/dev"), want: "envvault/profile/backend-a/dev/parent-key"},
+		{name: "credential", got: keyring.CredentialValue("database/dev"), want: "envvault/credential/database/dev/value"},
 	}
 
 	for _, tt := range tests {

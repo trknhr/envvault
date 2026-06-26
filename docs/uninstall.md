@@ -27,6 +27,7 @@ Use this only if `envvault reset` is unavailable.
 envvault/talos/hmac/current
 envvault/talos/signing/current
 envvault/profile/<profile-name>/parent-key
+envvault/credential/<credential-name>/value
 ```
 
 3. Remove exported JWKS copies that you configured for local backends.

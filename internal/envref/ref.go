@@ -21,6 +21,7 @@ const (
 	PartDefault Part = ""
 	PartBaseURL Part = "base-url"
 	PartToken   Part = "token"
+	PartValue   Part = "value"
 )
 
 func ParseValue(value string) (Reference, bool, error) {
@@ -70,7 +71,7 @@ func parseProfile(raw string) (string, Part, error) {
 	part := PartDefault
 	last := segments[len(segments)-1]
 	switch Part(last) {
-	case PartBaseURL, PartToken:
+	case PartBaseURL, PartToken, PartValue:
 		if len(segments) == 1 {
 			return "", "", invalid("profile is required")
 		}

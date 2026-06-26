@@ -51,6 +51,8 @@ func (r *EnvResolver) ResolveReference(ctx context.Context, ref envref.Reference
 			return lease.BaseURL, nil
 		}
 		return lease.Token, nil
+	case envref.PartValue:
+		return r.injectValue(ctx, ref.Profile, identity)
 	case envref.PartDefault:
 		return r.issueProcessToken(ctx, ref.Profile, identity)
 	default:
@@ -95,7 +97,7 @@ func (r *EnvResolver) ensureLease(ctx context.Context, name string, identity pro
 	if err := projectbinding.Check(p.ProjectBinding, identity); err != nil {
 		return nil, err
 	}
-	secret, err := r.secret(ctx, name)
+	secret, err := r.secret(ctx, credentialName(p, name))
 	if err != nil {
 		return nil, err
 	}
@@ -167,6 +169,25 @@ func (r *EnvResolver) issueProcessToken(ctx context.Context, name string, identi
 	return credential.AccessToken, nil
 }
 
+func (r *EnvResolver) injectValue(ctx context.Context, name string, identity projectbinding.Identity) (string, error) {
+	p, err := r.profile(name)
+	if err != nil {
+		return "", err
+	}
+	if p.Kind != profile.KindInject {
+		return "", clerr.New(clerr.ProfileKindMismatch, name)
+	}
+	if err := projectbinding.Check(p.ProjectBinding, identity); err != nil {
+		return "", err
+	}
+	secret, err := r.secret(ctx, p.CredentialName)
+	if err != nil {
+		return "", err
+	}
+	defer zero(secret)
+	return string(secret), nil
+}
+
 func (r *EnvResolver) profile(name string) (profile.Profile, error) {
 	if r.Profiles == nil {
 		return profile.Profile{}, clerr.New(clerr.ProfileNotFound, name)
@@ -178,7 +199,7 @@ func (r *EnvResolver) secret(ctx context.Context, name string) ([]byte, error) {
 	if r.Secrets == nil {
 		return nil, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable")
 	}
-	return r.Secrets.Get(ctx, keyring.ProviderAPIKey(name))
+	return r.Secrets.Get(ctx, keyring.CredentialValue(name))
 }
 
 func (r *EnvResolver) now() time.Time {
@@ -186,6 +207,13 @@ func (r *EnvResolver) now() time.Time {
 		return r.Now()
 	}
 	return time.Now()
+}
+
+func credentialName(p profile.Profile, fallback string) string {
+	if strings.TrimSpace(p.CredentialName) != "" {
+		return p.CredentialName
+	}
+	return fallback
 }
 
 type Lease struct {

@@ -78,6 +78,8 @@ type Profile struct {
 	PostLoginURL      string   `yaml:"post_login_url,omitempty"`
 	AllowedHosts      []string `yaml:"allowed_hosts,omitempty"`
 
+	CredentialName string   `yaml:"credential,omitempty"`
+	AuthMode       string   `yaml:"auth_mode,omitempty"`
 	Provider       string   `yaml:"provider,omitempty"`
 	TargetURL      string   `yaml:"target_url,omitempty"`
 	AllowedPaths   []string `yaml:"allowed_paths,omitempty"`
@@ -191,7 +193,7 @@ func (f File) Profile(name string) (profile.Profile, error) {
 	if !ok {
 		return profile.Profile{}, clerr.New(clerr.ProfileNotFound, name)
 	}
-	if stored.Kind != profile.KindProviderProxy && stored.Issuer != "talos" {
+	if stored.Kind != profile.KindProviderProxy && stored.Kind != profile.KindInject && stored.Issuer != "talos" {
 		return profile.Profile{}, clerr.New(clerr.ConfigInvalid, "profile issuer must be talos")
 	}
 
@@ -233,6 +235,8 @@ func (p Profile) toProfile(name string, defaults Defaults) profile.Profile {
 		CompleteURL:       p.CompleteURL,
 		PostLoginURL:      p.PostLoginURL,
 		AllowedHosts:      append([]string(nil), p.AllowedHosts...),
+		CredentialName:    p.CredentialName,
+		AuthMode:          p.AuthMode,
 		Provider:          p.Provider,
 		TargetURL:         p.TargetURL,
 		AllowedPaths:      append([]string(nil), p.AllowedPaths...),

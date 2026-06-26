@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trknhr/envvault/internal/admin"
 	"github.com/trknhr/envvault/internal/audit"
 	"github.com/trknhr/envvault/internal/bootstrap"
 	"github.com/trknhr/envvault/internal/browser"
@@ -97,6 +98,12 @@ func TestDefaultOptionsWireResetAndDoctorServices(t *testing.T) {
 	}
 	if options.ProjectBindingConfirmer == nil {
 		t.Fatal("ProjectBindingConfirmer = nil, want TTY confirmer")
+	}
+	if _, ok := options.AdminController.(admin.Control); !ok {
+		t.Fatalf("AdminController = %T, want admin.Control", options.AdminController)
+	}
+	if options.AdminServer == nil {
+		t.Fatal("AdminServer = nil, want local admin server")
 	}
 }
 

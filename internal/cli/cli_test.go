@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trknhr/envvault/internal/admin"
 	"github.com/trknhr/envvault/internal/bootstrap"
 	"github.com/trknhr/envvault/internal/browser"
 	"github.com/trknhr/envvault/internal/clerr"
@@ -53,11 +54,14 @@ func TestRunCompletionBashWritesCommandsWithoutServices(t *testing.T) {
 	for _, want := range []string{
 		"# bash completion for envvault",
 		"complete -F _envvault envvault",
-		"init reset doctor profile secret proxy token exec open jwks issuer completion",
+		"init reset doctor profile secret credential proxy inject admin token exec open jwks issuer completion",
 		"--repair",
 		"browser-session",
 		"secret",
+		"credential",
 		"proxy",
+		"inject",
+		"admin",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
@@ -79,7 +83,7 @@ func TestRunCompletionZshFishAndPowerShell(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 			}
-			for _, want := range []string{"envvault", "doctor", "profile", "secret", "proxy", "completion"} {
+			for _, want := range []string{"envvault", "doctor", "profile", "secret", "credential", "proxy", "inject", "admin", "completion"} {
 				if !strings.Contains(stdout.String(), want) {
 					t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 				}
@@ -88,6 +92,122 @@ func TestRunCompletionZshFishAndPowerShell(t *testing.T) {
 				t.Fatalf("stderr = %q, want empty", stderr.String())
 			}
 		})
+	}
+}
+
+func TestRunAdminServeStartsAdminServer(t *testing.T) {
+	adminServer := &fakeAdminServer{}
+	app := cli.New(cli.Options{
+		AdminServer: adminServer,
+		AdminTokenSource: func() (string, error) {
+			return "generated-token", nil
+		},
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"admin", "serve", "--addr", "127.0.0.1:0"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if adminServer.calls != 1 {
+		t.Fatalf("admin server calls = %d, want 1", adminServer.calls)
+	}
+	if adminServer.request.Addr != "127.0.0.1:0" {
+		t.Fatalf("addr = %q, want 127.0.0.1:0", adminServer.request.Addr)
+	}
+	if adminServer.request.Token != "generated-token" {
+		t.Fatalf("token = %q, want generated-token", adminServer.request.Token)
+	}
+	if adminServer.request.Stdout != &stdout {
+		t.Fatal("stdout writer was not passed to admin server")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunAdminServeAcceptsExplicitToken(t *testing.T) {
+	adminServer := &fakeAdminServer{}
+	app := cli.New(cli.Options{
+		AdminServer: adminServer,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"admin", "serve", "--token", "admin-token"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if adminServer.request.Addr != "127.0.0.1:17890" {
+		t.Fatalf("addr = %q, want default admin addr", adminServer.request.Addr)
+	}
+	if adminServer.request.Token != "admin-token" {
+		t.Fatalf("token = %q, want explicit token", adminServer.request.Token)
+	}
+}
+
+func TestRunAdminServeAcceptsTokenEnv(t *testing.T) {
+	t.Setenv("ENVVAULT_ADMIN_TOKEN", "env-admin-token")
+	adminServer := &fakeAdminServer{}
+	app := cli.New(cli.Options{
+		AdminServer: adminServer,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"admin", "serve", "--token-env", "ENVVAULT_ADMIN_TOKEN"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if adminServer.request.Token != "env-admin-token" {
+		t.Fatalf("token = %q, want env-admin-token", adminServer.request.Token)
+	}
+}
+
+func TestRunAdminStartStatusAndStopUseController(t *testing.T) {
+	controller := &fakeAdminController{
+		startState: admin.State{PID: 12345, URL: "http://127.0.0.1:17890/?token=admin-token"},
+		status:     admin.Status{Running: true, State: admin.State{PID: 12345, URL: "http://127.0.0.1:17890/?token=admin-token"}},
+		stopState:  admin.State{PID: 12345, URL: "http://127.0.0.1:17890/?token=admin-token"},
+	}
+	app := cli.New(cli.Options{
+		AdminController: controller,
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := app.Run(context.Background(), []string{"admin", "start"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("start code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if controller.startCalls != 1 {
+		t.Fatalf("start calls = %d, want 1", controller.startCalls)
+	}
+	if !strings.Contains(stdout.String(), "http://127.0.0.1:17890/?token=admin-token") {
+		t.Fatalf("start stdout = %q, want admin URL", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run(context.Background(), []string{"admin", "status"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("status code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "running") || !strings.Contains(stdout.String(), "12345") {
+		t.Fatalf("status stdout = %q, want running pid", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run(context.Background(), []string{"admin", "stop"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("stop code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if controller.stopCalls != 1 {
+		t.Fatalf("stop calls = %d, want 1", controller.stopCalls)
+	}
+	if !strings.Contains(stdout.String(), "stopped") {
+		t.Fatalf("stop stdout = %q, want stopped", stdout.String())
 	}
 }
 
@@ -340,6 +460,35 @@ func TestRunSecretAddStoresProviderAPIKey(t *testing.T) {
 	}
 }
 
+func TestRunCredentialAddStoresCredentialValue(t *testing.T) {
+	ctx := context.Background()
+	secrets := keyring.NewMemoryStore()
+	app := cli.New(cli.Options{
+		Secrets: secrets,
+		Stdin:   strings.NewReader("postgres://user:pass@localhost/db\n"),
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{
+		"credential", "add", "database/dev",
+		"--value-stdin",
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	got, err := secrets.Get(ctx, keyring.CredentialValue("database/dev"))
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if string(got) != "postgres://user:pass@localhost/db" {
+		t.Fatalf("stored credential = %q", got)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunProxyAddStoresProviderProxyProfile(t *testing.T) {
 	paths := testPaths(t)
 	writeBaseConfig(t, paths)
@@ -372,6 +521,12 @@ func TestRunProxyAddStoresProviderProxyProfile(t *testing.T) {
 	if got.Kind != profile.KindProviderProxy {
 		t.Fatalf("Kind = %q, want provider-proxy", got.Kind)
 	}
+	if got.CredentialName != "openai/dev" {
+		t.Fatalf("CredentialName = %q, want openai/dev", got.CredentialName)
+	}
+	if got.AuthMode != "bearer" {
+		t.Fatalf("AuthMode = %q, want bearer", got.AuthMode)
+	}
 	if got.Provider != "openai-compatible" || got.TargetURL != "https://api.openai.com/v1" {
 		t.Fatalf("provider/target = %q/%q", got.Provider, got.TargetURL)
 	}
@@ -383,6 +538,45 @@ func TestRunProxyAddStoresProviderProxyProfile(t *testing.T) {
 	}
 	if got.LocalTokenTTL != 5*time.Minute {
 		t.Fatalf("LocalTokenTTL = %s, want 5m", got.LocalTokenTTL)
+	}
+	if got.ProjectBinding.Mode != profile.ProjectBindingNone {
+		t.Fatalf("ProjectBinding.Mode = %q, want none", got.ProjectBinding.Mode)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunInjectAddStoresInjectProfile(t *testing.T) {
+	paths := testPaths(t)
+	writeBaseConfig(t, paths)
+	app := cli.New(cli.Options{
+		Paths: paths,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{
+		"inject", "add", "database/dev",
+		"--credential", "database/dev",
+		"--project-binding", "none",
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got, err := cfg.Profile("database/dev")
+	if err != nil {
+		t.Fatalf("Profile() error = %v", err)
+	}
+	if got.Kind != profile.KindInject {
+		t.Fatalf("Kind = %q, want inject", got.Kind)
+	}
+	if got.CredentialName != "database/dev" {
+		t.Fatalf("CredentialName = %q", got.CredentialName)
 	}
 	if got.ProjectBinding.Mode != profile.ProjectBindingNone {
 		t.Fatalf("ProjectBinding.Mode = %q, want none", got.ProjectBinding.Mode)
@@ -410,6 +604,8 @@ func TestRunExecRewritesProviderProxyEnvAndForwardsThroughProxy(t *testing.T) {
 	}
 	cfg.Profiles["openai/dev"] = config.Profile{
 		Kind:           profile.KindProviderProxy,
+		CredentialName: "openai-key/dev",
+		AuthMode:       "bearer",
 		Provider:       "openai-compatible",
 		TargetURL:      target.URL + "/v1",
 		AllowedPaths:   []string{"/chat/completions"},
@@ -421,7 +617,7 @@ func TestRunExecRewritesProviderProxyEnvAndForwardsThroughProxy(t *testing.T) {
 		t.Fatalf("Save() error = %v", err)
 	}
 	secrets := keyring.NewMemoryStore()
-	if err := secrets.Put(ctx, keyring.ProviderAPIKey("openai/dev"), []byte("sk-real")); err != nil {
+	if err := secrets.Put(ctx, keyring.CredentialValue("openai-key/dev"), []byte("sk-real")); err != nil {
 		t.Fatalf("Put() error = %v", err)
 	}
 	runner := childRunnerFunc(func(ctx context.Context, input process.RunInput) (int, error) {
@@ -474,6 +670,54 @@ func TestRunExecRewritesProviderProxyEnvAndForwardsThroughProxy(t *testing.T) {
 	}
 	if providerPath != "/v1/chat/completions" {
 		t.Fatalf("provider path = %q, want /v1/chat/completions", providerPath)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExecResolvesInjectValueReference(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	writeBaseConfig(t, paths)
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	cfg.Profiles["database/dev"] = config.Profile{
+		Kind:           profile.KindInject,
+		CredentialName: "database/dev",
+		ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
+	}
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(ctx, keyring.CredentialValue("database/dev"), []byte("postgres://user:pass@localhost/db")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	runner := &fakeChildRunner{code: 23}
+	app := cli.New(cli.Options{
+		Paths:           paths,
+		Secrets:         secrets,
+		Profiles:        config.ProfileStore{Path: paths.ConfigFile},
+		Issuer:          &fakeTokenIssuer{},
+		Runner:          runner,
+		ProjectStartDir: t.TempDir(),
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{
+		"exec",
+		"--env", "DATABASE_URL=envvault://database/dev/value",
+		"--", "demo-client",
+	}, &stdout, &stderr)
+
+	if code != 23 {
+		t.Fatalf("Run() code = %d, want child code 23; stderr=%q", code, stderr.String())
+	}
+	if got := runner.input.Env["DATABASE_URL"]; got != "postgres://user:pass@localhost/db" {
+		t.Fatalf("DATABASE_URL = %q", got)
 	}
 	if stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
@@ -1407,6 +1651,43 @@ func (r *fakeResetter) Reset(_ context.Context, options resetpkg.Options) (reset
 	r.calls++
 	r.options = options
 	return r.result, r.err
+}
+
+type fakeAdminServer struct {
+	request admin.ServeRequest
+	err     error
+	calls   int
+}
+
+func (s *fakeAdminServer) Serve(_ context.Context, request admin.ServeRequest) error {
+	s.calls++
+	s.request = request
+	return s.err
+}
+
+type fakeAdminController struct {
+	startState  admin.State
+	status      admin.Status
+	stopState   admin.State
+	err         error
+	startCalls  int
+	statusCalls int
+	stopCalls   int
+}
+
+func (c *fakeAdminController) Start(context.Context, admin.StartRequest) (admin.State, error) {
+	c.startCalls++
+	return c.startState, c.err
+}
+
+func (c *fakeAdminController) Status(context.Context) (admin.Status, error) {
+	c.statusCalls++
+	return c.status, c.err
+}
+
+func (c *fakeAdminController) Stop(context.Context) (admin.State, error) {
+	c.stopCalls++
+	return c.stopState, c.err
 }
 
 type fakeDoctor struct {

@@ -28,8 +28,12 @@ func ProfileParentKey(profile string) Key {
 	return Key("envvault/profile/" + profile + "/parent-key")
 }
 
+func CredentialValue(name string) Key {
+	return Key("envvault/credential/" + name + "/value")
+}
+
 func ProviderAPIKey(profile string) Key {
-	return Key("envvault/provider/" + profile + "/api-key")
+	return CredentialValue(profile)
 }
 
 type MemoryStore struct {

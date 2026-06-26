@@ -1,0 +1,221 @@
+package admin_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/trknhr/envvault/internal/admin"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/profile"
+)
+
+func TestServerRequiresAdminTokenAndLocalHost(t *testing.T) {
+	server := admin.Server{Token: "admin-token"}
+
+	missingToken := httptest.NewRequest(http.MethodGet, "/api/profiles", nil)
+	missingToken.Host = "127.0.0.1:32123"
+	missingTokenRecorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(missingTokenRecorder, missingToken)
+	if missingTokenRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token status = %d, want %d", missingTokenRecorder.Code, http.StatusUnauthorized)
+	}
+
+	badHost := httptest.NewRequest(http.MethodGet, "/api/profiles", nil)
+	badHost.Host = "evil.example"
+	badHost.Header.Set("Authorization", "Bearer admin-token")
+	badHostRecorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(badHostRecorder, badHost)
+	if badHostRecorder.Code != http.StatusForbidden {
+		t.Fatalf("bad host status = %d, want %d", badHostRecorder.Code, http.StatusForbidden)
+	}
+
+	badOrigin := httptest.NewRequest(http.MethodPost, "/api/credentials", strings.NewReader(`{"name":"x","value":"y"}`))
+	badOrigin.Host = "localhost:32123"
+	badOrigin.Header.Set("Authorization", "Bearer admin-token")
+	badOrigin.Header.Set("Origin", "https://evil.example")
+	badOriginRecorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(badOriginRecorder, badOrigin)
+	if badOriginRecorder.Code != http.StatusForbidden {
+		t.Fatalf("bad origin status = %d, want %d", badOriginRecorder.Code, http.StatusForbidden)
+	}
+}
+
+func TestServerIndexContainsAdminFormsAndBearerAPIClient(t *testing.T) {
+	server := admin.Server{Token: "admin-token"}
+	req := httptest.NewRequest(http.MethodGet, "/?token=admin-token", nil)
+	req.Host = "localhost:32123"
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%q", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	for _, want := range []string{
+		"id=\"credential-form\"",
+		"id=\"inject-profile-form\"",
+		"id=\"proxy-profile-form\"",
+		"Authorization",
+		"Bearer",
+		"/api/credentials",
+		"/api/inject-profiles",
+		"/api/proxy-profiles",
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("body missing %q: %s", want, rec.Body.String())
+		}
+	}
+}
+
+func TestServerStoresCredentialWithoutReturningValue(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	writeAdminConfig(t, paths)
+	secrets := keyring.NewMemoryStore()
+	server := admin.Server{ConfigPath: paths.ConfigFile, Secrets: secrets, Token: "admin-token"}
+
+	req := authorizedRequest(http.MethodPost, "/api/credentials", `{"name":"openai-key/dev","value":"sk-secret"}`)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%q", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "sk-secret") {
+		t.Fatalf("response leaked credential value: %q", rec.Body.String())
+	}
+	stored, err := secrets.Get(ctx, keyring.CredentialValue("openai-key/dev"))
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if string(stored) != "sk-secret" {
+		t.Fatalf("stored credential = %q", stored)
+	}
+
+	req = authorizedRequest(http.MethodGet, "/api/profiles", "")
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%q", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "sk-secret") {
+		t.Fatalf("profiles response leaked credential value: %q", rec.Body.String())
+	}
+}
+
+func TestServerAddsInjectAndProxyProfiles(t *testing.T) {
+	paths := testPaths(t)
+	writeAdminConfig(t, paths)
+	server := admin.Server{ConfigPath: paths.ConfigFile, Secrets: keyring.NewMemoryStore(), Token: "admin-token"}
+
+	req := authorizedRequest(http.MethodPost, "/api/inject-profiles", `{"name":"database/dev","credential":"database-url/dev","project_binding":"none"}`)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("inject status = %d, want %d; body=%q", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	req = authorizedRequest(http.MethodPost, "/api/proxy-profiles", `{
+		"name":"openai/dev",
+		"credential":"openai-key/dev",
+		"provider":"generic",
+		"target_url":"https://api.openai.com/v1",
+		"allowed_paths":["/chat/completions"],
+		"allowed_methods":["POST"],
+		"project_binding":"none"
+	}`)
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("proxy status = %d, want %d; body=%q", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	injectProfile, err := cfg.Profile("database/dev")
+	if err != nil {
+		t.Fatalf("inject Profile() error = %v", err)
+	}
+	if injectProfile.Kind != profile.KindInject || injectProfile.CredentialName != "database-url/dev" {
+		t.Fatalf("inject profile = %#v", injectProfile)
+	}
+	proxyProfile, err := cfg.Profile("openai/dev")
+	if err != nil {
+		t.Fatalf("proxy Profile() error = %v", err)
+	}
+	if proxyProfile.Kind != profile.KindProviderProxy || proxyProfile.CredentialName != "openai-key/dev" {
+		t.Fatalf("proxy profile = %#v", proxyProfile)
+	}
+	if proxyProfile.LocalTokenTTL != 10*time.Minute {
+		t.Fatalf("LocalTokenTTL = %s, want 10m", proxyProfile.LocalTokenTTL)
+	}
+}
+
+func authorizedRequest(method, target, body string) *http.Request {
+	var reader *bytes.Reader
+	if body == "" {
+		reader = bytes.NewReader(nil)
+	} else {
+		reader = bytes.NewReader([]byte(body))
+	}
+	req := httptest.NewRequest(method, target, reader)
+	req.Host = "localhost:32123"
+	req.Header.Set("Authorization", "Bearer admin-token")
+	return req
+}
+
+func testPaths(t *testing.T) config.Paths {
+	t.Helper()
+	root := t.TempDir()
+	return config.Paths{
+		ConfigDir:  filepath.Join(root, "config"),
+		ConfigFile: filepath.Join(root, "config", "config.yaml"),
+		DataDir:    filepath.Join(root, "data"),
+		CacheDir:   filepath.Join(root, "cache"),
+	}
+}
+
+func writeAdminConfig(t *testing.T, paths config.Paths) {
+	t.Helper()
+	cfg := config.File{
+		Version: 1,
+		Installation: config.Installation{
+			ID: "01JADMINTEST",
+		},
+		Runtime: config.Runtime{
+			Talos: config.TalosRuntime{
+				Mode:      "managed",
+				Version:   "test-talos",
+				Lifecycle: "on-demand",
+			},
+		},
+		Defaults: config.Defaults{
+			TokenTTL:    config.Duration(10 * time.Minute),
+			MaxTokenTTL: config.Duration(time.Hour),
+		},
+		Profiles: map[string]config.Profile{},
+	}
+	if err := os.MkdirAll(paths.ConfigDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+}
+
+func decodeJSON(t *testing.T, body string, out any) {
+	t.Helper()
+	if err := json.Unmarshal([]byte(body), out); err != nil {
+		t.Fatalf("Unmarshal(%q) error = %v", body, err)
+	}
+}

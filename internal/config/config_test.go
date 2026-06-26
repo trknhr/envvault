@@ -97,6 +97,8 @@ defaults:
 profiles:
   openai/dev:
     kind: provider-proxy
+    credential: openai/dev
+    auth_mode: bearer
     provider: openai-compatible
     target_url: https://api.openai.com/v1
     allowed_paths:
@@ -124,6 +126,12 @@ profiles:
 	if got.Provider != "openai-compatible" {
 		t.Fatalf("Provider = %q", got.Provider)
 	}
+	if got.CredentialName != "openai/dev" {
+		t.Fatalf("CredentialName = %q", got.CredentialName)
+	}
+	if got.AuthMode != "bearer" {
+		t.Fatalf("AuthMode = %q", got.AuthMode)
+	}
 	if got.TargetURL != "https://api.openai.com/v1" {
 		t.Fatalf("TargetURL = %q", got.TargetURL)
 	}
@@ -135,6 +143,47 @@ profiles:
 	}
 	if got.LocalTokenTTL != 10*time.Minute {
 		t.Fatalf("LocalTokenTTL = %s, want 10m", got.LocalTokenTTL)
+	}
+}
+
+func TestLoadInjectProfile(t *testing.T) {
+	path := writeConfig(t, `
+version: 1
+installation:
+  id: 01JTESTINSTALL
+runtime:
+  talos:
+    mode: managed
+    version: test-talos
+    lifecycle: on-demand
+defaults:
+  token_ttl: 10m
+  max_token_ttl: 60m
+profiles:
+  database/dev:
+    kind: inject
+    credential: database/dev
+    project_binding:
+      mode: none
+`)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got, err := cfg.Profile("database/dev")
+	if err != nil {
+		t.Fatalf("Profile() error = %v", err)
+	}
+
+	if got.Kind != profile.KindInject {
+		t.Fatalf("Kind = %q, want inject", got.Kind)
+	}
+	if got.CredentialName != "database/dev" {
+		t.Fatalf("CredentialName = %q", got.CredentialName)
+	}
+	if got.ProjectBinding.Mode != profile.ProjectBindingNone {
+		t.Fatalf("ProjectBinding.Mode = %q, want none", got.ProjectBinding.Mode)
 	}
 }
 

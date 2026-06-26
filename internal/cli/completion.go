@@ -41,7 +41,7 @@ _envvault()
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  commands="init reset doctor profile secret proxy token exec open jwks issuer completion"
+  commands="init reset doctor profile secret credential proxy inject admin token exec open jwks issuer completion"
 
   case "$prev" in
     envvault)
@@ -76,8 +76,20 @@ _envvault()
       COMPREPLY=( $(compgen -W "add" -- "$cur") )
       return 0
       ;;
+    credential)
+      COMPREPLY=( $(compgen -W "add" -- "$cur") )
+      return 0
+      ;;
     proxy)
       COMPREPLY=( $(compgen -W "add" -- "$cur") )
+      return 0
+      ;;
+    inject)
+      COMPREPLY=( $(compgen -W "add" -- "$cur") )
+      return 0
+      ;;
+    admin)
+      COMPREPLY=( $(compgen -W "start status stop serve" -- "$cur") )
       return 0
       ;;
     token)
@@ -111,7 +123,10 @@ _envvault() {
     'doctor:inspect local EnvVault state'
     'profile:manage profiles'
     'secret:manage provider API keys'
+    'credential:manage raw credentials'
     'proxy:manage provider API proxy profiles'
+    'inject:manage raw injection profiles'
+    'admin:run the local admin server'
     'token:issue a process token'
     'exec:run a child process with leased credentials'
     'open:start a browser session'
@@ -136,7 +151,10 @@ _envvault() {
         issuer) _values 'issuer subcommands' 'show' ;;
         profile) _values 'profile subcommands' 'add' 'process' 'browser-session' ;;
         secret) _values 'secret subcommands' 'add' ;;
+        credential) _values 'credential subcommands' 'add' ;;
         proxy) _values 'proxy subcommands' 'add' ;;
+        inject) _values 'inject subcommands' 'add' ;;
+        admin) _values 'admin subcommands' 'start' 'status' 'stop' 'serve' ;;
         token) _values 'token options' '--format' '--allow-tty' '--quiet' ;;
         exec) _values 'exec options' '--env-file' '--env' '--' ;;
         open) _values 'open options' '--browser' '--print-url' ;;
@@ -149,7 +167,7 @@ _envvault "$@"
 `
 
 const fishCompletionScript = `# fish completion for envvault
-complete -c envvault -f -n '__fish_use_subcommand' -a 'init reset doctor profile secret proxy token exec open jwks issuer completion'
+complete -c envvault -f -n '__fish_use_subcommand' -a 'init reset doctor profile secret credential proxy inject admin token exec open jwks issuer completion'
 complete -c envvault -f -n '__fish_seen_subcommand_from doctor' -l repair
 complete -c envvault -f -n '__fish_seen_subcommand_from reset' -l dry-run
 complete -c envvault -f -n '__fish_seen_subcommand_from reset' -l yes
@@ -157,7 +175,10 @@ complete -c envvault -f -n '__fish_seen_subcommand_from jwks' -a 'show export'
 complete -c envvault -f -n '__fish_seen_subcommand_from issuer' -a 'show'
 complete -c envvault -f -n '__fish_seen_subcommand_from profile' -a 'add process browser-session'
 complete -c envvault -f -n '__fish_seen_subcommand_from secret' -a 'add'
+complete -c envvault -f -n '__fish_seen_subcommand_from credential' -a 'add'
 complete -c envvault -f -n '__fish_seen_subcommand_from proxy' -a 'add'
+complete -c envvault -f -n '__fish_seen_subcommand_from inject' -a 'add'
+complete -c envvault -f -n '__fish_seen_subcommand_from admin' -a 'start status stop serve'
 complete -c envvault -f -n '__fish_seen_subcommand_from token' -l format
 complete -c envvault -f -n '__fish_seen_subcommand_from token' -l allow-tty
 complete -c envvault -f -n '__fish_seen_subcommand_from token' -l quiet
@@ -172,7 +193,7 @@ const powershellCompletionScript = `# PowerShell completion for envvault
 Register-ArgumentCompleter -Native -CommandName envvault -ScriptBlock {
   param($wordToComplete, $commandAst, $cursorPosition)
   $words = $commandAst.CommandElements | ForEach-Object { $_.Extent.Text }
-  $commands = @('init','reset','doctor','profile','secret','proxy','token','exec','open','jwks','issuer','completion')
+  $commands = @('init','reset','doctor','profile','secret','credential','proxy','inject','admin','token','exec','open','jwks','issuer','completion')
   $values = switch ($words[1]) {
     'doctor' { @('--repair') }
     'reset' { @('--dry-run','--yes') }
@@ -180,7 +201,10 @@ Register-ArgumentCompleter -Native -CommandName envvault -ScriptBlock {
     'issuer' { @('show') }
     'profile' { @('add','process','browser-session') }
     'secret' { @('add') }
+    'credential' { @('add') }
     'proxy' { @('add') }
+    'inject' { @('add') }
+    'admin' { @('start','status','stop','serve') }
     'token' { @('--format','--allow-tty','--quiet') }
     'exec' { @('--env-file','--env','--') }
     'open' { @('--browser','--print-url') }

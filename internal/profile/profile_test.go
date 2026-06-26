@@ -31,6 +31,19 @@ func TestValidateAcceptsProviderProxyProfile(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsInjectProfile(t *testing.T) {
+	p := profile.Profile{
+		Name:           "database/dev",
+		Kind:           profile.KindInject,
+		CredentialName: "database/dev",
+		ProjectBinding: profile.ProjectBinding{Mode: profile.ProjectBindingNone},
+	}
+
+	if err := p.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
 func TestValidateRejectsInvalidProfiles(t *testing.T) {
 	tests := []struct {
 		name string
@@ -147,6 +160,13 @@ func TestValidateRejectsInvalidProfiles(t *testing.T) {
 				return p
 			}(),
 		},
+		{
+			name: "inject missing credential",
+			p: profile.Profile{
+				Name: "database/dev",
+				Kind: profile.KindInject,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -255,6 +275,8 @@ func providerProxyProfile() profile.Profile {
 	return profile.Profile{
 		Name:           "openai/dev",
 		Kind:           profile.KindProviderProxy,
+		CredentialName: "openai/dev",
+		AuthMode:       "bearer",
 		Provider:       "openai-compatible",
 		TargetURL:      "https://api.openai.com/v1",
 		AllowedPaths:   []string{"/chat/completions", "/responses"},

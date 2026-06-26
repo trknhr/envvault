@@ -34,6 +34,7 @@ func TestParseValueReturnsProxyReferenceParts(t *testing.T) {
 	}{
 		{value: "envvault://openai/dev/base-url", profile: "openai/dev", part: envref.PartBaseURL},
 		{value: "envvault://openai/dev/token", profile: "openai/dev", part: envref.PartToken},
+		{value: "envvault://database/dev/value", profile: "database/dev", part: envref.PartValue},
 	}
 
 	for _, tt := range tests {

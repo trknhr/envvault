@@ -79,8 +79,8 @@ func (p Planner) plan() (Result, error) {
 		string(keyring.TalosSigningKey(signingKeyID)),
 	}
 	for name, stored := range cfg.Profiles {
-		if stored.Kind == profile.KindProviderProxy {
-			keys = append(keys, string(keyring.ProviderAPIKey(name)))
+		if stored.Kind == profile.KindProviderProxy || stored.Kind == profile.KindInject {
+			keys = append(keys, string(keyring.CredentialValue(credentialName(stored, name))))
 			continue
 		}
 		keys = append(keys, string(keyring.ProfileParentKey(name)))
@@ -88,6 +88,13 @@ func (p Planner) plan() (Result, error) {
 	sort.Strings(files)
 	sort.Strings(keys)
 	return Result{Files: files, KeyringKeys: keys}, nil
+}
+
+func credentialName(stored config.Profile, fallback string) string {
+	if stored.CredentialName != "" {
+		return stored.CredentialName
+	}
+	return fallback
 }
 
 func configMissing(err error) bool {

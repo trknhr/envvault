@@ -59,6 +59,26 @@ const canary = "secret-canary"
 	}
 }
 
+func TestSecretScanIgnoresGeneratedOutputDirectories(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"bin", "tmp", "dist", "build"} {
+		path := filepath.Join(root, dir)
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(path, "artifact"), []byte("secret-canary"), 0o600); err != nil {
+			t.Fatalf("WriteFile(%s artifact) error = %v", dir, err)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"secret-scan", root}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+}
+
 func TestSecretScanRejectsUnknownCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 

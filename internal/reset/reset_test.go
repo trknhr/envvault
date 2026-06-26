@@ -26,7 +26,8 @@ func TestPlannerDryRunReportsEnvVaultOwnedFilesAndKeyringEntries(t *testing.T) {
 	putSecret(t, ctx, secrets, keyring.TalosHMACKey(), "secret-canary-hmac")
 	putSecret(t, ctx, secrets, keyring.TalosSigningKey("current"), "secret-canary-signing")
 	putSecret(t, ctx, secrets, keyring.ProfileParentKey("backend-a/dev"), "secret-canary-parent")
-	putSecret(t, ctx, secrets, keyring.ProviderAPIKey("openai/dev"), "secret-canary-provider")
+	putSecret(t, ctx, secrets, keyring.CredentialValue("openai-key/dev"), "secret-canary-provider")
+	putSecret(t, ctx, secrets, keyring.CredentialValue("database-url/dev"), "secret-canary-database")
 	repoFile := filepath.Join(t.TempDir(), ".env")
 	writeFile(t, repoFile, "TOKEN=envvault://backend-a/dev\n")
 
@@ -50,8 +51,11 @@ func TestPlannerDryRunReportsEnvVaultOwnedFilesAndKeyringEntries(t *testing.T) {
 	if !contains(result.KeyringKeys, string(keyring.ProfileParentKey("backend-a/dev"))) {
 		t.Fatalf("KeyringKeys = %#v, want profile parent key", result.KeyringKeys)
 	}
-	if !contains(result.KeyringKeys, string(keyring.ProviderAPIKey("openai/dev"))) {
+	if !contains(result.KeyringKeys, string(keyring.CredentialValue("openai-key/dev"))) {
 		t.Fatalf("KeyringKeys = %#v, want provider api key", result.KeyringKeys)
+	}
+	if !contains(result.KeyringKeys, string(keyring.CredentialValue("database-url/dev"))) {
+		t.Fatalf("KeyringKeys = %#v, want inject credential value", result.KeyringKeys)
 	}
 	if _, err := os.Stat(paths.ConfigFile); err != nil {
 		t.Fatalf("config removed during dry-run: %v", err)
@@ -81,7 +85,8 @@ func TestPlannerResetDeletesEnvVaultFilesAndKnownKeyringEntries(t *testing.T) {
 	putSecret(t, ctx, secrets, keyring.TalosHMACKey(), "hmac")
 	putSecret(t, ctx, secrets, keyring.TalosSigningKey("current"), "signing")
 	putSecret(t, ctx, secrets, keyring.ProfileParentKey("backend-a/dev"), "parent")
-	putSecret(t, ctx, secrets, keyring.ProviderAPIKey("openai/dev"), "provider")
+	putSecret(t, ctx, secrets, keyring.CredentialValue("openai-key/dev"), "provider")
+	putSecret(t, ctx, secrets, keyring.CredentialValue("database-url/dev"), "database")
 
 	result, err := reset.Planner{Paths: paths, Secrets: secrets}.Reset(ctx, reset.Options{})
 	if err != nil {
@@ -100,7 +105,8 @@ func TestPlannerResetDeletesEnvVaultFilesAndKnownKeyringEntries(t *testing.T) {
 		keyring.TalosHMACKey(),
 		keyring.TalosSigningKey("current"),
 		keyring.ProfileParentKey("backend-a/dev"),
-		keyring.ProviderAPIKey("openai/dev"),
+		keyring.CredentialValue("openai-key/dev"),
+		keyring.CredentialValue("database-url/dev"),
 	} {
 		if _, err := secrets.Get(ctx, key); err == nil {
 			t.Fatalf("key %s still exists after reset", key)
@@ -109,8 +115,11 @@ func TestPlannerResetDeletesEnvVaultFilesAndKnownKeyringEntries(t *testing.T) {
 	if !contains(result.KeyringKeys, string(keyring.ProfileParentKey("backend-a/dev"))) {
 		t.Fatalf("KeyringKeys = %#v, want profile parent key", result.KeyringKeys)
 	}
-	if !contains(result.KeyringKeys, string(keyring.ProviderAPIKey("openai/dev"))) {
+	if !contains(result.KeyringKeys, string(keyring.CredentialValue("openai-key/dev"))) {
 		t.Fatalf("KeyringKeys = %#v, want provider api key", result.KeyringKeys)
+	}
+	if !contains(result.KeyringKeys, string(keyring.CredentialValue("database-url/dev"))) {
+		t.Fatalf("KeyringKeys = %#v, want inject credential value", result.KeyringKeys)
 	}
 }
 
@@ -154,11 +163,20 @@ func writeResetConfig(t *testing.T, paths config.Paths) {
 			},
 			"openai/dev": {
 				Kind:           profile.KindProviderProxy,
+				CredentialName: "openai-key/dev",
+				AuthMode:       "bearer",
 				Provider:       "openai-compatible",
 				TargetURL:      "https://api.openai.com/v1",
 				AllowedPaths:   []string{"/chat/completions"},
 				AllowedMethods: []string{"POST"},
 				LocalTokenTTL:  config.Duration(10 * time.Minute),
+			},
+			"database/dev": {
+				Kind:           profile.KindInject,
+				CredentialName: "database-url/dev",
+				ProjectBinding: config.ProjectBinding{
+					Mode: profile.ProjectBindingNone,
+				},
 			},
 		},
 	}

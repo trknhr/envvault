@@ -16,6 +16,7 @@ const (
 	KindProcess        Kind = "process"
 	KindBrowserSession Kind = "browser-session"
 	KindProviderProxy  Kind = "provider-proxy"
+	KindInject         Kind = "inject"
 )
 
 type ProjectBindingMode string
@@ -53,6 +54,8 @@ type Profile struct {
 	PostLoginURL      string
 	AllowedHosts      []string
 
+	CredentialName string
+	AuthMode       string
 	Provider       string
 	TargetURL      string
 	AllowedPaths   []string
@@ -83,6 +86,8 @@ func (p Profile) Validate() error {
 		return p.validateBrowserSession()
 	case KindProviderProxy:
 		return p.validateProviderProxy()
+	case KindInject:
+		return p.validateInject()
 	default:
 		return configInvalid("unknown profile kind")
 	}
@@ -183,9 +188,17 @@ func (p Profile) validateBrowserSession() error {
 
 func (p Profile) validateProviderProxy() error {
 	switch strings.TrimSpace(p.Provider) {
-	case "openai-compatible":
+	case "", "generic", "openai-compatible":
 	default:
-		return configInvalid("provider must be openai-compatible")
+		return configInvalid("provider must be generic or openai-compatible")
+	}
+	switch strings.TrimSpace(p.AuthMode) {
+	case "", "bearer":
+	default:
+		return configInvalid("auth mode must be bearer")
+	}
+	if strings.TrimSpace(p.CredentialName) == "" {
+		return configInvalid("credential is required")
 	}
 	if err := validateHTTPSOrLocalhostURL(p.TargetURL, "target url"); err != nil {
 		return err
@@ -208,6 +221,13 @@ func (p Profile) validateProviderProxy() error {
 	}
 	if p.LocalTokenTTL <= 0 {
 		return configInvalid("local token ttl must be positive")
+	}
+	return nil
+}
+
+func (p Profile) validateInject() error {
+	if strings.TrimSpace(p.CredentialName) == "" {
+		return configInvalid("credential is required")
 	}
 	return nil
 }
