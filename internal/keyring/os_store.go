@@ -3,11 +3,11 @@ package keyring
 import (
 	"context"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 	oskeyring "github.com/zalando/go-keyring"
 )
 
-const defaultService = "credlease"
+const defaultService = "envvault"
 
 type driver interface {
 	Get(service, account string) (string, error)

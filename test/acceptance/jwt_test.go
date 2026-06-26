@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	backendgo "github.com/trknhr/credlease/examples/backend-go"
+	backendgo "github.com/trknhr/envvault/examples/backend-go"
 )
 
 func TestSampleBackendEnforcesProcessJWTTTLScopesResourcesAndJWKS(t *testing.T) {
@@ -59,7 +59,7 @@ func newAcceptanceProcessBackend(t *testing.T, key *rsa.PrivateKey, resource str
 	t.Helper()
 	backend, err := backendgo.New(backendgo.Config{
 		JWKS:      acceptanceJWKSForRSA(t, &key.PublicKey),
-		Issuer:    "credlease-local:test-install",
+		Issuer:    "envvault-local:test-install",
 		Resource:  resource,
 		ClockSkew: time.Second,
 		Now:       now,
@@ -75,15 +75,15 @@ func newAcceptanceProcessBackend(t *testing.T, key *rsa.PrivateKey, resource str
 func acceptanceProcessJWT(t *testing.T, key *rsa.PrivateKey, now time.Time, resource string, scopes string, ttl time.Duration) string {
 	t.Helper()
 	token, err := signAcceptanceRS256(key, map[string]any{
-		"iss":                  "credlease-local:test-install",
-		"sub":                  "local-user",
-		"nbf":                  now.Add(-time.Second).Unix(),
-		"exp":                  now.Add(ttl).Unix(),
-		"scope":                scopes,
-		"credlease_profile":    "backend-a/dev",
-		"credlease_resource":   resource,
-		"credlease_session_id": "session-process-1",
-		"credlease_purpose":    "process",
+		"iss":                 "envvault-local:test-install",
+		"sub":                 "local-user",
+		"nbf":                 now.Add(-time.Second).Unix(),
+		"exp":                 now.Add(ttl).Unix(),
+		"scope":               scopes,
+		"envvault_profile":    "backend-a/dev",
+		"envvault_resource":   resource,
+		"envvault_session_id": "session-process-1",
+		"envvault_purpose":    "process",
 	})
 	if err != nil {
 		t.Fatalf("signAcceptanceRS256() error = %v", err)

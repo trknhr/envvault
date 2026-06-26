@@ -10,20 +10,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/audit"
-	"github.com/trknhr/credlease/internal/bootstrap"
-	"github.com/trknhr/credlease/internal/browser"
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/config"
-	doctorpkg "github.com/trknhr/credlease/internal/doctor"
-	"github.com/trknhr/credlease/internal/issuer/local"
-	"github.com/trknhr/credlease/internal/lock"
-	"github.com/trknhr/credlease/internal/process"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/profilemgr"
-	"github.com/trknhr/credlease/internal/projectbinding"
-	resetpkg "github.com/trknhr/credlease/internal/reset"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/audit"
+	"github.com/trknhr/envvault/internal/bootstrap"
+	"github.com/trknhr/envvault/internal/browser"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/config"
+	doctorpkg "github.com/trknhr/envvault/internal/doctor"
+	"github.com/trknhr/envvault/internal/issuer/local"
+	"github.com/trknhr/envvault/internal/lock"
+	"github.com/trknhr/envvault/internal/process"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/profilemgr"
+	"github.com/trknhr/envvault/internal/projectbinding"
+	resetpkg "github.com/trknhr/envvault/internal/reset"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 )
 
 func TestDefaultOptionsWireResetAndDoctorServices(t *testing.T) {
@@ -132,7 +132,7 @@ func TestManagedTalosLocalConfigUsesDedicatedRuntimeDBAndIssuer(t *testing.T) {
 	if localConfig.DatabaseDSN != wantDSN {
 		t.Fatalf("DatabaseDSN = %q, want %q", localConfig.DatabaseDSN, wantDSN)
 	}
-	if localConfig.Issuer != "credlease-local:01JTESTINSTALL" {
+	if localConfig.Issuer != "envvault-local:01JTESTINSTALL" {
 		t.Fatalf("Issuer = %q", localConfig.Issuer)
 	}
 	if !bytes.Equal(localConfig.HMACSecret, hmacSecret) {
@@ -143,6 +143,54 @@ func TestManagedTalosLocalConfigUsesDedicatedRuntimeDBAndIssuer(t *testing.T) {
 	}
 	if localConfig.SigningKeyID != "current" {
 		t.Fatalf("SigningKeyID = %q", localConfig.SigningKeyID)
+	}
+}
+
+func TestManagedTalosLocalConfigUsesWhitespaceSafeSQLiteAlias(t *testing.T) {
+	root := t.TempDir()
+	paths := config.Paths{
+		ConfigDir:  filepath.Join(root, "Application Support", "envvault"),
+		ConfigFile: filepath.Join(root, "Application Support", "envvault", "config.yaml"),
+		DataDir:    filepath.Join(root, "Application Support", "envvault"),
+		CacheDir:   filepath.Join(root, "cache"),
+	}
+
+	localConfig, err := managedTalosLocalConfig(bootstrap.RuntimePrepareRequest{
+		Paths:          paths,
+		InstallationID: "01JTESTINSTALL",
+		HMACSecret:     []byte("0123456789abcdef0123456789abcdef"),
+		SigningSeed:    []byte("abcdef0123456789abcdef0123456789"),
+		SigningKeyID:   "current",
+	}, "127.0.0.1:12345", "127.0.0.1:12346")
+	if err != nil {
+		t.Fatalf("managedTalosLocalConfig() error = %v", err)
+	}
+
+	if strings.Contains(localConfig.DatabaseDSN, "Application Support") {
+		t.Fatalf("DatabaseDSN = %q, want whitespace-safe alias path", localConfig.DatabaseDSN)
+	}
+	if !strings.HasPrefix(localConfig.DatabaseDSN, "sqlite3://") {
+		t.Fatalf("DatabaseDSN = %q, want sqlite3 DSN", localConfig.DatabaseDSN)
+	}
+
+	aliasRoot := filepath.Join(paths.CacheDir, "talos-db-aliases")
+	entries, err := os.ReadDir(aliasRoot)
+	if err != nil {
+		t.Fatalf("ReadDir(%q) error = %v", aliasRoot, err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("alias entries = %d, want 1", len(entries))
+	}
+	aliasDir := filepath.Join(aliasRoot, entries[0].Name())
+	target, err := os.Readlink(aliasDir)
+	if err != nil {
+		t.Fatalf("Readlink(%q) error = %v", aliasDir, err)
+	}
+	if target != paths.DataDir {
+		t.Fatalf("alias target = %q, want %q", target, paths.DataDir)
+	}
+	if !strings.Contains(localConfig.DatabaseDSN, filepath.ToSlash(filepath.Join(aliasDir, talosSQLiteFilename))) {
+		t.Fatalf("DatabaseDSN = %q, want alias sqlite path %q", localConfig.DatabaseDSN, filepath.Join(aliasDir, talosSQLiteFilename))
 	}
 }
 
@@ -198,8 +246,8 @@ func TestTemporaryTalosConfigPathUsesDoctorRepairableTempDirectory(t *testing.T)
 	if got, want := filepath.Dir(path), filepath.Join(cacheDir, "tmp"); got != want {
 		t.Fatalf("temporary config dir = %q, want %q", got, want)
 	}
-	if !strings.HasPrefix(filepath.Base(path), "credlease-") {
-		t.Fatalf("temporary config basename = %q, want credlease-*", filepath.Base(path))
+	if !strings.HasPrefix(filepath.Base(path), "envvault-") {
+		t.Fatalf("temporary config basename = %q, want envvault-*", filepath.Base(path))
 	}
 	if filepath.Ext(path) != ".yaml" {
 		t.Fatalf("temporary config extension = %q, want .yaml", filepath.Ext(path))
@@ -220,7 +268,7 @@ func TestManagedTalosProcessMarkerLifecycle(t *testing.T) {
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	path := filepath.Join(t.TempDir(), "cache", "runtime.lock", "talos-process.json")
 
-	if err := writeManagedTalosProcessMarker(path, 12345, "/usr/local/bin/talos", "/tmp/credlease-runtime.yaml", now); err != nil {
+	if err := writeManagedTalosProcessMarker(path, 12345, "/usr/local/bin/talos", "/tmp/envvault-runtime.yaml", now); err != nil {
 		t.Fatalf("writeManagedTalosProcessMarker() error = %v", err)
 	}
 	raw, err := os.ReadFile(path)
@@ -237,7 +285,7 @@ func TestManagedTalosProcessMarkerLifecycle(t *testing.T) {
 	if marker.BinaryPath != "/usr/local/bin/talos" {
 		t.Fatalf("BinaryPath = %q", marker.BinaryPath)
 	}
-	if marker.ConfigPath != "/tmp/credlease-runtime.yaml" {
+	if marker.ConfigPath != "/tmp/envvault-runtime.yaml" {
 		t.Fatalf("ConfigPath = %q", marker.ConfigPath)
 	}
 	if !marker.StartedAt.Equal(now.UTC()) {

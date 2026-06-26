@@ -11,8 +11,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/trknhr/credlease/pkg/browsersession"
-	"github.com/trknhr/credlease/pkg/verifier"
+	"github.com/trknhr/envvault/pkg/browsersession"
+	"github.com/trknhr/envvault/pkg/verifier"
 	_ "modernc.org/sqlite"
 )
 
@@ -23,9 +23,9 @@ func main() {
 func run(ctx context.Context, args []string) int {
 	var jwksPath, issuer, resource, sqlitePath, listen string
 	flagSet := flag.NewFlagSet("browser-session-go", flag.ContinueOnError)
-	flagSet.StringVar(&jwksPath, "jwks", "credlease-jwks.json", "path to exported Credlease JWKS")
-	flagSet.StringVar(&issuer, "issuer", "", "expected Credlease issuer")
-	flagSet.StringVar(&resource, "resource", "http://127.0.0.1:8080", "expected Credlease resource")
+	flagSet.StringVar(&jwksPath, "jwks", "envvault-jwks.json", "path to exported EnvVault JWKS")
+	flagSet.StringVar(&issuer, "issuer", "", "expected EnvVault issuer")
+	flagSet.StringVar(&resource, "resource", "http://127.0.0.1:8080", "expected EnvVault resource")
 	flagSet.StringVar(&sqlitePath, "sqlite", "browser-session.sqlite", "SQLite replay/code store path")
 	flagSet.StringVar(&listen, "listen", "127.0.0.1:8080", "listen address")
 	if err := flagSet.Parse(args); err != nil {
@@ -69,14 +69,14 @@ func run(ctx context.Context, args []string) int {
 		ReplayStore:   store,
 		CodeStore:     store,
 		SessionIssuer: cookieIssuer{},
-		CompleteURL:   resource + "/auth/credlease/complete",
+		CompleteURL:   resource + "/auth/envvault/complete",
 		PostLoginURL:  resource + "/",
 		LoginCodeTTL:  30 * time.Second,
 		WebSessionTTL: 30 * time.Minute,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/auth/credlease/browser-sessions", server.Exchange)
-	mux.HandleFunc("/auth/credlease/complete", server.Complete)
+	mux.HandleFunc("/auth/envvault/browser-sessions", server.Exchange)
+	mux.HandleFunc("/auth/envvault/complete", server.Complete)
 	if err := http.ListenAndServe(listen, mux); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -98,7 +98,7 @@ func (cookieIssuer) Issue(ctx context.Context, _ browsersession.BrowserGrant, tt
 		return browsersession.SessionCookie{}, err
 	}
 	return browsersession.SessionCookie{
-		Name:     "credlease_admin_session",
+		Name:     "envvault_admin_session",
 		Value:    base64.RawURLEncoding.EncodeToString(raw[:]),
 		Path:     "/",
 		Expires:  time.Now().Add(ttl),

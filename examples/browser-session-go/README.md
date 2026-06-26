@@ -10,8 +10,8 @@ It uses:
 
 ```bash
 go run ./examples/browser-session-go/cmd/server \
-  --jwks ./credlease-jwks.json \
-  --issuer credlease-local:test-install \
+  --jwks ./envvault-jwks.json \
+  --issuer envvault-local:test-install \
   --resource http://127.0.0.1:8080 \
   --sqlite ./browser-session.sqlite
 ```

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/pkg/browsersession"
+	"github.com/trknhr/envvault/pkg/browsersession"
 	_ "modernc.org/sqlite"
 )
 

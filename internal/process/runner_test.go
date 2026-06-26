@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/process"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/process"
 )
 
 func TestRunnerInjectsEnvironmentAndCapturesOutput(t *testing.T) {
@@ -23,10 +23,10 @@ func TestRunnerInjectsEnvironmentAndCapturesOutput(t *testing.T) {
 	code, err := runner.Run(context.Background(), process.RunInput{
 		Command: helperCommand("env"),
 		Env: map[string]string{
-			"CREDLEASE_HELPER_PROCESS": "1",
-			"TOKEN":                    "leased-jwt",
-			"PLAIN":                    "value",
-			"REMOVE":                   "",
+			"ENVVAULT_HELPER_PROCESS": "1",
+			"TOKEN":                   "leased-jwt",
+			"PLAIN":                   "value",
+			"REMOVE":                  "",
 		},
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -50,7 +50,7 @@ func TestRunnerPropagatesExitCode(t *testing.T) {
 
 	code, err := runner.Run(context.Background(), process.RunInput{
 		Command: helperCommand("exit-42"),
-		Env:     map[string]string{"CREDLEASE_HELPER_PROCESS": "1"},
+		Env:     map[string]string{"ENVVAULT_HELPER_PROCESS": "1"},
 		Stdout:  new(bytes.Buffer),
 		Stderr:  new(bytes.Buffer),
 	})
@@ -108,7 +108,7 @@ func TestRunnerForwardsSignals(t *testing.T) {
 	go func() {
 		code, err := runner.Run(context.Background(), process.RunInput{
 			Command: helperCommand("wait-signal"),
-			Env:     map[string]string{"CREDLEASE_HELPER_PROCESS": "1"},
+			Env:     map[string]string{"ENVVAULT_HELPER_PROCESS": "1"},
 			Signals: signals,
 			Stdout:  &stdout,
 			Stderr:  &stderr,
@@ -136,7 +136,7 @@ func TestRunnerForwardsSignals(t *testing.T) {
 }
 
 func TestHelperProcess(t *testing.T) {
-	if os.Getenv("CREDLEASE_HELPER_PROCESS") != "1" {
+	if os.Getenv("ENVVAULT_HELPER_PROCESS") != "1" {
 		return
 	}
 	args := os.Args

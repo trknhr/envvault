@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trknhr/credlease/pkg/browsersession"
-	"github.com/trknhr/credlease/pkg/verifier"
+	"github.com/trknhr/envvault/pkg/browsersession"
+	"github.com/trknhr/envvault/pkg/verifier"
 )
 
 const (
 	defaultReadScope           = "document:read"
 	defaultWriteScope          = "document:write"
 	defaultBrowserSessionScope = "browser:session:create"
-	defaultSessionCookieName   = "credlease_admin_session"
+	defaultSessionCookieName   = "envvault_admin_session"
 )
 
 type Config struct {
@@ -93,8 +93,8 @@ func New(config Config) (*Backend, error) {
 	backend.mux = http.NewServeMux()
 	backend.mux.HandleFunc("/documents/read", backend.requireProcessScope(backend.readScope, backend.readDocument))
 	backend.mux.HandleFunc("/documents/write", backend.requireProcessScope(backend.writeScope, backend.writeDocument))
-	backend.mux.HandleFunc("/auth/credlease/browser-sessions", backend.browserSession.Exchange)
-	backend.mux.HandleFunc("/auth/credlease/complete", backend.browserSession.Complete)
+	backend.mux.HandleFunc("/auth/envvault/browser-sessions", backend.browserSession.Exchange)
+	backend.mux.HandleFunc("/auth/envvault/complete", backend.browserSession.Complete)
 	return backend, nil
 }
 

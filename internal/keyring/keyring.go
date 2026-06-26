@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 )
 
 type Key string
@@ -17,15 +17,19 @@ type Store interface {
 }
 
 func TalosHMACKey() Key {
-	return "credlease/talos/hmac/current"
+	return "envvault/talos/hmac/current"
 }
 
 func TalosSigningKey(kid string) Key {
-	return Key("credlease/talos/signing/" + kid)
+	return Key("envvault/talos/signing/" + kid)
 }
 
 func ProfileParentKey(profile string) Key {
-	return Key("credlease/profile/" + profile + "/parent-key")
+	return Key("envvault/profile/" + profile + "/parent-key")
+}
+
+func ProviderAPIKey(profile string) Key {
+	return Key("envvault/provider/" + profile + "/api-key")
 }
 
 type MemoryStore struct {

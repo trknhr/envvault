@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const secretScanUsage = "usage: credlease-ci secret-scan [root]"
+const secretScanUsage = "usage: envvault-ci secret-scan [root]"
 
 var secretMarkers = [][]byte{
 	[]byte("secret-canary"),

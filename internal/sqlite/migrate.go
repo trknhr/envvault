@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 	_ "modernc.org/sqlite"
 )
 

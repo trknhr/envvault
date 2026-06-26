@@ -18,17 +18,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/keyring"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/keyring"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 	_ "modernc.org/sqlite"
 )
 
 const (
-	sqliteFilename      = "credlease.sqlite"
+	sqliteFilename      = "envvault.sqlite"
 	talosSQLiteFilename = "talos.sqlite"
-	jwksFilename        = "credlease-jwks.json"
+	jwksFilename        = "envvault-jwks.json"
 	signingKeyID        = "current"
 	runtimeLockDir      = "runtime.lock"
 	runtimeProcessFile  = "talos-process.json"
@@ -360,7 +360,7 @@ func (c Checker) checkTempFiles(result *Result) {
 
 	stale := 0
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "credlease-") {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "envvault-") {
 			continue
 		}
 		info, err := entry.Info()
@@ -460,7 +460,7 @@ func (c Checker) repairTempFiles(result *Result) {
 
 	removed := 0
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "credlease-") {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "envvault-") {
 			continue
 		}
 		info, err := entry.Info()

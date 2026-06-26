@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/clerr"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 )
 
 func TestRuntimeStartsOnLoopbackRandomPortAndStopsCleanly(t *testing.T) {
@@ -26,7 +26,7 @@ func TestRuntimeStartsOnLoopbackRandomPortAndStopsCleanly(t *testing.T) {
 		StartTimeout:  5 * time.Second,
 		StopTimeout:   5 * time.Second,
 		PollInterval:  10 * time.Millisecond,
-		ExtraEnv:      []string{"CREDLEASE_TALOS_RUNTIME_HELPER=1"},
+		ExtraEnv:      []string{"ENVVAULT_TALOS_RUNTIME_HELPER=1"},
 		StopSignal:    os.Interrupt,
 		DialTimeout:   50 * time.Millisecond,
 		PortCloseWait: time.Second,
@@ -73,7 +73,7 @@ func TestRuntimeStartsOnConfiguredLoopbackAddress(t *testing.T) {
 		StartTimeout:  5 * time.Second,
 		StopTimeout:   5 * time.Second,
 		PollInterval:  10 * time.Millisecond,
-		ExtraEnv:      []string{"CREDLEASE_TALOS_RUNTIME_HELPER=1"},
+		ExtraEnv:      []string{"ENVVAULT_TALOS_RUNTIME_HELPER=1"},
 		StopSignal:    os.Interrupt,
 		DialTimeout:   50 * time.Millisecond,
 		PortCloseWait: time.Second,
@@ -100,7 +100,7 @@ func TestRuntimeStartFailureKillsProcessAndRedactsOutput(t *testing.T) {
 		StartTimeout:  50 * time.Millisecond,
 		StopTimeout:   5 * time.Second,
 		PollInterval:  5 * time.Millisecond,
-		ExtraEnv:      []string{"CREDLEASE_TALOS_RUNTIME_HELPER=1"},
+		ExtraEnv:      []string{"ENVVAULT_TALOS_RUNTIME_HELPER=1"},
 		StopSignal:    os.Interrupt,
 		DialTimeout:   10 * time.Millisecond,
 		PortCloseWait: time.Second,
@@ -128,7 +128,7 @@ func TestRuntimeInvokesProcessLifecycleCallbacks(t *testing.T) {
 		StartTimeout:  5 * time.Second,
 		StopTimeout:   5 * time.Second,
 		PollInterval:  10 * time.Millisecond,
-		ExtraEnv:      []string{"CREDLEASE_TALOS_RUNTIME_HELPER=1"},
+		ExtraEnv:      []string{"ENVVAULT_TALOS_RUNTIME_HELPER=1"},
 		StopSignal:    os.Interrupt,
 		DialTimeout:   50 * time.Millisecond,
 		PortCloseWait: time.Second,
@@ -172,7 +172,7 @@ func TestRuntimeVersionRunsConfiguredVersionCommand(t *testing.T) {
 	runtime := runtimetalos.NewRuntime(runtimetalos.RuntimeOptions{
 		BinaryPath:  os.Args[0],
 		VersionArgs: []string{"-test.run=TestTalosRuntimeHelperProcess", "--", "version", "unused"},
-		ExtraEnv:    []string{"CREDLEASE_TALOS_RUNTIME_HELPER=1"},
+		ExtraEnv:    []string{"ENVVAULT_TALOS_RUNTIME_HELPER=1"},
 	})
 
 	version, err := runtime.Version(context.Background())
@@ -190,8 +190,8 @@ func TestRuntimeMigrateRunsConfiguredMigrationCommand(t *testing.T) {
 		BinaryPath:  os.Args[0],
 		MigrateArgs: []string{"-test.run=TestTalosRuntimeHelperProcess", "--", "migrate", "unused"},
 		ExtraEnv: []string{
-			"CREDLEASE_TALOS_RUNTIME_HELPER=1",
-			"CREDLEASE_MIGRATION_MARKER=" + marker,
+			"ENVVAULT_TALOS_RUNTIME_HELPER=1",
+			"ENVVAULT_MIGRATION_MARKER=" + marker,
 		},
 	})
 
@@ -204,7 +204,7 @@ func TestRuntimeMigrateRunsConfiguredMigrationCommand(t *testing.T) {
 }
 
 func TestTalosRuntimeHelperProcess(t *testing.T) {
-	if os.Getenv("CREDLEASE_TALOS_RUNTIME_HELPER") != "1" {
+	if os.Getenv("ENVVAULT_TALOS_RUNTIME_HELPER") != "1" {
 		return
 	}
 	args := os.Args
@@ -231,7 +231,7 @@ func TestTalosRuntimeHelperProcess(t *testing.T) {
 		fmt.Println("talos-test v0.1.0")
 		os.Exit(0)
 	case "migrate":
-		if err := os.WriteFile(os.Getenv("CREDLEASE_MIGRATION_MARKER"), []byte("ok"), 0o600); err != nil {
+		if err := os.WriteFile(os.Getenv("ENVVAULT_MIGRATION_MARKER"), []byte("ok"), 0o600); err != nil {
 			fmt.Fprintf(os.Stderr, "write marker failed: %v\n", err)
 			os.Exit(2)
 		}

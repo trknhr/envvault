@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const inspectPortsEnv = "CREDLEASE_INSPECT_PORTS"
+const inspectPortsEnv = "ENVVAULT_INSPECT_PORTS"
 
 type inspectInput struct {
 	Args      []string

@@ -14,14 +14,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/cli"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/issuer/talosruntime"
-	"github.com/trknhr/credlease/internal/process"
-	"github.com/trknhr/credlease/internal/profile"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
-	verifierpkg "github.com/trknhr/credlease/pkg/verifier"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/cli"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/issuer/talosruntime"
+	"github.com/trknhr/envvault/internal/process"
+	"github.com/trknhr/envvault/internal/profile"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
+	verifierpkg "github.com/trknhr/envvault/pkg/verifier"
 )
 
 func TestExecResolvesReferenceAndDoesNotPassParentAuthority(t *testing.T) {
@@ -29,7 +29,7 @@ func TestExecResolvesReferenceAndDoesNotPassParentAuthority(t *testing.T) {
 	inspectChild := buildFixture(t, repoRoot, "inspect-child")
 	projectRoot := t.TempDir()
 	envFile := filepath.Join(projectRoot, ".env")
-	originalEnv := "TOKEN=credlease://backend-a/dev\nPLAIN=file-value\n"
+	originalEnv := "TOKEN=envvault://backend-a/dev\nPLAIN=file-value\n"
 	if err := os.WriteFile(envFile, []byte(originalEnv), 0o600); err != nil {
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
@@ -38,7 +38,7 @@ func TestExecResolvesReferenceAndDoesNotPassParentAuthority(t *testing.T) {
 	key := newAcceptanceRSAKey(t)
 	tokenIssuer := &signingAcceptanceIssuer{
 		key:    key,
-		issuer: "credlease-local:test-install",
+		issuer: "envvault-local:test-install",
 		now:    now,
 	}
 	app := newExecApp(projectRoot, fakeProfiles(), tokenIssuer)
@@ -62,7 +62,7 @@ func TestExecResolvesReferenceAndDoesNotPassParentAuthority(t *testing.T) {
 	}
 	tokenVerifier, err := verifierpkg.New(verifierpkg.Options{
 		JWKS:          acceptanceJWKSForRSA(t, &key.PublicKey),
-		Issuer:        "credlease-local:test-install",
+		Issuer:        "envvault-local:test-install",
 		Resource:      "https://api.dev.example.com",
 		RequireIssuer: true,
 		Now:           func() time.Time { return now },
@@ -81,9 +81,9 @@ func TestExecResolvesReferenceAndDoesNotPassParentAuthority(t *testing.T) {
 		t.Fatalf("child PLAIN = %q, want file value", got)
 	}
 	for _, key := range []string{
-		"CREDLEASE_TALOS_HMAC_SECRET",
-		"CREDLEASE_TALOS_SIGNING_KEY",
-		"CREDLEASE_PROFILE_PARENT_KEY",
+		"ENVVAULT_TALOS_HMAC_SECRET",
+		"ENVVAULT_TALOS_SIGNING_KEY",
+		"ENVVAULT_PROFILE_PARENT_KEY",
 	} {
 		if _, ok := child.Env[key]; ok {
 			t.Fatalf("child environment leaked %s", key)
@@ -101,7 +101,7 @@ func TestExecResolvesReferenceAndDoesNotPassParentAuthority(t *testing.T) {
 func TestExecUnknownProfileFailsClosedWithoutParentFallback(t *testing.T) {
 	projectRoot := t.TempDir()
 	envFile := filepath.Join(projectRoot, ".env")
-	if err := os.WriteFile(envFile, []byte("TOKEN=credlease://unknown/dev\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://unknown/dev\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
 
@@ -137,7 +137,7 @@ func TestExecStartsChildAfterOnDemandRuntimeStops(t *testing.T) {
 	inspectChild := buildFixture(t, repoRoot, "inspect-child")
 	projectRoot := t.TempDir()
 	envFile := filepath.Join(projectRoot, ".env")
-	if err := os.WriteFile(envFile, []byte("TOKEN=credlease://backend-a/dev\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://backend-a/dev\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
 
@@ -150,7 +150,7 @@ func TestExecStartsChildAfterOnDemandRuntimeStops(t *testing.T) {
 		},
 	}
 	app := newExecAppWithParentEnv(projectRoot, fakeProfiles(), tokenIssuer,
-		"CREDLEASE_INSPECT_PORTS="+runtime.Address(),
+		"ENVVAULT_INSPECT_PORTS="+runtime.Address(),
 	)
 	var stdout, stderr bytes.Buffer
 
@@ -197,7 +197,7 @@ func TestExecStartsChildAfterOnDemandRuntimeStops(t *testing.T) {
 func TestExecRejectsQueryReferenceBeforeStartingChild(t *testing.T) {
 	projectRoot := t.TempDir()
 	envFile := filepath.Join(projectRoot, ".env")
-	if err := os.WriteFile(envFile, []byte("TOKEN=credlease://backend-a/dev?scope=admin&ttl=24h\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://backend-a/dev?scope=admin&ttl=24h\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
 
@@ -366,9 +366,9 @@ func newExecAppWithParentEnv(projectRoot string, profiles fakeProfileResolver, t
 	parent := append([]string{}, os.Environ()...)
 	parent = append(parent,
 		"TOKEN=raw-parent-secret",
-		"CREDLEASE_TALOS_HMAC_SECRET=hmac-secret-canary",
-		"CREDLEASE_TALOS_SIGNING_KEY=signing-secret-canary",
-		"CREDLEASE_PROFILE_PARENT_KEY=parent-secret-canary",
+		"ENVVAULT_TALOS_HMAC_SECRET=hmac-secret-canary",
+		"ENVVAULT_TALOS_SIGNING_KEY=signing-secret-canary",
+		"ENVVAULT_PROFILE_PARENT_KEY=parent-secret-canary",
 	)
 	parent = append(parent, extraParentEnv...)
 	return cli.New(cli.Options{

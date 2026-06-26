@@ -1,8 +1,8 @@
-# Credlease Core Foundation Implementation Plan
+# EnvVault Core Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first testable Go foundation for the Credlease Local MVP: strict reference parsing, profile policy validation, launch URL policy checks, and a minimal CLI shell.
+**Goal:** Build the first testable Go foundation for the EnvVault Local MVP: strict reference parsing, profile policy validation, launch URL policy checks, and a minimal CLI shell.
 
 **Architecture:** Keep pure policy code independent from Talos, keyring, and process execution so the security invariants can be tested without external services. Later work will wire these packages into managed Talos runtime, OS keyring adapters, `exec`, `open`, and acceptance tests.
 
@@ -13,9 +13,9 @@
 ## File Structure
 
 - `go.mod`: Go module declaration.
-- `cmd/credlease/main.go`: Minimal CLI entrypoint and command dispatch placeholder.
-- `internal/clerr`: Typed Credlease error codes.
-- `internal/envref`: Strict parser for `credlease://<profile>` references.
+- `cmd/envvault/main.go`: Minimal CLI entrypoint and command dispatch placeholder.
+- `internal/clerr`: Typed EnvVault error codes.
+- `internal/envref`: Strict parser for `envvault://<profile>` references.
 - `internal/profile`: Profile kinds, TTL policy, scope validation, and browser URL allowlist checks.
 - `docs/implementation-spec.md`: User-provided Local MVP specification copied into the repo.
 
@@ -23,16 +23,16 @@
 
 **Files:**
 - Create: `go.mod`
-- Create: `cmd/credlease/main.go`
+- Create: `cmd/envvault/main.go`
 
 - [ ] **Step 1: Create module**
 
-Run: `go mod init github.com/trknhr/credlease`
+Run: `go mod init github.com/trknhr/envvault`
 Expected: `go.mod` is created.
 
 - [ ] **Step 2: Add minimal entrypoint**
 
-Create `cmd/credlease/main.go` with:
+Create `cmd/envvault/main.go` with:
 
 ```go
 package main
@@ -44,10 +44,10 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "credlease: command required")
+		fmt.Fprintln(os.Stderr, "envvault: command required")
 		os.Exit(2)
 	}
-	fmt.Fprintf(os.Stderr, "credlease: command %q is not implemented yet\n", os.Args[1])
+	fmt.Fprintf(os.Stderr, "envvault: command %q is not implemented yet\n", os.Args[1])
 	os.Exit(2)
 }
 ```
@@ -68,7 +68,7 @@ Expected: packages build successfully.
 ```go
 func TestErrorFormatsCodeWithoutSecretDetail(t *testing.T) {
 	err := clerr.New(clerr.ReferenceInvalid, "query and fragment are not allowed")
-	if got, want := err.Error(), "CREDLEASE_REFERENCE_INVALID: query and fragment are not allowed"; got != want {
+	if got, want := err.Error(), "ENVVAULT_REFERENCE_INVALID: query and fragment are not allowed"; got != want {
 		t.Fatalf("Error() = %q, want %q", got, want)
 	}
 }
@@ -116,7 +116,7 @@ type Reference struct {
 func ParseValue(value string) (Reference, bool, error)
 ```
 
-Rules: only values whose whole string starts with `credlease://` are references; query and fragment are rejected; profile path must be normalized and must not include empty segments, `.`, `..`, `%2f`, `%2F`, `%5c`, or `%5C`.
+Rules: only values whose whole string starts with `envvault://` are references; query and fragment are rejected; profile path must be normalized and must not include empty segments, `.`, `..`, `%2f`, `%2F`, `%5c`, or `%5C`.
 
 - [ ] **Step 4: Run green test**
 

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const captureEnv = "CREDLEASE_FAKE_BROWSER_CAPTURE"
+const captureEnv = "ENVVAULT_FAKE_BROWSER_CAPTURE"
 
 type runInput struct {
 	Args      []string

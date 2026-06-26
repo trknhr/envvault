@@ -5,34 +5,37 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/trknhr/credlease/internal/audit"
-	"github.com/trknhr/credlease/internal/bootstrap"
-	"github.com/trknhr/credlease/internal/browser"
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/config"
-	doctorpkg "github.com/trknhr/credlease/internal/doctor"
-	"github.com/trknhr/credlease/internal/envref"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/issuer/local"
-	"github.com/trknhr/credlease/internal/jwks"
-	"github.com/trknhr/credlease/internal/keyring"
-	"github.com/trknhr/credlease/internal/process"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/profilemgr"
-	"github.com/trknhr/credlease/internal/projectbinding"
-	resetpkg "github.com/trknhr/credlease/internal/reset"
-	tokenout "github.com/trknhr/credlease/internal/token"
+	"github.com/trknhr/envvault/internal/audit"
+	"github.com/trknhr/envvault/internal/bootstrap"
+	"github.com/trknhr/envvault/internal/browser"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/config"
+	doctorpkg "github.com/trknhr/envvault/internal/doctor"
+	"github.com/trknhr/envvault/internal/envref"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/issuer/local"
+	"github.com/trknhr/envvault/internal/jwks"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/process"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/profilemgr"
+	"github.com/trknhr/envvault/internal/projectbinding"
+	"github.com/trknhr/envvault/internal/providerproxy"
+	resetpkg "github.com/trknhr/envvault/internal/reset"
+	tokenout "github.com/trknhr/envvault/internal/token"
 )
 
 const (
-	defaultJWKSFilename  = "credlease-jwks.json"
+	defaultJWKSFilename  = "envvault-jwks.json"
 	defaultAuditFilename = "audit.jsonl"
 )
 
@@ -79,6 +82,8 @@ type Options struct {
 	Initializer             Initializer
 	Resetter                Resetter
 	Doctor                  Doctor
+	Secrets                 keyring.Store
+	Stdin                   io.Reader
 	ParentEnv               []string
 	ProjectStartDir         string
 	Profiles                process.ProfileResolver
@@ -96,6 +101,8 @@ type App struct {
 	initializer             Initializer
 	resetter                Resetter
 	doctor                  Doctor
+	secrets                 keyring.Store
+	stdin                   io.Reader
 	parentEnv               []string
 	projectStartDir         string
 	profiles                process.ProfileResolver
@@ -114,6 +121,8 @@ func New(options Options) App {
 		initializer:             options.Initializer,
 		resetter:                options.Resetter,
 		doctor:                  options.Doctor,
+		secrets:                 options.Secrets,
+		stdin:                   options.Stdin,
 		parentEnv:               append([]string(nil), options.ParentEnv...),
 		projectStartDir:         options.ProjectStartDir,
 		profiles:                options.Profiles,
@@ -136,6 +145,7 @@ func defaultOptions(paths config.Paths) Options {
 	return Options{
 		Paths:          paths,
 		Initializer:    managedTalos,
+		Secrets:        secrets,
 		Profiles:       profiles,
 		Issuer:         tokenIssuer,
 		Runner:         process.Runner{},
@@ -158,6 +168,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	options := defaultOptions(paths)
+	options.Stdin = os.Stdin
 	options.StdoutIsTerminal = func() bool {
 		return outputIsTerminal(stdout)
 	}
@@ -166,7 +177,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 func (a App) Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "credlease: command required")
+		fmt.Fprintln(stderr, "envvault: command required")
 		return 2
 	}
 
@@ -179,6 +190,10 @@ func (a App) Run(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return a.runDoctor(ctx, args[1:], stdout, stderr)
 	case "profile":
 		return a.runProfile(ctx, args[1:], stdout, stderr)
+	case "secret":
+		return a.runSecret(ctx, args[1:], stdout, stderr)
+	case "proxy":
+		return a.runProxy(ctx, args[1:], stdout, stderr)
 	case "token":
 		return a.runToken(ctx, args[1:], stdout, stderr)
 	case "exec":
@@ -192,18 +207,18 @@ func (a App) Run(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	case "completion":
 		return a.runCompletion(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "credlease: command %q is not implemented yet\n", args[0])
+		fmt.Fprintf(stderr, "envvault: command %q is not implemented yet\n", args[0])
 		return 2
 	}
 }
 
 func (a App) runInit(ctx context.Context, args []string, _ io.Writer, stderr io.Writer) int {
 	if len(args) != 0 {
-		fmt.Fprintln(stderr, "credlease: usage: credlease init")
+		fmt.Fprintln(stderr, "envvault: usage: envvault init")
 		return 2
 	}
 	if a.initializer == nil {
-		fmt.Fprintln(stderr, "credlease: command \"init\" is not implemented yet")
+		fmt.Fprintln(stderr, "envvault: command \"init\" is not implemented yet")
 		return 2
 	}
 	if _, err := a.initializer.Init(ctx); err != nil {
@@ -215,7 +230,7 @@ func (a App) runInit(ctx context.Context, args []string, _ io.Writer, stderr io.
 
 func (a App) runReset(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if a.resetter == nil {
-		fmt.Fprintln(stderr, "credlease: command \"reset\" is not implemented yet")
+		fmt.Fprintln(stderr, "envvault: command \"reset\" is not implemented yet")
 		return 2
 	}
 	options, confirmed, err := parseResetArgs(args)
@@ -224,7 +239,7 @@ func (a App) runReset(ctx context.Context, args []string, stdout, stderr io.Writ
 		return 1
 	}
 	if !options.DryRun && !confirmed {
-		fmt.Fprintln(stderr, "credlease: reset requires --yes or use --dry-run")
+		fmt.Fprintln(stderr, "envvault: reset requires --yes or use --dry-run")
 		return 2
 	}
 	result, err := a.resetter.Reset(ctx, options)
@@ -241,11 +256,11 @@ func (a App) runReset(ctx context.Context, args []string, stdout, stderr io.Writ
 func (a App) runDoctor(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	repair, err := parseDoctorArgs(args)
 	if err != nil {
-		fmt.Fprintln(stderr, "credlease: usage: credlease doctor")
+		fmt.Fprintln(stderr, "envvault: usage: envvault doctor")
 		return 2
 	}
 	if a.doctor == nil {
-		fmt.Fprintln(stderr, "credlease: command \"doctor\" is not implemented yet")
+		fmt.Fprintln(stderr, "envvault: command \"doctor\" is not implemented yet")
 		return 2
 	}
 	var result doctorpkg.Result
@@ -272,11 +287,11 @@ func (a App) runDoctor(ctx context.Context, args []string, stdout, stderr io.Wri
 
 func (a App) runProfile(ctx context.Context, args []string, _ io.Writer, stderr io.Writer) int {
 	if a.profileManager == nil {
-		fmt.Fprintln(stderr, "credlease: command \"profile\" is not implemented yet")
+		fmt.Fprintln(stderr, "envvault: command \"profile\" is not implemented yet")
 		return 2
 	}
 	if len(args) < 2 || args[0] != "add" {
-		fmt.Fprintln(stderr, "credlease: usage: credlease profile add <kind> <name> [options]")
+		fmt.Fprintln(stderr, "envvault: usage: envvault profile add <kind> <name> [options]")
 		return 2
 	}
 
@@ -316,9 +331,92 @@ func (a App) runProfile(ctx context.Context, args []string, _ io.Writer, stderr 
 		}
 		return 0
 	default:
-		fmt.Fprintf(stderr, "credlease: profile kind %q is not implemented yet\n", args[1])
+		fmt.Fprintf(stderr, "envvault: profile kind %q is not implemented yet\n", args[1])
 		return 2
 	}
+}
+
+func (a App) runSecret(ctx context.Context, args []string, _ io.Writer, stderr io.Writer) int {
+	if len(args) < 2 || args[0] != "add" {
+		fmt.Fprintln(stderr, "envvault: usage: envvault secret add <name> --provider openai-compatible --api-key-stdin")
+		return 2
+	}
+	if a.secrets == nil {
+		fmt.Fprintln(stderr, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable"))
+		return 1
+	}
+	request, err := parseSecretAdd(args[1:])
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	input := a.stdin
+	if input == nil {
+		input = os.Stdin
+	}
+	raw, err := io.ReadAll(input)
+	if err != nil {
+		fmt.Fprintln(stderr, clerr.Wrap(clerr.ConfigInvalid, "read api key from stdin", err))
+		return 1
+	}
+	apiKey := strings.TrimSpace(string(raw))
+	if strings.TrimSpace(apiKey) == "" {
+		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "api key is required"))
+		return 1
+	}
+	secret := []byte(apiKey)
+	defer zero(secret)
+	if err := a.secrets.Put(ctx, keyring.ProviderAPIKey(request.Name), secret); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func (a App) runProxy(ctx context.Context, args []string, _ io.Writer, stderr io.Writer) int {
+	if len(args) < 2 || args[0] != "add" {
+		fmt.Fprintln(stderr, "envvault: usage: envvault proxy add <name> [options]")
+		return 2
+	}
+	request, err := parseProxyAdd(args[1:])
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	binding, err := a.approveProjectBinding(ctx, request.ProjectBinding.Mode)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	request.ProjectBinding = binding
+
+	cfg, err := config.Load(a.paths.ConfigFile)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if _, exists := cfg.Profiles[request.Name]; exists {
+		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "profile already exists"))
+		return 1
+	}
+	stored := config.Profile{
+		Kind:           profile.KindProviderProxy,
+		Provider:       request.Provider,
+		TargetURL:      request.TargetURL,
+		AllowedPaths:   append([]string(nil), request.AllowedPaths...),
+		AllowedMethods: append([]string(nil), request.AllowedMethods...),
+		LocalTokenTTL:  config.Duration(request.LocalTokenTTL),
+		ProjectBinding: toConfigProjectBinding(request.ProjectBinding),
+	}
+	if cfg.Profiles == nil {
+		cfg.Profiles = map[string]config.Profile{}
+	}
+	cfg.Profiles[request.Name] = stored
+	if err := config.Save(a.paths.ConfigFile, cfg); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
 }
 
 func (a App) approveProjectBinding(ctx context.Context, mode profile.ProjectBindingMode) (profile.ProjectBinding, error) {
@@ -348,7 +446,7 @@ func (a App) confirmProjectBinding(ctx context.Context, mode profile.ProjectBind
 
 func (a App) runToken(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if !a.tokenConfigured() {
-		fmt.Fprintln(stderr, "credlease: command \"token\" is not implemented yet")
+		fmt.Fprintln(stderr, "envvault: command \"token\" is not implemented yet")
 		return 2
 	}
 
@@ -434,7 +532,7 @@ func (a App) runExec(ctx context.Context, args []string, stdout, stderr io.Write
 			return 1
 		}
 
-		fmt.Fprintln(stderr, "credlease: command \"exec\" is not implemented yet")
+		fmt.Fprintln(stderr, "envvault: command \"exec\" is not implemented yet")
 		return 2
 	}
 
@@ -448,11 +546,22 @@ func (a App) runExec(ctx context.Context, args []string, stdout, stderr io.Write
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	refResolver := &providerproxy.EnvResolver{
+		Profiles: a.profiles,
+		Secrets:  a.secrets,
+		Issuer:   a.issuer,
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = refResolver.Close(shutdownCtx)
+	}()
 	env, err := process.BuildEnv(ctx, process.EnvInput{
-		Parent:          a.parentEnvironment(),
-		EnvFiles:        parsed.envFiles,
-		InlineEnv:       parsed.inlineEnv,
-		ProjectIdentity: projectIdentity,
+		Parent:            a.parentEnvironment(),
+		EnvFiles:          parsed.envFiles,
+		InlineEnv:         parsed.inlineEnv,
+		ProjectIdentity:   projectIdentity,
+		ReferenceResolver: refResolver,
 	}, a.profiles, a.issuer)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -490,7 +599,7 @@ func (a App) detectProjectIdentity(ctx context.Context) (projectbinding.Identity
 
 func (a App) runOpen(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if !a.openConfigured() {
-		fmt.Fprintln(stderr, "credlease: command \"open\" is not implemented yet")
+		fmt.Fprintln(stderr, "envvault: command \"open\" is not implemented yet")
 		return 2
 	}
 
@@ -555,6 +664,15 @@ func (autoProjectBindingConfirmer) ConfirmProjectBinding(context.Context, Projec
 	return nil
 }
 
+func toConfigProjectBinding(binding profile.ProjectBinding) config.ProjectBinding {
+	return config.ProjectBinding{
+		Mode:      binding.Mode,
+		PathHash:  binding.PathHash,
+		GitRoot:   binding.GitRoot,
+		GitRemote: binding.GitRemote,
+	}
+}
+
 type ttyProjectBindingConfirmer struct {
 	input      io.Reader
 	output     io.Writer
@@ -591,7 +709,7 @@ func (c ttyProjectBindingConfirmer) ConfirmProjectBinding(ctx context.Context, r
 }
 
 func writeProjectBindingPrompt(output io.Writer, request ProjectBindingConfirmation) {
-	fmt.Fprintln(output, "credlease: trust this project for the profile binding?")
+	fmt.Fprintln(output, "envvault: trust this project for the profile binding?")
 	fmt.Fprintf(output, "mode: %s\n", request.Mode)
 	if request.Identity.Root != "" {
 		fmt.Fprintf(output, "project root: %s\n", request.Identity.Root)
@@ -618,14 +736,14 @@ func outputIsTerminal(writer io.Writer) bool {
 
 func (a App) runJWKS(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "credlease: jwks subcommand required")
+		fmt.Fprintln(stderr, "envvault: jwks subcommand required")
 		return 2
 	}
 
 	switch args[0] {
 	case "show":
 		if len(args) != 1 {
-			fmt.Fprintln(stderr, "credlease: usage: credlease jwks show")
+			fmt.Fprintln(stderr, "envvault: usage: envvault jwks show")
 			return 2
 		}
 		body, err := os.ReadFile(a.jwksPath())
@@ -661,14 +779,14 @@ func (a App) runJWKS(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	default:
-		fmt.Fprintf(stderr, "credlease: jwks subcommand %q is not implemented yet\n", args[0])
+		fmt.Fprintf(stderr, "envvault: jwks subcommand %q is not implemented yet\n", args[0])
 		return 2
 	}
 }
 
 func (a App) runIssuer(_ context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 || args[0] != "show" {
-		fmt.Fprintln(stderr, "credlease: usage: credlease issuer show")
+		fmt.Fprintln(stderr, "envvault: usage: envvault issuer show")
 		return 2
 	}
 
@@ -677,7 +795,7 @@ func (a App) runIssuer(_ context.Context, args []string, stdout, stderr io.Write
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "credlease-local:%s\n", cfg.Installation.ID)
+	fmt.Fprintf(stdout, "envvault-local:%s\n", cfg.Installation.ID)
 	return 0
 }
 
@@ -932,6 +1050,148 @@ func parseProfileAddBrowserSession(args []string) (profilemgr.BrowserSessionRequ
 		request.AllowedHosts = []string{host}
 	}
 	return request, nil
+}
+
+type secretAddRequest struct {
+	Name        string
+	Provider    string
+	APIKeyStdin bool
+}
+
+func parseSecretAdd(args []string) (secretAddRequest, error) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return secretAddRequest{}, clerr.New(clerr.ConfigInvalid, "secret name is required")
+	}
+	request := secretAddRequest{Name: args[0]}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--provider":
+			value, next, err := valueFlag(args, i, "--provider")
+			if err != nil {
+				return secretAddRequest{}, err
+			}
+			request.Provider = value
+			i = next
+		case "--api-key-stdin":
+			request.APIKeyStdin = true
+		default:
+			return secretAddRequest{}, clerr.New(clerr.ConfigInvalid, "unknown secret option")
+		}
+	}
+	if request.Provider != "openai-compatible" {
+		return secretAddRequest{}, clerr.New(clerr.ConfigInvalid, "provider must be openai-compatible")
+	}
+	if !request.APIKeyStdin {
+		return secretAddRequest{}, clerr.New(clerr.ConfigInvalid, "api key input is required")
+	}
+	return request, nil
+}
+
+type proxyAddRequest struct {
+	Name           string
+	Provider       string
+	TargetURL      string
+	AllowedPaths   []string
+	AllowedMethods []string
+	LocalTokenTTL  time.Duration
+	ProjectBinding profile.ProjectBinding
+}
+
+func parseProxyAdd(args []string) (proxyAddRequest, error) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "proxy profile name is required")
+	}
+	request := proxyAddRequest{
+		Name:          args[0],
+		LocalTokenTTL: 10 * time.Minute,
+		ProjectBinding: profile.ProjectBinding{
+			Mode: profile.ProjectBindingGitRemoteAndRoot,
+		},
+	}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--provider":
+			value, next, err := valueFlag(args, i, "--provider")
+			if err != nil {
+				return proxyAddRequest{}, err
+			}
+			request.Provider = value
+			i = next
+		case "--target":
+			value, next, err := valueFlag(args, i, "--target")
+			if err != nil {
+				return proxyAddRequest{}, err
+			}
+			request.TargetURL = value
+			i = next
+		case "--allow-path":
+			value, next, err := valueFlag(args, i, "--allow-path")
+			if err != nil {
+				return proxyAddRequest{}, err
+			}
+			request.AllowedPaths = append(request.AllowedPaths, value)
+			i = next
+		case "--allow-method":
+			value, next, err := valueFlag(args, i, "--allow-method")
+			if err != nil {
+				return proxyAddRequest{}, err
+			}
+			request.AllowedMethods = append(request.AllowedMethods, strings.ToUpper(value))
+			i = next
+		case "--token-ttl":
+			value, next, err := durationFlag(args, i, "--token-ttl")
+			if err != nil {
+				return proxyAddRequest{}, err
+			}
+			request.LocalTokenTTL = value
+			i = next
+		case "--project-binding":
+			value, next, err := projectBindingFlag(args, i)
+			if err != nil {
+				return proxyAddRequest{}, err
+			}
+			request.ProjectBinding = value
+			i = next
+		default:
+			return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "unknown proxy option")
+		}
+	}
+	if request.Provider == "" {
+		request.Provider = "openai-compatible"
+	}
+	if request.Provider != "openai-compatible" {
+		return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "provider must be openai-compatible")
+	}
+	if strings.TrimSpace(request.TargetURL) == "" {
+		return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "--target is required")
+	}
+	if len(request.AllowedPaths) == 0 {
+		request.AllowedPaths = defaultOpenAICompatiblePaths()
+	}
+	if len(request.AllowedMethods) == 0 {
+		request.AllowedMethods = []string{http.MethodPost}
+	}
+	request.AllowedMethods = uniqueStrings(request.AllowedMethods)
+	request.AllowedPaths = uniqueStrings(request.AllowedPaths)
+	return request, nil
+}
+
+func defaultOpenAICompatiblePaths() []string {
+	return []string{
+		"/chat/completions",
+		"/responses",
+		"/embeddings",
+	}
+}
+
+func uniqueStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if !slices.Contains(out, value) {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func valueFlag(args []string, index int, name string) (string, int, error) {

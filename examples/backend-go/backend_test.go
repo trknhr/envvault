@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	backendgo "github.com/trknhr/credlease/examples/backend-go"
+	backendgo "github.com/trknhr/envvault/examples/backend-go"
 )
 
 func TestProcessJWTAuthorizesReadEndpointAndRejectsMissingScope(t *testing.T) {
@@ -25,7 +25,7 @@ func TestProcessJWTAuthorizesReadEndpointAndRejectsMissingScope(t *testing.T) {
 	key := newTestRSAKey(t)
 	backend, err := backendgo.New(backendgo.Config{
 		JWKS:     jwksForRSA(t, &key.PublicKey),
-		Issuer:   "credlease-local:test-install",
+		Issuer:   "envvault-local:test-install",
 		Resource: "https://api.dev.example.com",
 		Now:      func() time.Time { return now },
 	})
@@ -33,14 +33,14 @@ func TestProcessJWTAuthorizesReadEndpointAndRejectsMissingScope(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	readToken := signRS256(t, key, map[string]any{
-		"iss":                  "credlease-local:test-install",
-		"sub":                  "local-user",
-		"exp":                  now.Add(5 * time.Minute).Unix(),
-		"scope":                "document:read",
-		"credlease_profile":    "backend-a/dev",
-		"credlease_resource":   "https://api.dev.example.com",
-		"credlease_session_id": "session-process-1",
-		"credlease_purpose":    "process",
+		"iss":                 "envvault-local:test-install",
+		"sub":                 "local-user",
+		"exp":                 now.Add(5 * time.Minute).Unix(),
+		"scope":               "document:read",
+		"envvault_profile":    "backend-a/dev",
+		"envvault_resource":   "https://api.dev.example.com",
+		"envvault_session_id": "session-process-1",
+		"envvault_purpose":    "process",
 	})
 
 	read := httptest.NewRecorder()
@@ -79,7 +79,7 @@ func TestProcessJWTAuthorizesEd25519TalosToken(t *testing.T) {
 	}
 	backend, err := backendgo.New(backendgo.Config{
 		JWKS:     jwksForEd25519(t, publicKey),
-		Issuer:   "credlease-local:test-install",
+		Issuer:   "envvault-local:test-install",
 		Resource: "https://api.dev.example.com",
 		Now:      func() time.Time { return now },
 	})
@@ -87,14 +87,14 @@ func TestProcessJWTAuthorizesEd25519TalosToken(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	token := signEdDSA(t, privateKey, map[string]any{
-		"iss":                  "credlease-local:test-install",
-		"sub":                  "local-user",
-		"exp":                  now.Add(5 * time.Minute).Unix(),
-		"scope":                "document:read",
-		"credlease_profile":    "backend-a/dev",
-		"credlease_resource":   "https://api.dev.example.com",
-		"credlease_session_id": "session-process-1",
-		"credlease_purpose":    "process",
+		"iss":                 "envvault-local:test-install",
+		"sub":                 "local-user",
+		"exp":                 now.Add(5 * time.Minute).Unix(),
+		"scope":               "document:read",
+		"envvault_profile":    "backend-a/dev",
+		"envvault_resource":   "https://api.dev.example.com",
+		"envvault_session_id": "session-process-1",
+		"envvault_purpose":    "process",
 	})
 
 	read := httptest.NewRecorder()
@@ -115,9 +115,9 @@ func TestBrowserSessionExchangeAndCompleteSetSecureCookie(t *testing.T) {
 	key := newTestRSAKey(t)
 	backend, err := backendgo.New(backendgo.Config{
 		JWKS:                 jwksForRSA(t, &key.PublicKey),
-		Issuer:               "credlease-local:test-install",
+		Issuer:               "envvault-local:test-install",
 		Resource:             "https://admin.dev.example.com",
-		CompleteURL:          "https://admin.dev.example.com/auth/credlease/complete",
+		CompleteURL:          "https://admin.dev.example.com/auth/envvault/complete",
 		PostLoginURL:         "https://admin.dev.example.com/",
 		SecureCookies:        true,
 		LoginCodeTTL:         30 * time.Second,
@@ -129,17 +129,17 @@ func TestBrowserSessionExchangeAndCompleteSetSecureCookie(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	bootstrap := signRS256(t, key, map[string]any{
-		"iss":                  "credlease-local:test-install",
-		"exp":                  now.Add(60 * time.Second).Unix(),
-		"scope":                "browser:session:create",
-		"credlease_profile":    "admin-web/dev",
-		"credlease_resource":   "https://admin.dev.example.com",
-		"credlease_session_id": "session-browser-1",
-		"credlease_purpose":    "browser-bootstrap",
+		"iss":                 "envvault-local:test-install",
+		"exp":                 now.Add(60 * time.Second).Unix(),
+		"scope":               "browser:session:create",
+		"envvault_profile":    "admin-web/dev",
+		"envvault_resource":   "https://admin.dev.example.com",
+		"envvault_session_id": "session-browser-1",
+		"envvault_purpose":    "browser-bootstrap",
 	})
 
 	exchange := httptest.NewRecorder()
-	exchangeRequest := httptest.NewRequest(http.MethodPost, "/auth/credlease/browser-sessions?redirect=https://evil.example", strings.NewReader(`{"requested_session_ttl_seconds":1800}`))
+	exchangeRequest := httptest.NewRequest(http.MethodPost, "/auth/envvault/browser-sessions?redirect=https://evil.example", strings.NewReader(`{"requested_session_ttl_seconds":1800}`))
 	exchangeRequest.Header.Set("Authorization", "Bearer "+bootstrap)
 	backend.Handler().ServeHTTP(exchange, exchangeRequest)
 
@@ -156,7 +156,7 @@ func TestBrowserSessionExchangeAndCompleteSetSecureCookie(t *testing.T) {
 	if err := json.NewDecoder(exchange.Body).Decode(&body); err != nil {
 		t.Fatalf("Decode(exchange) error = %v", err)
 	}
-	if body.LaunchURL != "https://admin.dev.example.com/auth/credlease/complete?code=opaque-code" {
+	if body.LaunchURL != "https://admin.dev.example.com/auth/envvault/complete?code=opaque-code" {
 		t.Fatalf("launch_url = %q", body.LaunchURL)
 	}
 	if strings.Contains(body.LaunchURL, bootstrap) || strings.Contains(body.LaunchURL, "redirect=") {
@@ -188,7 +188,7 @@ func TestBrowserSessionExchangeAndCompleteSetSecureCookie(t *testing.T) {
 		t.Fatalf("cookies = %d, want 1", len(cookies))
 	}
 	cookie := cookies[0]
-	if cookie.Name != "credlease_admin_session" || cookie.Value == "" {
+	if cookie.Name != "envvault_admin_session" || cookie.Value == "" {
 		t.Fatalf("cookie = %s=%q", cookie.Name, cookie.Value)
 	}
 	if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteLaxMode {

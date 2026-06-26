@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 )
 
 type Endpoint struct {

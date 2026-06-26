@@ -6,8 +6,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/issuer"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/issuer"
 )
 
 type Format string

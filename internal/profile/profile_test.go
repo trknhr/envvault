@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/profile"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/profile"
 )
 
 func TestValidateAcceptsProcessProfile(t *testing.T) {
@@ -17,6 +17,14 @@ func TestValidateAcceptsProcessProfile(t *testing.T) {
 		TokenTTL:    10 * time.Minute,
 		MaxTokenTTL: 30 * time.Minute,
 	}
+
+	if err := p.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidateAcceptsProviderProxyProfile(t *testing.T) {
+	p := providerProxyProfile()
 
 	if err := p.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
@@ -56,7 +64,7 @@ func TestValidateRejectsInvalidProfiles(t *testing.T) {
 				BootstrapTokenTTL: 60 * time.Second,
 				LoginCodeTTL:      30 * time.Second,
 				WebSessionTTL:     30 * time.Minute,
-				CompleteURL:       "https://admin.dev.example.com/auth/credlease/complete",
+				CompleteURL:       "https://admin.dev.example.com/auth/envvault/complete",
 				PostLoginURL:      "https://admin.dev.example.com/",
 				AllowedHosts:      []string{"admin.dev.example.com"},
 			},
@@ -88,16 +96,56 @@ func TestValidateRejectsInvalidProfiles(t *testing.T) {
 			},
 		},
 		{
-			name: "credlease owned claim",
+			name: "envvault owned claim",
 			p: profile.Profile{
 				Name:        "backend-a/dev",
 				Kind:        profile.KindProcess,
 				Resource:    "https://api.dev.example.com",
 				Scopes:      []string{"repository:read"},
-				Claims:      map[string]string{"credlease_resource": "https://evil.example.com"},
+				Claims:      map[string]string{"envvault_resource": "https://evil.example.com"},
 				TokenTTL:    10 * time.Minute,
 				MaxTokenTTL: 30 * time.Minute,
 			},
+		},
+		{
+			name: "provider proxy unknown provider",
+			p: func() profile.Profile {
+				p := providerProxyProfile()
+				p.Provider = "stripe"
+				return p
+			}(),
+		},
+		{
+			name: "provider proxy non-local http target",
+			p: func() profile.Profile {
+				p := providerProxyProfile()
+				p.TargetURL = "http://api.openai.com/v1"
+				return p
+			}(),
+		},
+		{
+			name: "provider proxy path traversal",
+			p: func() profile.Profile {
+				p := providerProxyProfile()
+				p.AllowedPaths = []string{"/../models"}
+				return p
+			}(),
+		},
+		{
+			name: "provider proxy lowercase method",
+			p: func() profile.Profile {
+				p := providerProxyProfile()
+				p.AllowedMethods = []string{"post"}
+				return p
+			}(),
+		},
+		{
+			name: "provider proxy missing local token ttl",
+			p: func() profile.Profile {
+				p := providerProxyProfile()
+				p.LocalTokenTTL = 0
+				return p
+			}(),
 		},
 	}
 
@@ -148,7 +196,7 @@ func TestAllowsScopesRequiresSubset(t *testing.T) {
 func TestValidateLaunchURLAcceptsProfileCompleteURLWithCode(t *testing.T) {
 	p := browserProfile()
 
-	err := p.ValidateLaunchURL("https://admin.dev.example.com/auth/credlease/complete?code=opaque")
+	err := p.ValidateLaunchURL("https://admin.dev.example.com/auth/envvault/complete?code=opaque")
 	if err != nil {
 		t.Fatalf("ValidateLaunchURL() error = %v", err)
 	}
@@ -156,10 +204,10 @@ func TestValidateLaunchURLAcceptsProfileCompleteURLWithCode(t *testing.T) {
 
 func TestValidateLaunchURLAllowsLocalhostHTTP(t *testing.T) {
 	p := browserProfile()
-	p.CompleteURL = "http://localhost:8080/auth/credlease/complete"
+	p.CompleteURL = "http://localhost:8080/auth/envvault/complete"
 	p.AllowedHosts = []string{"localhost"}
 
-	err := p.ValidateLaunchURL("http://localhost:8080/auth/credlease/complete?code=opaque")
+	err := p.ValidateLaunchURL("http://localhost:8080/auth/envvault/complete?code=opaque")
 	if err != nil {
 		t.Fatalf("ValidateLaunchURL() error = %v", err)
 	}
@@ -167,10 +215,10 @@ func TestValidateLaunchURLAllowsLocalhostHTTP(t *testing.T) {
 
 func TestValidateLaunchURLRejectsUnsafeURL(t *testing.T) {
 	tests := []string{
-		"http://admin.dev.example.com/auth/credlease/complete?code=opaque",
-		"https://evil.example/auth/credlease/complete?code=opaque",
+		"http://admin.dev.example.com/auth/envvault/complete?code=opaque",
+		"https://evil.example/auth/envvault/complete?code=opaque",
 		"https://admin.dev.example.com/other?code=opaque",
-		"https://user:pass@admin.dev.example.com/auth/credlease/complete?code=opaque",
+		"https://user:pass@admin.dev.example.com/auth/envvault/complete?code=opaque",
 	}
 	p := browserProfile()
 
@@ -196,9 +244,24 @@ func browserProfile() profile.Profile {
 		BootstrapTokenTTL: 60 * time.Second,
 		LoginCodeTTL:      30 * time.Second,
 		WebSessionTTL:     30 * time.Minute,
-		ExchangeURL:       "https://admin.dev.example.com/auth/credlease/browser-sessions",
-		CompleteURL:       "https://admin.dev.example.com/auth/credlease/complete",
+		ExchangeURL:       "https://admin.dev.example.com/auth/envvault/browser-sessions",
+		CompleteURL:       "https://admin.dev.example.com/auth/envvault/complete",
 		PostLoginURL:      "https://admin.dev.example.com/",
 		AllowedHosts:      []string{"admin.dev.example.com"},
+	}
+}
+
+func providerProxyProfile() profile.Profile {
+	return profile.Profile{
+		Name:           "openai/dev",
+		Kind:           profile.KindProviderProxy,
+		Provider:       "openai-compatible",
+		TargetURL:      "https://api.openai.com/v1",
+		AllowedPaths:   []string{"/chat/completions", "/responses"},
+		AllowedMethods: []string{"POST"},
+		LocalTokenTTL:  10 * time.Minute,
+		ProjectBinding: profile.ProjectBinding{
+			Mode: profile.ProjectBindingNone,
+		},
 	}
 }

@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	releasepkg "github.com/trknhr/credlease/internal/releasepkg"
+	releasepkg "github.com/trknhr/envvault/internal/releasepkg"
 )
 
-const packageUsage = "usage: credlease-release package --version <version> --platform <os/arch> --binary <path> [--repo-root <path>] [--dist <path>]"
-const packageManifestsUsage = "usage: credlease-release package-manifests --version <version> --base-url <release-url> [--dist <path>]"
+const packageUsage = "usage: envvault-release package --version <version> --platform <os/arch> --binary <path> [--repo-root <path>] [--dist <path>]"
+const packageManifestsUsage = "usage: envvault-release package-manifests --version <version> --base-url <release-url> [--dist <path>]"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -85,7 +85,7 @@ func parsePackageArgs(args []string) (releasepkg.PackageOptions, error) {
 	flags.SetOutput(io.Discard)
 	version := flags.String("version", "", "release version")
 	platformRaw := flags.String("platform", "", "target platform as os/arch")
-	binaryPath := flags.String("binary", "", "path to built credlease binary")
+	binaryPath := flags.String("binary", "", "path to built envvault binary")
 	repoRoot := flags.String("repo-root", ".", "repository root")
 	distDir := flags.String("dist", "dist", "distribution output directory")
 	if err := flags.Parse(args); err != nil {

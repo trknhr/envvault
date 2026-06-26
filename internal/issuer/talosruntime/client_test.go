@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/issuer/talos"
-	"github.com/trknhr/credlease/internal/issuer/talosruntime"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/issuer/talos"
+	"github.com/trknhr/envvault/internal/issuer/talosruntime"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 )
 
 func TestClientDerivesJWTThroughRuntimeAndStopsBeforeReturning(t *testing.T) {
@@ -41,7 +41,7 @@ func TestClientDerivesJWTThroughRuntimeAndStopsBeforeReturning(t *testing.T) {
 		Scopes:  []string{"repository:read"},
 		TTL:     10 * time.Minute,
 		Claims: map[string]any{
-			"credlease_profile": "backend-a/dev",
+			"envvault_profile": "backend-a/dev",
 		},
 	})
 	if err != nil {
@@ -64,7 +64,7 @@ func TestClientRequiresRuntime(t *testing.T) {
 		Profile: "backend-a/dev",
 		Scopes:  []string{"repository:read"},
 		TTL:     10 * time.Minute,
-		Claims:  map[string]any{"credlease_profile": "backend-a/dev"},
+		Claims:  map[string]any{"envvault_profile": "backend-a/dev"},
 	})
 	if err == nil {
 		t.Fatal("DeriveJWT() error = nil, want error")
@@ -87,7 +87,7 @@ func TestClientStopsRuntimeWhenDeriveFailsWithoutLeakingResponseBody(t *testing.
 		Profile: "backend-a/dev",
 		Scopes:  []string{"repository:read"},
 		TTL:     10 * time.Minute,
-		Claims:  map[string]any{"credlease_profile": "backend-a/dev"},
+		Claims:  map[string]any{"envvault_profile": "backend-a/dev"},
 	})
 	if err == nil {
 		t.Fatal("DeriveJWT() error = nil, want error")
@@ -119,7 +119,7 @@ func TestClientFailsClosedWhenRuntimeStopFailsAfterDerive(t *testing.T) {
 		Profile: "backend-a/dev",
 		Scopes:  []string{"repository:read"},
 		TTL:     10 * time.Minute,
-		Claims:  map[string]any{"credlease_profile": "backend-a/dev"},
+		Claims:  map[string]any{"envvault_profile": "backend-a/dev"},
 	})
 	if err == nil {
 		t.Fatal("DeriveJWT() error = nil, want cleanup error")

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/trknhr/credlease/pkg/browsersession"
+	"github.com/trknhr/envvault/pkg/browsersession"
 )
 
 type BrowserBootstrapVerifier struct {
@@ -14,7 +14,7 @@ type BrowserBootstrapVerifier struct {
 
 func (v BrowserBootstrapVerifier) VerifyBootstrap(ctx context.Context, token string) (browsersession.BrowserGrant, error) {
 	if v.Verifier == nil {
-		return browsersession.BrowserGrant{}, errors.New("credlease verifier: verifier is required")
+		return browsersession.BrowserGrant{}, errors.New("envvault verifier: verifier is required")
 	}
 	claims, err := v.Verifier.Verify(ctx, token, Requirements{
 		Scopes:  v.Scopes,

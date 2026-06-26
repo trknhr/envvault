@@ -6,12 +6,12 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 )
 
 func TestOSStoreUsesServiceAndKeyAsAccount(t *testing.T) {
 	driver := &fakeDriver{}
-	store := newOSStore("credlease-test", driver)
+	store := newOSStore("envvault-test", driver)
 	ctx := context.Background()
 	key := ProfileParentKey("backend-a/dev")
 
@@ -29,7 +29,7 @@ func TestOSStoreUsesServiceAndKeyAsAccount(t *testing.T) {
 		t.Fatalf("Delete() error = %v", err)
 	}
 
-	if driver.service != "credlease-test" {
+	if driver.service != "envvault-test" {
 		t.Fatalf("service = %q", driver.service)
 	}
 	if driver.account != string(key) {
@@ -42,7 +42,7 @@ func TestOSStoreUsesServiceAndKeyAsAccount(t *testing.T) {
 
 func TestOSStoreMapsDriverErrorsWithoutLeakingSecret(t *testing.T) {
 	driver := &fakeDriver{err: errors.New("backend returned parent-secret")}
-	store := newOSStore("credlease-test", driver)
+	store := newOSStore("envvault-test", driver)
 
 	err := store.Put(context.Background(), ProfileParentKey("backend-a/dev"), []byte("parent-secret"))
 	if err == nil {

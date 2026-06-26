@@ -11,7 +11,7 @@ import (
 func TestRunPackageWritesArchiveAndChecksums(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	distDir := t.TempDir()
-	binaryPath := filepath.Join(t.TempDir(), "credlease")
+	binaryPath := filepath.Join(t.TempDir(), "envvault")
 	if err := os.WriteFile(binaryPath, []byte("fake binary"), 0o755); err != nil {
 		t.Fatalf("WriteFile(binary) error = %v", err)
 	}
@@ -29,17 +29,17 @@ func TestRunPackageWritesArchiveAndChecksums(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("run() code = %d, want 0; stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "credlease_v0.1.0_linux_amd64.tar.gz") {
+	if !strings.Contains(stdout.String(), "envvault_v0.1.0_linux_amd64.tar.gz") {
 		t.Fatalf("stdout = %q, want archive name", stdout.String())
 	}
-	if _, err := os.Stat(filepath.Join(distDir, "credlease_v0.1.0_linux_amd64.tar.gz")); err != nil {
+	if _, err := os.Stat(filepath.Join(distDir, "envvault_v0.1.0_linux_amd64.tar.gz")); err != nil {
 		t.Fatalf("release archive missing: %v", err)
 	}
 	checksums, err := os.ReadFile(filepath.Join(distDir, "SHA256SUMS"))
 	if err != nil {
 		t.Fatalf("ReadFile(SHA256SUMS) error = %v", err)
 	}
-	if !strings.Contains(string(checksums), "credlease_v0.1.0_linux_amd64.tar.gz") {
+	if !strings.Contains(string(checksums), "envvault_v0.1.0_linux_amd64.tar.gz") {
 		t.Fatalf("SHA256SUMS = %q, want archive entry", string(checksums))
 	}
 	if strings.Contains(stdout.String()+stderr.String(), "secret-canary") {
@@ -53,7 +53,7 @@ func TestRunPackagePreservesExistingChecksumEntries(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(distDir, "SHA256SUMS"), []byte("abc123  existing.tar.gz\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(existing SHA256SUMS) error = %v", err)
 	}
-	binaryPath := filepath.Join(t.TempDir(), "credlease")
+	binaryPath := filepath.Join(t.TempDir(), "envvault")
 	if err := os.WriteFile(binaryPath, []byte("fake binary"), 0o755); err != nil {
 		t.Fatalf("WriteFile(binary) error = %v", err)
 	}
@@ -75,7 +75,7 @@ func TestRunPackagePreservesExistingChecksumEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(SHA256SUMS) error = %v", err)
 	}
-	for _, want := range []string{"abc123  existing.tar.gz", "credlease_v0.1.0_linux_amd64.tar.gz"} {
+	for _, want := range []string{"abc123  existing.tar.gz", "envvault_v0.1.0_linux_amd64.tar.gz"} {
 		if !strings.Contains(string(checksums), want) {
 			t.Fatalf("SHA256SUMS = %q, want %q", string(checksums), want)
 		}
@@ -90,7 +90,7 @@ func TestRunPackageRejectsMissingRequiredArguments(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("run() code = %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "usage: credlease-release package") {
+	if !strings.Contains(stderr.String(), "usage: envvault-release package") {
 		t.Fatalf("stderr = %q, want usage", stderr.String())
 	}
 	if stdout.Len() != 0 {
@@ -101,11 +101,11 @@ func TestRunPackageRejectsMissingRequiredArguments(t *testing.T) {
 func TestRunPackageManifestsWritesHomebrewAndScoopFiles(t *testing.T) {
 	distDir := t.TempDir()
 	checksums := strings.Join([]string{
-		strings.Repeat("a", 64) + "  credlease_v0.1.0_darwin_amd64.tar.gz",
-		strings.Repeat("b", 64) + "  credlease_v0.1.0_darwin_arm64.tar.gz",
-		strings.Repeat("c", 64) + "  credlease_v0.1.0_linux_amd64.tar.gz",
-		strings.Repeat("d", 64) + "  credlease_v0.1.0_linux_arm64.tar.gz",
-		strings.Repeat("e", 64) + "  credlease_v0.1.0_windows_amd64.zip",
+		strings.Repeat("a", 64) + "  envvault_v0.1.0_darwin_amd64.tar.gz",
+		strings.Repeat("b", 64) + "  envvault_v0.1.0_darwin_arm64.tar.gz",
+		strings.Repeat("c", 64) + "  envvault_v0.1.0_linux_amd64.tar.gz",
+		strings.Repeat("d", 64) + "  envvault_v0.1.0_linux_arm64.tar.gz",
+		strings.Repeat("e", 64) + "  envvault_v0.1.0_windows_amd64.zip",
 		"",
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(distDir, "SHA256SUMS"), []byte(checksums), 0o644); err != nil {
@@ -116,14 +116,14 @@ func TestRunPackageManifestsWritesHomebrewAndScoopFiles(t *testing.T) {
 	code := run([]string{
 		"package-manifests",
 		"--version", "v0.1.0",
-		"--base-url", "https://github.com/trknhr/credlease/releases/download/v0.1.0",
+		"--base-url", "https://github.com/trknhr/envvault/releases/download/v0.1.0",
 		"--dist", distDir,
 	}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("run() code = %d, want 0; stderr=%q", code, stderr.String())
 	}
-	for _, rel := range []string{"homebrew/credlease.rb", "scoop/credlease.json"} {
+	for _, rel := range []string{"homebrew/envvault.rb", "scoop/envvault.json"} {
 		if !strings.Contains(stdout.String(), rel) {
 			t.Fatalf("stdout = %q, want %s", stdout.String(), rel)
 		}
@@ -131,29 +131,29 @@ func TestRunPackageManifestsWritesHomebrewAndScoopFiles(t *testing.T) {
 			t.Fatalf("%s missing: %v", rel, err)
 		}
 	}
-	homebrew, err := os.ReadFile(filepath.Join(distDir, "homebrew", "credlease.rb"))
+	homebrew, err := os.ReadFile(filepath.Join(distDir, "homebrew", "envvault.rb"))
 	if err != nil {
 		t.Fatalf("ReadFile(homebrew formula) error = %v", err)
 	}
 	for _, want := range []string{
-		"class Credlease < Formula",
-		`url "https://github.com/trknhr/credlease/releases/download/v0.1.0/credlease_v0.1.0_darwin_arm64.tar.gz"`,
+		"class Envvault < Formula",
+		`url "https://github.com/trknhr/envvault/releases/download/v0.1.0/envvault_v0.1.0_darwin_arm64.tar.gz"`,
 		strings.Repeat("d", 64),
-		`system "#{bin}/credlease", "completion", "bash"`,
+		`system "#{bin}/envvault", "completion", "bash"`,
 	} {
 		if !strings.Contains(string(homebrew), want) {
 			t.Fatalf("homebrew formula missing %q:\n%s", want, string(homebrew))
 		}
 	}
-	scoop, err := os.ReadFile(filepath.Join(distDir, "scoop", "credlease.json"))
+	scoop, err := os.ReadFile(filepath.Join(distDir, "scoop", "envvault.json"))
 	if err != nil {
 		t.Fatalf("ReadFile(scoop manifest) error = %v", err)
 	}
 	for _, want := range []string{
 		`"version": "0.1.0"`,
-		`"url": "https://github.com/trknhr/credlease/releases/download/v0.1.0/credlease_v0.1.0_windows_amd64.zip"`,
+		`"url": "https://github.com/trknhr/envvault/releases/download/v0.1.0/envvault_v0.1.0_windows_amd64.zip"`,
 		`"hash": "` + strings.Repeat("e", 64) + `"`,
-		`"bin": "credlease.exe"`,
+		`"bin": "envvault.exe"`,
 	} {
 		if !strings.Contains(string(scoop), want) {
 			t.Fatalf("scoop manifest missing %q:\n%s", want, string(scoop))
@@ -172,7 +172,7 @@ func TestRunPackageManifestsRejectsMissingRequiredArguments(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("run() code = %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "usage: credlease-release package-manifests") {
+	if !strings.Contains(stderr.String(), "usage: envvault-release package-manifests") {
 		t.Fatalf("stderr = %q, want usage", stderr.String())
 	}
 	if stdout.Len() != 0 {

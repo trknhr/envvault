@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 	"gopkg.in/yaml.v3"
 )
 
@@ -109,7 +109,7 @@ func renderLocalConfig(config LocalConfig) ([]byte, error) {
 				DefaultTTL: "1h",
 				JWT: jwtConfigYAML{
 					SigningKeys: signingKeysConfigYAML{
-						URLs: []string{"base64://" + base64.RawURLEncoding.EncodeToString(jwks)},
+						URLs: []string{"base64://" + base64.StdEncoding.EncodeToString(jwks)},
 					},
 				},
 				Macaroon: macaroonConfigYAML{

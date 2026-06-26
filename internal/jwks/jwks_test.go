@@ -6,12 +6,12 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/jwks"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/jwks"
 )
 
 func TestExportWritesStablePublicJWKSFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "backend", "credlease-jwks.json")
+	path := filepath.Join(t.TempDir(), "backend", "envvault-jwks.json")
 	body := []byte(`{"keys":[{"kid":"test-kid","kty":"OKP"}]}`)
 
 	if err := jwks.Export(path, body); err != nil {

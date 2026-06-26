@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 )
 
 func Export(path string, body []byte) error {
@@ -16,7 +16,7 @@ func Export(path string, body []byte) error {
 		return clerr.Wrap(clerr.ConfigInvalid, "create jwks directory", err)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".credlease-jwks-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".envvault-jwks-*")
 	if err != nil {
 		return clerr.Wrap(clerr.ConfigInvalid, "create temporary jwks", err)
 	}

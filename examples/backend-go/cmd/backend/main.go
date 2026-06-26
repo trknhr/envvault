@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	backendgo "github.com/trknhr/credlease/examples/backend-go"
+	backendgo "github.com/trknhr/envvault/examples/backend-go"
 )
 
 type appConfig struct {
@@ -41,18 +41,18 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	config, err := parseConfig(args)
 	if err != nil {
-		fmt.Fprintf(stderr, "credlease example backend: %v\n", err)
+		fmt.Fprintf(stderr, "envvault example backend: %v\n", err)
 		return 2
 	}
 	handler, err := newHandler(config)
 	if err != nil {
-		fmt.Fprintf(stderr, "credlease example backend: %v\n", err)
+		fmt.Fprintf(stderr, "envvault example backend: %v\n", err)
 		return 1
 	}
 
 	listener, err := net.Listen("tcp", config.Addr)
 	if err != nil {
-		fmt.Fprintf(stderr, "credlease example backend: listen %s: %v\n", config.Addr, err)
+		fmt.Fprintf(stderr, "envvault example backend: listen %s: %v\n", config.Addr, err)
 		return 1
 	}
 	defer listener.Close()
@@ -66,24 +66,24 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	go func() {
 		errc <- server.Serve(listener)
 	}()
-	fmt.Fprintf(stderr, "credlease example backend listening on %s\n", listener.Addr().String())
+	fmt.Fprintf(stderr, "envvault example backend listening on %s\n", listener.Addr().String())
 
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			fmt.Fprintf(stderr, "credlease example backend: shutdown: %v\n", err)
+			fmt.Fprintf(stderr, "envvault example backend: shutdown: %v\n", err)
 			return 1
 		}
 		if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fmt.Fprintf(stderr, "credlease example backend: serve: %v\n", err)
+			fmt.Fprintf(stderr, "envvault example backend: serve: %v\n", err)
 			return 1
 		}
 		return 0
 	case err := <-errc:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fmt.Fprintf(stderr, "credlease example backend: serve: %v\n", err)
+			fmt.Fprintf(stderr, "envvault example backend: serve: %v\n", err)
 			return 1
 		}
 		return 0
@@ -97,9 +97,9 @@ func parseConfig(args []string) (appConfig, error) {
 	var jwksPath string
 	config := appConfig{}
 	flags.StringVar(&config.Addr, "addr", "127.0.0.1:8080", "listen address")
-	flags.StringVar(&jwksPath, "jwks", "", "path to Credlease JWKS JSON")
-	flags.StringVar(&config.Issuer, "issuer", "", "expected Credlease issuer")
-	flags.StringVar(&config.Resource, "resource", "", "expected Credlease resource")
+	flags.StringVar(&jwksPath, "jwks", "", "path to EnvVault JWKS JSON")
+	flags.StringVar(&config.Issuer, "issuer", "", "expected EnvVault issuer")
+	flags.StringVar(&config.Resource, "resource", "", "expected EnvVault resource")
 	flags.StringVar(&config.CompleteURL, "complete-url", "", "browser session complete URL")
 	flags.StringVar(&config.PostLoginURL, "post-login-url", "", "fixed post-login URL")
 	flags.DurationVar(&config.ClockSkew, "clock-skew", 30*time.Second, "JWT clock skew")

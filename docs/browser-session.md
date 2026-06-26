@@ -1,13 +1,13 @@
 # Browser Session Protocol
 
-The browser-session protocol lets a backend create its own web session without putting a Credlease JWT in a browser URL. Credlease sends the bootstrap JWT to the backend exchange endpoint in the Authorization header, then opens a fixed complete URL containing only a short-lived one-time code.
+The browser-session protocol lets a backend create its own web session without putting a EnvVault JWT in a browser URL. EnvVault sends the bootstrap JWT to the backend exchange endpoint in the Authorization header, then opens a fixed complete URL containing only a short-lived one-time code.
 
 ## Exchange Endpoint
 
 The backend receives:
 
 ```text
-POST /auth/credlease/browser-sessions
+POST /auth/envvault/browser-sessions
 Authorization: <bootstrap credential>
 ```
 
@@ -15,7 +15,7 @@ Exchange endpoint requirements:
 
 - Accept the bootstrap credential only from the Authorization header.
 - Validate signature, issuer, expiry, scope, resource, and purpose.
-- Atomically insert `credlease_session_id` into a replay cache.
+- Atomically insert `envvault_session_id` into a replay cache.
 - Reject a reused session ID.
 - Generate the one-time code with a cryptographically secure random source.
 - Keep the code raw value out of logs.
@@ -28,7 +28,7 @@ Exchange endpoint requirements:
 The browser follows the complete endpoint:
 
 ```text
-GET /auth/credlease/complete?code=<opaque>
+GET /auth/envvault/complete?code=<opaque>
 ```
 
 Complete endpoint requirements:
@@ -44,7 +44,7 @@ Complete endpoint requirements:
 
 Session cookies must be `HttpOnly`. HTTPS deployments must also set `Secure`. `SameSite=Lax` or stricter is required, and cookie path/domain should be as narrow as the application allows.
 
-The CLI must not provide arbitrary redirect targets. Backend configuration and the Credlease profile both fix the complete URL and post-login URL. Host mismatches are rejected before the browser is launched.
+The CLI must not provide arbitrary redirect targets. Backend configuration and the EnvVault profile both fix the complete URL and post-login URL. Host mismatches are rejected before the browser is launched.
 
 ## Store Implementations
 

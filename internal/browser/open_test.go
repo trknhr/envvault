@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/audit"
-	"github.com/trknhr/credlease/internal/browser"
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/projectbinding"
+	"github.com/trknhr/envvault/internal/audit"
+	"github.com/trknhr/envvault/internal/browser"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/projectbinding"
 )
 
 func TestOpenPostsBootstrapJWTInAuthorizationHeaderAndOpensLaunchURL(t *testing.T) {
@@ -36,7 +36,7 @@ func TestOpenPostsBootstrapJWTInAuthorizationHeaderAndOpensLaunchURL(t *testing.
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"launch_url":"` + serverBaseURL(r) + `/auth/credlease/complete?code=opaque","expires_at":"2026-06-22T12:00:30Z"}`))
+		_, _ = w.Write([]byte(`{"launch_url":"` + serverBaseURL(r) + `/auth/envvault/complete?code=opaque","expires_at":"2026-06-22T12:00:30Z"}`))
 	}))
 	defer server.Close()
 
@@ -44,7 +44,7 @@ func TestOpenPostsBootstrapJWTInAuthorizationHeaderAndOpensLaunchURL(t *testing.
 	issuer := &fakeIssuer{}
 	opener := &fakeOpener{}
 	client := browser.Client{HTTP: server.Client(), Issuer: issuer, Opener: opener}
-	projectIdentity := projectbinding.Identity{Root: "/tmp/credlease-test-project"}
+	projectIdentity := projectbinding.Identity{Root: "/tmp/envvault-test-project"}
 	wantProjectID, err := projectbinding.PathHash(projectIdentity.Root)
 	if err != nil {
 		t.Fatalf("PathHash() error = %v", err)
@@ -65,7 +65,7 @@ func TestOpenPostsBootstrapJWTInAuthorizationHeaderAndOpensLaunchURL(t *testing.
 	if gotCacheControl != "no-store" {
 		t.Fatalf("Cache-Control = %q", gotCacheControl)
 	}
-	if gotBody["client"] != "credlease-cli" {
+	if gotBody["client"] != "envvault-cli" {
 		t.Fatalf("client = %v", gotBody["client"])
 	}
 	if gotBody["requested_session_ttl_seconds"] != float64(1800) {
@@ -74,7 +74,7 @@ func TestOpenPostsBootstrapJWTInAuthorizationHeaderAndOpensLaunchURL(t *testing.
 	if opener.browser != "chrome" {
 		t.Fatalf("browser = %q", opener.browser)
 	}
-	if !strings.Contains(opener.rawURL, "/auth/credlease/complete?code=opaque") {
+	if !strings.Contains(opener.rawURL, "/auth/envvault/complete?code=opaque") {
 		t.Fatalf("opened URL = %q", opener.rawURL)
 	}
 	if strings.Contains(opener.rawURL, "bootstrap-jwt") {
@@ -93,17 +93,17 @@ func TestOpenPostsBootstrapJWTInAuthorizationHeaderAndOpensLaunchURL(t *testing.
 	if grant.TTL != 60*time.Second {
 		t.Fatalf("grant ttl = %s", grant.TTL)
 	}
-	if grant.Claims["credlease_purpose"] != "browser-bootstrap" {
+	if grant.Claims["envvault_purpose"] != "browser-bootstrap" {
 		t.Fatalf("grant claims = %#v", grant.Claims)
 	}
-	if grant.Claims["credlease_session_id"] == "" {
+	if grant.Claims["envvault_session_id"] == "" {
 		t.Fatalf("grant claims missing session id: %#v", grant.Claims)
 	}
-	if grant.Claims["credlease_project_id"] != wantProjectID {
-		t.Fatalf("credlease_project_id = %#v, want %q", grant.Claims["credlease_project_id"], wantProjectID)
+	if grant.Claims["envvault_project_id"] != wantProjectID {
+		t.Fatalf("envvault_project_id = %#v, want %q", grant.Claims["envvault_project_id"], wantProjectID)
 	}
-	if grant.Claims["credlease_project_id"] == projectIdentity.Root {
-		t.Fatalf("credlease_project_id leaked raw project root: %#v", grant.Claims["credlease_project_id"])
+	if grant.Claims["envvault_project_id"] == projectIdentity.Root {
+		t.Fatalf("envvault_project_id leaked raw project root: %#v", grant.Claims["envvault_project_id"])
 	}
 }
 
@@ -112,7 +112,7 @@ func TestOpenPrintURLDoesNotOpenBrowser(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"launch_url":"` + serverBaseURL(r) + `/auth/credlease/complete?code=opaque","expires_at":"2026-06-22T12:00:30Z"}`))
+		_, _ = w.Write([]byte(`{"launch_url":"` + serverBaseURL(r) + `/auth/envvault/complete?code=opaque","expires_at":"2026-06-22T12:00:30Z"}`))
 	}))
 	defer server.Close()
 
@@ -138,7 +138,7 @@ func TestOpenRejectsBackendLaunchURLOutsideProfilePolicy(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"launch_url":"https://evil.example/auth/credlease/complete?code=opaque","expires_at":"2026-06-22T12:00:30Z"}`))
+		_, _ = w.Write([]byte(`{"launch_url":"https://evil.example/auth/envvault/complete?code=opaque","expires_at":"2026-06-22T12:00:30Z"}`))
 	}))
 	defer server.Close()
 
@@ -160,7 +160,7 @@ func TestOpenRejectsExchangeResponseWithoutNoStore(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"launch_url":"` + serverBaseURL(r) + `/auth/credlease/complete?code=opaque","expires_at":"2026-06-22T12:00:30Z"}`))
+		_, _ = w.Write([]byte(`{"launch_url":"` + serverBaseURL(r) + `/auth/envvault/complete?code=opaque","expires_at":"2026-06-22T12:00:30Z"}`))
 	}))
 	defer server.Close()
 
@@ -198,7 +198,7 @@ func TestOpenRecordsSuccessfulBrowserSessionRequestAuditWithoutSecrets(t *testin
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"launch_url":"` + serverBaseURL(r) + `/auth/credlease/complete?code=opaque","expires_at":"2026-06-22T12:00:30Z"}`))
+		_, _ = w.Write([]byte(`{"launch_url":"` + serverBaseURL(r) + `/auth/envvault/complete?code=opaque","expires_at":"2026-06-22T12:00:30Z"}`))
 	}))
 	defer server.Close()
 
@@ -229,8 +229,8 @@ func TestOpenRecordsSuccessfulBrowserSessionRequestAuditWithoutSecrets(t *testin
 	if got.SessionID == "" {
 		t.Fatal("session_id is empty")
 	}
-	if got.SessionID != issuer.grants[0].Claims["credlease_session_id"] {
-		t.Fatalf("session_id = %q, grant claim = %q", got.SessionID, issuer.grants[0].Claims["credlease_session_id"])
+	if got.SessionID != issuer.grants[0].Claims["envvault_session_id"] {
+		t.Fatalf("session_id = %q, grant claim = %q", got.SessionID, issuer.grants[0].Claims["envvault_session_id"])
 	}
 	if got.Result != audit.ResultSuccess {
 		t.Fatalf("result = %q", got.Result)
@@ -333,8 +333,8 @@ func browserProfile(baseURL string) profile.Profile {
 		BootstrapTokenTTL: 60 * time.Second,
 		LoginCodeTTL:      30 * time.Second,
 		WebSessionTTL:     30 * time.Minute,
-		ExchangeURL:       baseURL + "/auth/credlease/browser-sessions",
-		CompleteURL:       baseURL + "/auth/credlease/complete",
+		ExchangeURL:       baseURL + "/auth/envvault/browser-sessions",
+		CompleteURL:       baseURL + "/auth/envvault/complete",
 		PostLoginURL:      baseURL + "/",
 		AllowedHosts:      []string{strings.TrimPrefix(baseURL, "http://")},
 	}

@@ -1,37 +1,49 @@
-# Credlease
+# EnvVault
 
-Credlease is a local-first credential launcher for replacing long-lived values in project `.env` files with short-lived, scoped credentials issued at runtime.
+EnvVault is a local-first credential launcher and localhost credential proxy for replacing long-lived values in project `.env` files with runtime-only credentials.
 
-Repository-safe references look like this:
+Repository-safe references for first-party leased tokens look like this:
 
 ```dotenv
-BACKEND_A_TOKEN=credlease://backend-a/dev
+BACKEND_A_TOKEN=envvault://backend-a/dev
+```
+
+Third-party API proxy references split the SDK base URL from the local bearer token:
+
+```dotenv
+OPENAI_BASE_URL=envvault://openai/dev/base-url
+OPENAI_API_KEY=envvault://openai/dev/token
 ```
 
 Target Local MVP commands:
 
 ```bash
-credlease exec --env-file .env -- codex
-credlease exec --env-file .env -- npm run dev
-credlease open admin-web/dev
+envvault exec --env-file .env -- codex
+envvault exec --env-file .env -- npm run dev
+envvault open admin-web/dev
 ```
+
+For third-party APIs, `envvault exec` starts a localhost proxy, rewrites the
+base URL to that proxy, and gives the child process a local-only token. The real
+provider key stays in the OS credential store and is added only to outbound
+requests that match the proxy profile's method and path allowlist.
 
 ## Security Limitations
 
-Credlease Local MVP reduces credential exposure; it does not create a sandbox.
+EnvVault Local MVP reduces credential exposure; it does not create a sandbox.
 
 - A child process can read any leased token placed in its environment until it exits or the token expires.
-- A process running as the same OS user can still invoke `credlease token` unless additional OS controls are used.
+- A process running as the same OS user can still invoke `envvault token` unless additional OS controls are used.
 - If the OS credential store is compromised, the local trust root is compromised.
 - Local issuer public keys are not automatically trusted by remote services. Remote backends need explicit key registration or a future centralized STS.
-- Credlease does not redact prompts, stdout, stderr, HTTP bodies, shell history, or application logs outside its own outputs.
-- GitHub PATs, Stripe secrets, and other third-party credentials that only support long-lived bearer secrets are not made safe by renaming them as Credlease references.
+- EnvVault does not redact prompts, stdout, stderr, HTTP bodies, shell history, or application logs outside its own outputs.
+- Third-party credentials are protected only when the app can be pointed at the EnvVault localhost proxy. If an SDK or tool insists on receiving the raw provider key directly, EnvVault cannot keep that key out of the child process environment.
 
 ## Local MVP Status
 
-This repository contains the Local MVP implementation path: strict reference parsing, profile policy, OS keyring abstraction, managed Talos runtime installation and lifecycle, local issuer boundaries, process environment construction, browser-session helpers, verifier packages, metadata-only audit records, reset/doctor support, a runnable Go backend example, and acceptance fixtures.
+This repository contains the Local MVP implementation path: strict reference parsing, profile policy, OS keyring abstraction, third-party provider proxy profiles, managed Talos runtime installation and lifecycle for first-party leased tokens, local issuer boundaries, process environment construction, browser-session helpers, verifier packages, metadata-only audit records, reset/doctor support, runnable examples, and acceptance fixtures.
 
-Local archive packaging is available through `go run ./cmd/credlease-release package`, and local Homebrew/Scoop metadata can be generated with `go run ./cmd/credlease-release package-manifests`. `.github/workflows/local-mvp.yml` defines the test, vet, race, release, and secret-scan gate for macOS and Ubuntu runners. Package-manager publication and green Tier 1 platform runs are still required before a v0.1 release.
+Local archive packaging is available through `go run ./cmd/envvault-release package`, and local Homebrew/Scoop metadata can be generated with `go run ./cmd/envvault-release package-manifests`. `.github/workflows/local-mvp.yml` defines the test, vet, race, release, and secret-scan gate for macOS and Ubuntu runners. Package-manager publication and green Tier 1 platform runs are still required before a v0.1 release.
 
 ## Documentation
 
@@ -52,6 +64,7 @@ Local archive packaging is available through `go run ./cmd/credlease-release pac
 - [Go backend example](examples/backend-go)
 - [TypeScript backend example](examples/backend-typescript/README.md)
 - [Browser session Go example](examples/browser-session-go/README.md)
+- [OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)
 - [Codex example](examples/codex/README.md)
 
 ## Development
@@ -64,4 +77,4 @@ go vet ./...
 go test -race ./...
 ```
 
-No command should print raw parent keys, signing keys, Authorization headers, browser login codes, or issued JWTs except the intentional `credlease token` credential-helper output path.
+No command should print raw parent keys, signing keys, Authorization headers, browser login codes, or issued JWTs except the intentional `envvault token` credential-helper output path.

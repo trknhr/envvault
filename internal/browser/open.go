@@ -11,11 +11,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/trknhr/credlease/internal/audit"
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/projectbinding"
+	"github.com/trknhr/envvault/internal/audit"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/projectbinding"
 )
 
 type Issuer interface {
@@ -59,18 +59,18 @@ func (c Client) Open(ctx context.Context, request OpenRequest) (OpenResult, erro
 	}
 
 	claims := map[string]any{
-		"credlease_profile":    p.Name,
-		"credlease_resource":   p.Resource,
-		"credlease_client":     "credlease-cli",
-		"credlease_session_id": sessionID,
-		"credlease_purpose":    "browser-bootstrap",
+		"envvault_profile":    p.Name,
+		"envvault_resource":   p.Resource,
+		"envvault_client":     "envvault-cli",
+		"envvault_session_id": sessionID,
+		"envvault_purpose":    "browser-bootstrap",
 	}
 	if request.ProjectIdentity.Root != "" {
 		projectID, err := projectbinding.PathHash(request.ProjectIdentity.Root)
 		if err != nil {
 			return OpenResult{}, err
 		}
-		claims["credlease_project_id"] = projectID
+		claims["envvault_project_id"] = projectID
 	}
 
 	credential, err := c.Issuer.Issue(ctx, issuer.Grant{
@@ -136,7 +136,7 @@ type exchangeResponse struct {
 func (c Client) exchange(ctx context.Context, p profile.Profile, token string) (exchangeResponse, error) {
 	body := map[string]any{
 		"requested_session_ttl_seconds": int64(p.WebSessionTTL.Seconds()),
-		"client":                        "credlease-cli",
+		"client":                        "envvault-cli",
 		"client_version":                "0.1.0",
 	}
 	raw, err := json.Marshal(body)

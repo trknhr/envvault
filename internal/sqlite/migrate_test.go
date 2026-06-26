@@ -9,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/sqlite"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/sqlite"
 	_ "modernc.org/sqlite"
 )
 
 func TestMigrateCreatesPrivateSQLiteWithMetadataOnlySchema(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "data", "credlease.db")
+	path := filepath.Join(t.TempDir(), "data", "envvault.db")
 
 	if err := sqlite.Migrate(context.Background(), sqlite.Options{Path: path}); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
@@ -56,7 +56,7 @@ func TestMigrateCreatesPrivateSQLiteWithMetadataOnlySchema(t *testing.T) {
 }
 
 func TestMigrateIsIdempotent(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "credlease.db")
+	path := filepath.Join(t.TempDir(), "envvault.db")
 	if err := sqlite.Migrate(context.Background(), sqlite.Options{Path: path}); err != nil {
 		t.Fatalf("first Migrate() error = %v", err)
 	}
@@ -77,7 +77,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 func TestMigrateBacksUpExistingDatabaseBeforeUpgrade(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "credlease.db")
+	path := filepath.Join(dir, "envvault.db")
 	db := openDB(t, path)
 	if _, err := db.Exec(`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {
 		t.Fatalf("create migration table error = %v", err)
@@ -97,7 +97,7 @@ func TestMigrateBacksUpExistingDatabaseBeforeUpgrade(t *testing.T) {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 
-	matches, err := filepath.Glob(filepath.Join(dir, "credlease.db.backup-*"))
+	matches, err := filepath.Glob(filepath.Join(dir, "envvault.db.backup-*"))
 	if err != nil {
 		t.Fatalf("Glob() error = %v", err)
 	}
@@ -117,7 +117,7 @@ func TestMigrateBacksUpExistingDatabaseBeforeUpgrade(t *testing.T) {
 
 func TestMigrateRejectsRepositoryLocalPath(t *testing.T) {
 	repo := t.TempDir()
-	path := filepath.Join(repo, ".credlease", "credlease.db")
+	path := filepath.Join(repo, ".envvault", "envvault.db")
 
 	err := sqlite.Migrate(context.Background(), sqlite.Options{Path: path, RepositoryRoot: repo})
 	if err == nil {

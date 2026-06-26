@@ -7,17 +7,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/issuer/local"
-	"github.com/trknhr/credlease/internal/keyring"
-	"github.com/trknhr/credlease/internal/process"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/projectbinding"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/issuer/local"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/process"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/projectbinding"
 )
 
 func TestBuildEnvResolvesEnvFileReferenceWithoutParentFallback(t *testing.T) {
-	envFile := writeEnvFile(t, "TOKEN=credlease://backend-a/dev\nPLAIN=file-value\n")
+	envFile := writeEnvFile(t, "TOKEN=envvault://backend-a/dev\nPLAIN=file-value\n")
 	issuer := &fakeIssuer{}
 
 	env, err := process.BuildEnv(context.Background(), process.EnvInput{
@@ -41,11 +41,11 @@ func TestBuildEnvResolvesEnvFileReferenceWithoutParentFallback(t *testing.T) {
 	if len(issuer.grants) != 1 {
 		t.Fatalf("issued grants = %d, want 1", len(issuer.grants))
 	}
-	assertFileContent(t, envFile, "TOKEN=credlease://backend-a/dev\nPLAIN=file-value\n")
+	assertFileContent(t, envFile, "TOKEN=envvault://backend-a/dev\nPLAIN=file-value\n")
 }
 
 func TestBuildEnvInlineEnvOverridesEnvFileReference(t *testing.T) {
-	envFile := writeEnvFile(t, "TOKEN=credlease://backend-a/dev\n")
+	envFile := writeEnvFile(t, "TOKEN=envvault://backend-a/dev\n")
 	issuer := &fakeIssuer{}
 
 	env, err := process.BuildEnv(context.Background(), process.EnvInput{
@@ -66,7 +66,7 @@ func TestBuildEnvInlineEnvOverridesEnvFileReference(t *testing.T) {
 }
 
 func TestBuildEnvUnknownProfileFailsClosedWithoutParentFallback(t *testing.T) {
-	envFile := writeEnvFile(t, "TOKEN=credlease://unknown/dev\n")
+	envFile := writeEnvFile(t, "TOKEN=envvault://unknown/dev\n")
 	issuer := &fakeIssuer{}
 
 	_, err := process.BuildEnv(context.Background(), process.EnvInput{
@@ -85,7 +85,7 @@ func TestBuildEnvUnknownProfileFailsClosedWithoutParentFallback(t *testing.T) {
 }
 
 func TestBuildEnvReusesTokenForSameProfileWithinExec(t *testing.T) {
-	envFile := writeEnvFile(t, "TOKEN_A=credlease://backend-a/dev\nTOKEN_B=credlease://backend-a/dev\n")
+	envFile := writeEnvFile(t, "TOKEN_A=envvault://backend-a/dev\nTOKEN_B=envvault://backend-a/dev\n")
 	issuer := &fakeIssuer{}
 
 	env, err := process.BuildEnv(context.Background(), process.EnvInput{
@@ -104,8 +104,8 @@ func TestBuildEnvReusesTokenForSameProfileWithinExec(t *testing.T) {
 	}
 }
 
-func TestBuildEnvGrantIncludesCredleaseClaims(t *testing.T) {
-	envFile := writeEnvFile(t, "TOKEN=credlease://backend-a/dev\n")
+func TestBuildEnvGrantIncludesEnvVaultClaims(t *testing.T) {
+	envFile := writeEnvFile(t, "TOKEN=envvault://backend-a/dev\n")
 	issuer := &fakeIssuer{}
 	projectRoot := filepath.Join(t.TempDir(), "repo")
 	wantProjectID, err := projectbinding.PathHash(projectRoot)
@@ -126,34 +126,34 @@ func TestBuildEnvGrantIncludesCredleaseClaims(t *testing.T) {
 	}
 	claims := issuer.grants[0].Claims
 	for key, want := range map[string]any{
-		"credlease_profile":    "backend-a/dev",
-		"credlease_resource":   "https://api.dev.example.com",
-		"credlease_purpose":    "process",
-		"credlease_project_id": wantProjectID,
-		"environment":          "dev",
+		"envvault_profile":    "backend-a/dev",
+		"envvault_resource":   "https://api.dev.example.com",
+		"envvault_purpose":    "process",
+		"envvault_project_id": wantProjectID,
+		"environment":         "dev",
 	} {
 		if got := claims[key]; got != want {
 			t.Fatalf("Claims[%s] = %#v, want %#v", key, got, want)
 		}
 	}
-	if got := claims["credlease_project_id"].(string); got == "" || got == projectRoot {
-		t.Fatalf("Claims[credlease_project_id] = %q, want non-empty hash without raw path", got)
+	if got := claims["envvault_project_id"].(string); got == "" || got == projectRoot {
+		t.Fatalf("Claims[envvault_project_id] = %q, want non-empty hash without raw path", got)
 	}
-	if claims["credlease_session_id"] == "" {
-		t.Fatal("Claims[credlease_session_id] is empty")
+	if claims["envvault_session_id"] == "" {
+		t.Fatal("Claims[envvault_session_id] is empty")
 	}
 }
 
-func TestProcessClaimsKeepsCredleaseBindingClaimsAuthoritative(t *testing.T) {
+func TestProcessClaimsKeepsEnvVaultBindingClaimsAuthoritative(t *testing.T) {
 	projectRoot := filepath.Join(t.TempDir(), "repo")
 	claims, err := process.ProcessClaims(profile.Profile{
 		Name:     "backend-a/dev",
 		Resource: "https://api.dev.example.com",
 		Claims: map[string]string{
-			"credlease_profile":  "other-profile",
-			"credlease_resource": "https://evil.example.com",
-			"credlease_purpose":  "admin",
-			"environment":        "dev",
+			"envvault_profile":  "other-profile",
+			"envvault_resource": "https://evil.example.com",
+			"envvault_purpose":  "admin",
+			"environment":       "dev",
 		},
 	}, projectbinding.Identity{Root: projectRoot})
 	if err != nil {
@@ -161,10 +161,10 @@ func TestProcessClaimsKeepsCredleaseBindingClaimsAuthoritative(t *testing.T) {
 	}
 
 	for key, want := range map[string]any{
-		"credlease_profile":  "backend-a/dev",
-		"credlease_resource": "https://api.dev.example.com",
-		"credlease_purpose":  "process",
-		"environment":        "dev",
+		"envvault_profile":  "backend-a/dev",
+		"envvault_resource": "https://api.dev.example.com",
+		"envvault_purpose":  "process",
+		"environment":       "dev",
 	} {
 		if got := claims[key]; got != want {
 			t.Fatalf("Claims[%s] = %#v, want %#v", key, got, want)
@@ -174,7 +174,7 @@ func TestProcessClaimsKeepsCredleaseBindingClaimsAuthoritative(t *testing.T) {
 
 func TestBuildEnvRejectsMalformedInlineReference(t *testing.T) {
 	_, err := process.BuildEnv(context.Background(), process.EnvInput{
-		InlineEnv: []string{"TOKEN=credlease://backend-a/dev?ttl=24h"},
+		InlineEnv: []string{"TOKEN=envvault://backend-a/dev?ttl=24h"},
 	}, fakeProfiles(), &fakeIssuer{})
 	if err == nil {
 		t.Fatal("BuildEnv() error = nil, want error")
@@ -197,7 +197,7 @@ func TestBuildEnvRejectsUnapprovedProjectBindingBeforeIssuingToken(t *testing.T)
 	issuer := &fakeIssuer{}
 
 	_, err = process.BuildEnv(context.Background(), process.EnvInput{
-		EnvFiles:        []string{writeEnvFile(t, "TOKEN=credlease://backend-a/dev\n")},
+		EnvFiles:        []string{writeEnvFile(t, "TOKEN=envvault://backend-a/dev\n")},
 		ProjectIdentity: projectbinding.Identity{Root: filepath.Join(t.TempDir(), "repo")},
 	}, profiles, issuer)
 	if err == nil {
@@ -211,9 +211,9 @@ func TestBuildEnvRejectsUnapprovedProjectBindingBeforeIssuingToken(t *testing.T)
 	}
 }
 
-func TestBuildEnvWorksWithLocalIssuerAndDropsCredleaseAuthorityEnv(t *testing.T) {
+func TestBuildEnvWorksWithLocalIssuerAndDropsEnvVaultAuthorityEnv(t *testing.T) {
 	ctx := context.Background()
-	envFile := writeEnvFile(t, "TOKEN=credlease://backend-a/dev\n")
+	envFile := writeEnvFile(t, "TOKEN=envvault://backend-a/dev\n")
 	secrets := keyring.NewMemoryStore()
 	if err := secrets.Put(ctx, keyring.ProfileParentKey("backend-a/dev"), []byte("parent-secret")); err != nil {
 		t.Fatalf("Put() error = %v", err)
@@ -223,9 +223,9 @@ func TestBuildEnvWorksWithLocalIssuerAndDropsCredleaseAuthorityEnv(t *testing.T)
 
 	env, err := process.BuildEnv(ctx, process.EnvInput{
 		Parent: []string{
-			"CREDLEASE_TALOS_HMAC_SECRET=hmac-secret",
-			"CREDLEASE_TALOS_SIGNING_KEY=signing-secret",
-			"CREDLEASE_PROFILE_PARENT_KEY=parent-secret",
+			"ENVVAULT_TALOS_HMAC_SECRET=hmac-secret",
+			"ENVVAULT_TALOS_SIGNING_KEY=signing-secret",
+			"ENVVAULT_PROFILE_PARENT_KEY=parent-secret",
 		},
 		EnvFiles:        []string{envFile},
 		ProjectIdentity: testProjectIdentity(t),
@@ -238,9 +238,9 @@ func TestBuildEnvWorksWithLocalIssuerAndDropsCredleaseAuthorityEnv(t *testing.T)
 		t.Fatalf("TOKEN = %q, want leased-jwt", env["TOKEN"])
 	}
 	for _, key := range []string{
-		"CREDLEASE_TALOS_HMAC_SECRET",
-		"CREDLEASE_TALOS_SIGNING_KEY",
-		"CREDLEASE_PROFILE_PARENT_KEY",
+		"ENVVAULT_TALOS_HMAC_SECRET",
+		"ENVVAULT_TALOS_SIGNING_KEY",
+		"ENVVAULT_PROFILE_PARENT_KEY",
 	} {
 		if _, ok := env[key]; ok {
 			t.Fatalf("%s leaked into child environment", key)

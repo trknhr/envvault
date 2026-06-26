@@ -7,15 +7,16 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/keyring"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/profile"
 )
 
 const (
-	sqliteFilename      = "credlease.sqlite"
+	sqliteFilename      = "envvault.sqlite"
 	talosSQLiteFilename = "talos.sqlite"
-	jwksFilename        = "credlease-jwks.json"
+	jwksFilename        = "envvault-jwks.json"
 	auditFilename       = "audit.jsonl"
 	signingKeyID        = "current"
 )
@@ -77,7 +78,11 @@ func (p Planner) plan() (Result, error) {
 		string(keyring.TalosHMACKey()),
 		string(keyring.TalosSigningKey(signingKeyID)),
 	}
-	for name := range cfg.Profiles {
+	for name, stored := range cfg.Profiles {
+		if stored.Kind == profile.KindProviderProxy {
+			keys = append(keys, string(keyring.ProviderAPIKey(name)))
+			continue
+		}
 		keys = append(keys, string(keyring.ProfileParentKey(name)))
 	}
 	sort.Strings(files)
@@ -86,11 +91,11 @@ func (p Planner) plan() (Result, error) {
 }
 
 func configMissing(err error) bool {
-	var credleaseErr *clerr.Error
-	if !errors.As(err, &credleaseErr) || credleaseErr.Err == nil {
+	var envvaultErr *clerr.Error
+	if !errors.As(err, &envvaultErr) || envvaultErr.Err == nil {
 		return false
 	}
-	return errors.Is(credleaseErr.Err, os.ErrNotExist)
+	return errors.Is(envvaultErr.Err, os.ErrNotExist)
 }
 
 func removePath(path string) error {
@@ -98,7 +103,7 @@ func removePath(path string) error {
 		return nil
 	}
 	if err := os.RemoveAll(path); err != nil {
-		return clerr.Wrap(clerr.CleanupFailed, "remove credlease path", err)
+		return clerr.Wrap(clerr.CleanupFailed, "remove envvault path", err)
 	}
 	return nil
 }

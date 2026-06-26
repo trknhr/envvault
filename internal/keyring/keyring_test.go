@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/keyring"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/keyring"
 )
 
 func TestSecretKeyNamesMatchSpecHierarchy(t *testing.T) {
@@ -15,9 +15,9 @@ func TestSecretKeyNamesMatchSpecHierarchy(t *testing.T) {
 		got  keyring.Key
 		want string
 	}{
-		{name: "hmac", got: keyring.TalosHMACKey(), want: "credlease/talos/hmac/current"},
-		{name: "signing", got: keyring.TalosSigningKey("kid-1"), want: "credlease/talos/signing/kid-1"},
-		{name: "parent", got: keyring.ProfileParentKey("backend-a/dev"), want: "credlease/profile/backend-a/dev/parent-key"},
+		{name: "hmac", got: keyring.TalosHMACKey(), want: "envvault/talos/hmac/current"},
+		{name: "signing", got: keyring.TalosSigningKey("kid-1"), want: "envvault/talos/signing/kid-1"},
+		{name: "parent", got: keyring.ProfileParentKey("backend-a/dev"), want: "envvault/profile/backend-a/dev/parent-key"},
 	}
 
 	for _, tt := range tests {

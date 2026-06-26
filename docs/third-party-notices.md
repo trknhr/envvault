@@ -1,7 +1,7 @@
 # Third-Party Notices
 
 This notice index covers the Go modules returned by `go list -m all` for the
-Credlease Local MVP workspace on 2026-06-22. Release packaging must include
+EnvVault Local MVP workspace on 2026-06-22. Release packaging must include
 this file and preserve upstream `LICENSE`, `NOTICE`, `PATENTS`, and equivalent
 notice files from bundled source or vendored artifacts.
 

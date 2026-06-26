@@ -1,4 +1,4 @@
-module github.com/trknhr/credlease
+module github.com/trknhr/envvault
 
 go 1.25.0
 

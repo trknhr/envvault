@@ -59,7 +59,7 @@ func Package(options PackageOptions) (Artifact, error) {
 		return Artifact{}, fmt.Errorf("binary path is required")
 	}
 	if err := requireRegularFile(options.BinaryPath); err != nil {
-		return Artifact{}, fmt.Errorf("inspect credlease binary: %w", err)
+		return Artifact{}, fmt.Errorf("inspect envvault binary: %w", err)
 	}
 	for _, rel := range packageDocs {
 		if err := requireRegularFile(filepath.Join(options.RepoRoot, rel)); err != nil {
@@ -193,14 +193,14 @@ func archiveName(version string, platform Platform) string {
 }
 
 func packageRoot(version string, platform Platform) string {
-	return fmt.Sprintf("credlease_%s_%s_%s", version, platform.OS, platform.Arch)
+	return fmt.Sprintf("envvault_%s_%s_%s", version, platform.OS, platform.Arch)
 }
 
 func packageBinaryName(platform Platform) string {
 	if platform.OS == "windows" {
-		return "credlease.exe"
+		return "envvault.exe"
 	}
-	return "credlease"
+	return "envvault"
 }
 
 func writeTarGzPackage(path string, options PackageOptions) error {

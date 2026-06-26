@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/trknhr/credlease/internal/config"
+	"github.com/trknhr/envvault/internal/config"
 )
 
 func TestPathsForLinuxUseXDGDirectories(t *testing.T) {
@@ -20,16 +20,16 @@ func TestPathsForLinuxUseXDGDirectories(t *testing.T) {
 		t.Fatalf("PathsFor() error = %v", err)
 	}
 
-	if paths.ConfigDir != "/xdg/config/credlease" {
+	if paths.ConfigDir != "/xdg/config/envvault" {
 		t.Fatalf("ConfigDir = %q", paths.ConfigDir)
 	}
-	if paths.ConfigFile != "/xdg/config/credlease/config.yaml" {
+	if paths.ConfigFile != "/xdg/config/envvault/config.yaml" {
 		t.Fatalf("ConfigFile = %q", paths.ConfigFile)
 	}
-	if paths.DataDir != "/xdg/data/credlease" {
+	if paths.DataDir != "/xdg/data/envvault" {
 		t.Fatalf("DataDir = %q", paths.DataDir)
 	}
-	if paths.CacheDir != "/xdg/cache/credlease" {
+	if paths.CacheDir != "/xdg/cache/envvault" {
 		t.Fatalf("CacheDir = %q", paths.CacheDir)
 	}
 }
@@ -40,13 +40,13 @@ func TestPathsForLinuxFallsBackToHome(t *testing.T) {
 		t.Fatalf("PathsFor() error = %v", err)
 	}
 
-	if paths.ConfigDir != "/home/alice/.config/credlease" {
+	if paths.ConfigDir != "/home/alice/.config/envvault" {
 		t.Fatalf("ConfigDir = %q", paths.ConfigDir)
 	}
-	if paths.DataDir != "/home/alice/.local/share/credlease" {
+	if paths.DataDir != "/home/alice/.local/share/envvault" {
 		t.Fatalf("DataDir = %q", paths.DataDir)
 	}
-	if paths.CacheDir != "/home/alice/.cache/credlease" {
+	if paths.CacheDir != "/home/alice/.cache/envvault" {
 		t.Fatalf("CacheDir = %q", paths.CacheDir)
 	}
 }

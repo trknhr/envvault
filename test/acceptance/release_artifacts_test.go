@@ -16,8 +16,8 @@ import (
 	"strings"
 	"testing"
 
-	releasepkg "github.com/trknhr/credlease/internal/releasepkg"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
+	releasepkg "github.com/trknhr/envvault/internal/releasepkg"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 	"gopkg.in/yaml.v3"
 )
 
@@ -86,11 +86,11 @@ func TestReleasePackagesContainSingleBinaryDocsNoticesAndChecksums(t *testing.T)
 	repoRoot := findRepoRoot(t)
 	distDir := t.TempDir()
 	binaryDir := t.TempDir()
-	unixBinary := filepath.Join(binaryDir, "credlease")
+	unixBinary := filepath.Join(binaryDir, "envvault")
 	if err := os.WriteFile(unixBinary, []byte("fake unix binary"), 0o755); err != nil {
 		t.Fatalf("WriteFile(unix binary) error = %v", err)
 	}
-	windowsBinary := filepath.Join(binaryDir, "credlease.exe")
+	windowsBinary := filepath.Join(binaryDir, "envvault.exe")
 	if err := os.WriteFile(windowsBinary, []byte("fake windows binary"), 0o755); err != nil {
 		t.Fatalf("WriteFile(windows binary) error = %v", err)
 	}
@@ -122,9 +122,9 @@ func TestReleasePackagesContainSingleBinaryDocsNoticesAndChecksums(t *testing.T)
 	assertReleaseSHA256(t, linuxArtifact.SHA256)
 	assertReleaseSHA256(t, windowsArtifact.SHA256)
 	linuxEntries := readTarGzEntries(t, linuxArtifact.Path)
-	assertReleasePackageEntries(t, linuxEntries, "credlease_v0.1.0_linux_amd64", "credlease")
+	assertReleasePackageEntries(t, linuxEntries, "envvault_v0.1.0_linux_amd64", "envvault")
 	windowsEntries := readZipEntries(t, windowsArtifact.Path)
-	assertReleasePackageEntries(t, windowsEntries, "credlease_v0.1.0_windows_amd64", "credlease.exe")
+	assertReleasePackageEntries(t, windowsEntries, "envvault_v0.1.0_windows_amd64", "envvault.exe")
 
 	checksums, err := os.ReadFile(filepath.Join(distDir, "SHA256SUMS"))
 	if err != nil {
@@ -140,13 +140,13 @@ func TestReleasePackagesContainSingleBinaryDocsNoticesAndChecksums(t *testing.T)
 
 func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.T) {
 	distDir := t.TempDir()
-	baseURL := "https://github.com/trknhr/credlease/releases/download/v0.1.0"
+	baseURL := "https://github.com/trknhr/envvault/releases/download/v0.1.0"
 	artifacts := []releasepkg.Artifact{
-		{Name: "credlease_v0.1.0_darwin_amd64.tar.gz", SHA256: strings.Repeat("a", 64)},
-		{Name: "credlease_v0.1.0_darwin_arm64.tar.gz", SHA256: strings.Repeat("b", 64)},
-		{Name: "credlease_v0.1.0_linux_amd64.tar.gz", SHA256: strings.Repeat("c", 64)},
-		{Name: "credlease_v0.1.0_linux_arm64.tar.gz", SHA256: strings.Repeat("d", 64)},
-		{Name: "credlease_v0.1.0_windows_amd64.zip", SHA256: strings.Repeat("e", 64)},
+		{Name: "envvault_v0.1.0_darwin_amd64.tar.gz", SHA256: strings.Repeat("a", 64)},
+		{Name: "envvault_v0.1.0_darwin_arm64.tar.gz", SHA256: strings.Repeat("b", 64)},
+		{Name: "envvault_v0.1.0_linux_amd64.tar.gz", SHA256: strings.Repeat("c", 64)},
+		{Name: "envvault_v0.1.0_linux_arm64.tar.gz", SHA256: strings.Repeat("d", 64)},
+		{Name: "envvault_v0.1.0_windows_amd64.zip", SHA256: strings.Repeat("e", 64)},
 	}
 
 	paths, err := releasepkg.WritePackageManagerManifests(releasepkg.PackageManagerManifestOptions{
@@ -175,7 +175,7 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 		}
 	}
 	for _, forbidden := range []string{
-		"credlease_v0.1.0_windows_amd64.zip",
+		"envvault_v0.1.0_windows_amd64.zip",
 		"secret-canary",
 		"Authorization: Bearer",
 		"parent-secret",
@@ -297,12 +297,12 @@ func TestSpecLayoutIncludesExamplesAndFakeKeyringFixture(t *testing.T) {
 		"examples/backend-typescript/README.md": {
 			"# TypeScript Backend Example",
 			"Authorization",
-			"credlease_resource",
+			"envvault_resource",
 			"browser session",
 		},
 		"examples/backend-typescript/server.mjs": {
 			"/documents/read",
-			"/auth/credlease/browser-sessions",
+			"/auth/envvault/browser-sessions",
 			"Cache-Control",
 			"no-store",
 		},
@@ -314,16 +314,16 @@ func TestSpecLayoutIncludesExamplesAndFakeKeyringFixture(t *testing.T) {
 		},
 		"examples/browser-session-go/cmd/server/main.go": {
 			"browsersession.NewSQLiteStore",
-			"/auth/credlease/browser-sessions",
-			"/auth/credlease/complete",
+			"/auth/envvault/browser-sessions",
+			"/auth/envvault/complete",
 		},
 		"examples/codex/README.md": {
 			"# Codex Example",
-			"credlease exec",
-			"credlease://backend-a/dev",
+			"envvault exec",
+			"envvault://backend-a/dev",
 		},
 		"examples/codex/.env.example": {
-			"BACKEND_A_TOKEN=credlease://backend-a/dev",
+			"BACKEND_A_TOKEN=envvault://backend-a/dev",
 		},
 		"test/fake-keyring/store.go": {
 			"package fakekeyring",
@@ -391,7 +391,7 @@ func TestLocalMVPCIWorkflowRunsReleaseGateAndSecretScan(t *testing.T) {
 		"go vet ./...",
 		"go test -race ./...",
 		"go test ./test/acceptance -run TestRelease -count=1",
-		"go run ./cmd/credlease-ci secret-scan .",
+		"go run ./cmd/envvault-ci secret-scan .",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("workflow missing %q:\n%s", want, workflow)

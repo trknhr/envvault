@@ -44,4 +44,4 @@ jobs:
         run: go test ./test/acceptance -run TestRelease -count=1
 
       - name: Run binary-safe secret canary scan
-        run: go run ./cmd/credlease-ci secret-scan .
+        run: go run ./cmd/envvault-ci secret-scan .

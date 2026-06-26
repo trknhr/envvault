@@ -16,23 +16,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/audit"
-	"github.com/trknhr/credlease/internal/bootstrap"
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/cli"
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/doctor"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/issuer/local"
-	issuertalos "github.com/trknhr/credlease/internal/issuer/talos"
-	"github.com/trknhr/credlease/internal/issuer/talosruntime"
-	"github.com/trknhr/credlease/internal/keyring"
-	"github.com/trknhr/credlease/internal/process"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/profilemgr"
-	resetpkg "github.com/trknhr/credlease/internal/reset"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
-	"github.com/trknhr/credlease/internal/sqlite"
+	"github.com/trknhr/envvault/internal/audit"
+	"github.com/trknhr/envvault/internal/bootstrap"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/cli"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/doctor"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/issuer/local"
+	issuertalos "github.com/trknhr/envvault/internal/issuer/talos"
+	"github.com/trknhr/envvault/internal/issuer/talosruntime"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/process"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/profilemgr"
+	resetpkg "github.com/trknhr/envvault/internal/reset"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/sqlite"
 	_ "modernc.org/sqlite"
 )
 
@@ -156,11 +156,11 @@ func TestATINIT001And002InitCreatesLocalStateAndIsIdempotent(t *testing.T) {
 		t.Fatalf("installer calls = %d, want 1", installer.calls)
 	}
 	assertFileContent(t, installer.path, string(runtimeBody))
-	assertFileContent(t, filepath.Join(paths.DataDir, "credlease-jwks.json"), string(jwks))
-	assertSQLiteIntegrity(t, filepath.Join(paths.DataDir, "credlease.sqlite"))
+	assertFileContent(t, filepath.Join(paths.DataDir, "envvault-jwks.json"), string(jwks))
+	assertSQLiteIntegrity(t, filepath.Join(paths.DataDir, "envvault.sqlite"))
 	assertAcceptanceFileMode(t, paths.ConfigFile, 0o600)
-	assertAcceptanceFileMode(t, filepath.Join(paths.DataDir, "credlease.sqlite"), 0o600)
-	assertAcceptanceFileMode(t, filepath.Join(paths.DataDir, "credlease-jwks.json"), 0o644)
+	assertAcceptanceFileMode(t, filepath.Join(paths.DataDir, "envvault.sqlite"), 0o600)
+	assertAcceptanceFileMode(t, filepath.Join(paths.DataDir, "envvault-jwks.json"), 0o644)
 
 	firstHMAC, err := secrets.Get(context.Background(), keyring.TalosHMACKey())
 	if err != nil {
@@ -173,7 +173,7 @@ func TestATINIT001And002InitCreatesLocalStateAndIsIdempotent(t *testing.T) {
 	if string(firstHMAC) != "secret-canary-hmac-32-byte-value" || string(firstSigning) != "secret-canary-signing-32-byte-seed" {
 		t.Fatalf("stored secrets = %q/%q, want generated secret material", firstHMAC, firstSigning)
 	}
-	for _, path := range []string{paths.ConfigFile, filepath.Join(paths.DataDir, "credlease.sqlite"), filepath.Join(paths.DataDir, "credlease-jwks.json")} {
+	for _, path := range []string{paths.ConfigFile, filepath.Join(paths.DataDir, "envvault.sqlite"), filepath.Join(paths.DataDir, "envvault-jwks.json")} {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("ReadFile(%s) error = %v", path, err)
@@ -264,9 +264,9 @@ func TestATCONCURRENCY001ConcurrentTokenIssuance(t *testing.T) {
 		if grant.Profile != "backend-a/dev" {
 			t.Fatalf("grant profile = %q, want backend-a/dev", grant.Profile)
 		}
-		sessionID, ok := grant.Claims["credlease_session_id"].(string)
+		sessionID, ok := grant.Claims["envvault_session_id"].(string)
 		if !ok || !strings.HasPrefix(sessionID, "hex:") {
-			t.Fatalf("grant session id = %#v, want hex session", grant.Claims["credlease_session_id"])
+			t.Fatalf("grant session id = %#v, want hex session", grant.Claims["envvault_session_id"])
 		}
 		if seenSessions[sessionID] {
 			t.Fatalf("duplicate session id %q", sessionID)
@@ -292,7 +292,7 @@ func TestATCRASH001DoctorRepairCleansStaleRuntimeArtifactsAndChecksDBs(t *testin
 	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
 		t.Fatalf("MkdirAll(tmp) error = %v", err)
 	}
-	staleTemp := filepath.Join(tmpDir, "credlease-secret-canary.yaml")
+	staleTemp := filepath.Join(tmpDir, "envvault-secret-canary.yaml")
 	if err := os.WriteFile(staleTemp, []byte("secret-canary temporary config"), 0o600); err != nil {
 		t.Fatalf("WriteFile(stale temp) error = %v", err)
 	}
@@ -415,14 +415,14 @@ func TestATPROFILE001ProfileAddCreatesSeparateParentKeysWithBoundedTalosScopes(t
 	}
 }
 
-func TestATRESET001ResetRequiresConfirmationDeletesCredleaseStateAndPreservesRepository(t *testing.T) {
+func TestATRESET001ResetRequiresConfirmationDeletesEnvVaultStateAndPreservesRepository(t *testing.T) {
 	root := t.TempDir()
 	repositoryRoot := filepath.Join(root, "repo")
 	if err := os.MkdirAll(repositoryRoot, 0o700); err != nil {
 		t.Fatalf("MkdirAll(repo) error = %v", err)
 	}
 	repoEnv := filepath.Join(repositoryRoot, ".env")
-	if err := os.WriteFile(repoEnv, []byte("TOKEN=credlease://backend-a/dev\n"), 0o600); err != nil {
+	if err := os.WriteFile(repoEnv, []byte("TOKEN=envvault://backend-a/dev\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(repo .env) error = %v", err)
 	}
 
@@ -444,17 +444,17 @@ func TestATRESET001ResetRequiresConfirmationDeletesCredleaseStateAndPreservesRep
 	if err := config.Save(paths.ConfigFile, cfg); err != nil {
 		t.Fatalf("Save(config) error = %v", err)
 	}
-	credleaseSQLite := filepath.Join(paths.DataDir, "credlease.sqlite")
+	envvaultSQLite := filepath.Join(paths.DataDir, "envvault.sqlite")
 	talosSQLite := filepath.Join(paths.DataDir, "talos.sqlite")
-	jwksPath := filepath.Join(paths.DataDir, "credlease-jwks.json")
+	jwksPath := filepath.Join(paths.DataDir, "envvault-jwks.json")
 	auditPath := filepath.Join(paths.DataDir, "audit.jsonl")
 	cacheArtifact := filepath.Join(paths.CacheDir, "runtime", "talos-test-v1", "talos")
 	for path, body := range map[string]string{
-		credleaseSQLite: "metadata-only-db",
-		talosSQLite:     "talos-metadata-db",
-		jwksPath:        `{"keys":[]}`,
-		auditPath:       `{"event":"credential_issued"}`,
-		cacheArtifact:   "runtime-binary",
+		envvaultSQLite: "metadata-only-db",
+		talosSQLite:    "talos-metadata-db",
+		jwksPath:       `{"keys":[]}`,
+		auditPath:      `{"event":"credential_issued"}`,
+		cacheArtifact:  "runtime-binary",
 	} {
 		writeAcceptanceFile(t, path, body)
 	}
@@ -474,8 +474,8 @@ func TestATRESET001ResetRequiresConfirmationDeletesCredleaseStateAndPreservesRep
 	if !strings.Contains(unconfirmedStderr.String(), "--yes") {
 		t.Fatalf("unconfirmed stderr = %q, want --yes guidance", unconfirmedStderr.String())
 	}
-	assertFileContent(t, repoEnv, "TOKEN=credlease://backend-a/dev\n")
-	for _, path := range []string{paths.ConfigFile, credleaseSQLite, talosSQLite, jwksPath, auditPath, cacheArtifact} {
+	assertFileContent(t, repoEnv, "TOKEN=envvault://backend-a/dev\n")
+	for _, path := range []string{paths.ConfigFile, envvaultSQLite, talosSQLite, jwksPath, auditPath, cacheArtifact} {
 		assertPathExists(t, path)
 	}
 	if _, err := secrets.Get(context.Background(), keyring.ProfileParentKey("backend-a/dev")); err != nil {
@@ -486,7 +486,7 @@ func TestATRESET001ResetRequiresConfirmationDeletesCredleaseStateAndPreservesRep
 	if result.stdout != "" {
 		t.Fatalf("reset --yes stdout = %q, want empty", result.stdout)
 	}
-	for _, path := range []string{paths.ConfigFile, credleaseSQLite, talosSQLite, jwksPath, auditPath, paths.CacheDir} {
+	for _, path := range []string{paths.ConfigFile, envvaultSQLite, talosSQLite, jwksPath, auditPath, paths.CacheDir} {
 		assertPathMissing(t, path)
 	}
 	for _, key := range []keyring.Key{
@@ -498,7 +498,7 @@ func TestATRESET001ResetRequiresConfirmationDeletesCredleaseStateAndPreservesRep
 			t.Fatalf("keyring key %s still exists after reset", key)
 		}
 	}
-	assertFileContent(t, repoEnv, "TOKEN=credlease://backend-a/dev\n")
+	assertFileContent(t, repoEnv, "TOKEN=envvault://backend-a/dev\n")
 }
 
 func TestATSEC001LocalFlowDoesNotPersistRawLongLivedSecretMarkers(t *testing.T) {
@@ -507,7 +507,7 @@ func TestATSEC001LocalFlowDoesNotPersistRawLongLivedSecretMarkers(t *testing.T) 
 	if err := os.MkdirAll(projectRoot, 0o700); err != nil {
 		t.Fatalf("MkdirAll(project) error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(projectRoot, ".env"), []byte("TOKEN=credlease://backend-a/dev\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(projectRoot, ".env"), []byte("TOKEN=envvault://backend-a/dev\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
 
@@ -586,7 +586,7 @@ func TestATLOG001SecretRedactionAcrossIssueFailuresAndCrashOutput(t *testing.T) 
 		t.Fatalf("MkdirAll(project) error = %v", err)
 	}
 	envFile := filepath.Join(projectRoot, ".env")
-	if err := os.WriteFile(envFile, []byte("TOKEN=credlease://backend-a/dev\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://backend-a/dev\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
 	quietChild := buildFixture(t, findRepoRoot(t), "exit-code")
@@ -630,7 +630,7 @@ func TestATLOG001SecretRedactionAcrossIssueFailuresAndCrashOutput(t *testing.T) 
 		StartTimeout:  50 * time.Millisecond,
 		StopTimeout:   time.Second,
 		PollInterval:  5 * time.Millisecond,
-		ExtraEnv:      []string{"CREDLEASE_ACCEPTANCE_TALOS_RUNTIME_HELPER=1"},
+		ExtraEnv:      []string{"ENVVAULT_ACCEPTANCE_TALOS_RUNTIME_HELPER=1"},
 		StopSignal:    os.Interrupt,
 		DialTimeout:   10 * time.Millisecond,
 		PortCloseWait: time.Second,
@@ -650,7 +650,7 @@ func TestATLOG001SecretRedactionAcrossIssueFailuresAndCrashOutput(t *testing.T) 
 }
 
 func TestAcceptanceLeakyTalosRuntimeHelperProcess(t *testing.T) {
-	if os.Getenv("CREDLEASE_ACCEPTANCE_TALOS_RUNTIME_HELPER") != "1" {
+	if os.Getenv("ENVVAULT_ACCEPTANCE_TALOS_RUNTIME_HELPER") != "1" {
 		return
 	}
 	args := os.Args
@@ -729,9 +729,9 @@ func runAcceptanceLogExec(t *testing.T, projectRoot, envFile, child string, runt
 	}, &audit.FileRecorder{Path: auditPath})
 	parent := append([]string{}, os.Environ()...)
 	parent = append(parent,
-		"CREDLEASE_TALOS_HMAC_SECRET=hmac-secret-canary",
-		"CREDLEASE_TALOS_SIGNING_KEY=signing-secret-canary",
-		"CREDLEASE_PROFILE_PARENT_KEY=parent-secret-canary",
+		"ENVVAULT_TALOS_HMAC_SECRET=hmac-secret-canary",
+		"ENVVAULT_TALOS_SIGNING_KEY=signing-secret-canary",
+		"ENVVAULT_PROFILE_PARENT_KEY=parent-secret-canary",
 	)
 	app := cli.New(cli.Options{
 		ParentEnv:       parent,
@@ -821,7 +821,7 @@ type concurrentTokenIssuer struct {
 }
 
 func (i *concurrentTokenIssuer) Issue(_ context.Context, grant issuer.Grant) (issuer.Credential, error) {
-	sessionID, _ := grant.Claims["credlease_session_id"].(string)
+	sessionID, _ := grant.Claims["envvault_session_id"].(string)
 	i.mu.Lock()
 	i.grants = append(i.grants, cloneGrant(grant))
 	i.mu.Unlock()
@@ -906,11 +906,11 @@ func prepareAcceptanceDoctorInstallation(t *testing.T) acceptanceDoctorFixture {
 	if err := config.Save(paths.ConfigFile, cfg); err != nil {
 		t.Fatalf("Save(config) error = %v", err)
 	}
-	if err := sqlite.Migrate(context.Background(), sqlite.Options{Path: filepath.Join(paths.DataDir, "credlease.sqlite")}); err != nil {
-		t.Fatalf("Migrate(credlease sqlite) error = %v", err)
+	if err := sqlite.Migrate(context.Background(), sqlite.Options{Path: filepath.Join(paths.DataDir, "envvault.sqlite")}); err != nil {
+		t.Fatalf("Migrate(envvault sqlite) error = %v", err)
 	}
 	createAcceptanceSQLite(t, filepath.Join(paths.DataDir, "talos.sqlite"))
-	if err := os.WriteFile(filepath.Join(paths.DataDir, "credlease-jwks.json"), []byte(`{"keys":[{"kid":"test","kty":"OKP"}]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.DataDir, "envvault-jwks.json"), []byte(`{"keys":[{"kid":"test","kty":"OKP"}]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile(jwks) error = %v", err)
 	}
 	secrets := keyring.NewMemoryStore()
@@ -1163,14 +1163,14 @@ func assertParentKeyRequestMatchesProfile(t *testing.T, cfg config.File, request
 	if err != nil {
 		t.Fatalf("Profile(%s) error = %v", name, err)
 	}
-	if request.Name != "credlease:"+name {
+	if request.Name != "envvault:"+name {
 		t.Fatalf("%s Talos name = %q", name, request.Name)
 	}
-	if request.ActorID != "credlease-local:"+cfg.Installation.ID {
+	if request.ActorID != "envvault-local:"+cfg.Installation.ID {
 		t.Fatalf("%s actor_id = %q", name, request.ActorID)
 	}
-	if request.Metadata["credlease_profile"] != name {
-		t.Fatalf("%s metadata = %#v, want credlease_profile", name, request.Metadata)
+	if request.Metadata["envvault_profile"] != name {
+		t.Fatalf("%s metadata = %#v, want envvault_profile", name, request.Metadata)
 	}
 	if request.TTL != "2160h0m0s" {
 		t.Fatalf("%s parent key ttl = %q, want 2160h0m0s", name, request.TTL)

@@ -9,7 +9,7 @@ import (
 	"sort"
 	"syscall"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 )
 
 type Runner struct{}

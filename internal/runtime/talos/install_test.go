@@ -15,8 +15,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/clerr"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 )
 
 func TestInstallDownloadsAndVerifiesPinnedArtifact(t *testing.T) {

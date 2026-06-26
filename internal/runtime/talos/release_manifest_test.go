@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 )
 
 func TestDefaultReleaseManifestPinsTalosArtifacts(t *testing.T) {

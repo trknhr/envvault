@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -11,16 +13,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trknhr/credlease/internal/bootstrap"
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/issuer/talos"
-	"github.com/trknhr/credlease/internal/issuer/talosruntime"
-	"github.com/trknhr/credlease/internal/keyring"
-	"github.com/trknhr/credlease/internal/lock"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
-	"github.com/trknhr/credlease/internal/sqlite"
+	"github.com/trknhr/envvault/internal/bootstrap"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/issuer/talos"
+	"github.com/trknhr/envvault/internal/issuer/talosruntime"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/lock"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/sqlite"
 )
 
 const talosSQLiteFilename = "talos.sqlite"
@@ -248,11 +250,15 @@ func managedTalosLocalConfig(request bootstrap.RuntimePrepareRequest, httpAddres
 	if request.InstallationID == "" {
 		return runtimetalos.LocalConfig{}, clerr.New(clerr.ConfigInvalid, "installation id is required")
 	}
+	databaseDSN, err := talosSQLiteDSN(request.Paths)
+	if err != nil {
+		return runtimetalos.LocalConfig{}, err
+	}
 	return runtimetalos.LocalConfig{
 		HTTPAddress:  httpAddress,
 		MetricsAddr:  metricsAddress,
-		DatabaseDSN:  talosSQLiteDSN(filepath.Join(request.Paths.DataDir, talosSQLiteFilename)),
-		Issuer:       "credlease-local:" + request.InstallationID,
+		DatabaseDSN:  databaseDSN,
+		Issuer:       "envvault-local:" + request.InstallationID,
 		HMACSecret:   request.HMACSecret,
 		SigningSeed:  request.SigningSeed,
 		SigningKeyID: request.SigningKeyID,
@@ -332,12 +338,69 @@ func removeManagedTalosProcessMarker(path string) error {
 	return nil
 }
 
-func talosSQLiteDSN(path string) string {
+func talosSQLiteDSN(paths config.Paths) (string, error) {
+	path := filepath.Join(paths.DataDir, talosSQLiteFilename)
+	if dsnPathNeedsAlias(path) {
+		aliasPath, err := ensureTalosSQLiteAlias(paths)
+		if err != nil {
+			return "", err
+		}
+		path = aliasPath
+	}
 	clean := filepath.ToSlash(path)
 	if strings.HasPrefix(clean, "/") {
-		return "sqlite3://" + clean + "?_journal_mode=WAL"
+		return "sqlite3://" + clean + "?_journal_mode=WAL", nil
 	}
-	return "sqlite3:///" + clean + "?_journal_mode=WAL"
+	return "sqlite3:///" + clean + "?_journal_mode=WAL", nil
+}
+
+func dsnPathNeedsAlias(path string) bool {
+	return strings.ContainsAny(filepath.ToSlash(path), " \t\r\n")
+}
+
+func ensureTalosSQLiteAlias(paths config.Paths) (string, error) {
+	if err := os.MkdirAll(paths.DataDir, 0o700); err != nil {
+		return "", clerr.Wrap(clerr.RuntimeUnavailable, "create talos sqlite data directory", err)
+	}
+	if err := os.Chmod(paths.DataDir, 0o700); err != nil {
+		return "", clerr.Wrap(clerr.RuntimeUnavailable, "secure talos sqlite data directory", err)
+	}
+
+	parent := filepath.Join(paths.CacheDir, "talos-db-aliases")
+	if dsnPathNeedsAlias(parent) {
+		parent = filepath.Join(os.TempDir(), "envvault-talos-db-aliases")
+	}
+	if dsnPathNeedsAlias(parent) {
+		return "", clerr.New(clerr.RuntimeUnavailable, "talos sqlite alias path contains unsupported whitespace")
+	}
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return "", clerr.Wrap(clerr.RuntimeUnavailable, "create talos sqlite alias directory", err)
+	}
+	if err := os.Chmod(parent, 0o700); err != nil {
+		return "", clerr.Wrap(clerr.RuntimeUnavailable, "secure talos sqlite alias directory", err)
+	}
+
+	hash := sha256.Sum256([]byte(paths.DataDir))
+	aliasDir := filepath.Join(parent, hex.EncodeToString(hash[:8]))
+	if info, err := os.Lstat(aliasDir); err == nil {
+		if info.Mode()&os.ModeSymlink == 0 {
+			return "", clerr.New(clerr.RuntimeUnavailable, "talos sqlite alias path is not a symlink")
+		}
+		target, err := os.Readlink(aliasDir)
+		if err != nil {
+			return "", clerr.Wrap(clerr.RuntimeUnavailable, "inspect talos sqlite alias", err)
+		}
+		if target == paths.DataDir {
+			return filepath.Join(aliasDir, talosSQLiteFilename), nil
+		}
+		return "", clerr.New(clerr.RuntimeUnavailable, "talos sqlite alias points outside envvault data directory")
+	} else if !os.IsNotExist(err) {
+		return "", clerr.Wrap(clerr.RuntimeUnavailable, "inspect talos sqlite alias path", err)
+	}
+	if err := os.Symlink(paths.DataDir, aliasDir); err != nil {
+		return "", clerr.Wrap(clerr.RuntimeUnavailable, "create talos sqlite alias", err)
+	}
+	return filepath.Join(aliasDir, talosSQLiteFilename), nil
 }
 
 func reserveManagedLoopbackAddress() (string, error) {
@@ -357,7 +420,7 @@ func temporaryTalosConfigPath(cacheDir string) (string, error) {
 	if err := os.Chmod(tempDir, 0o700); err != nil {
 		return "", clerr.Wrap(clerr.RuntimeUnavailable, "set talos config cache directory permissions", err)
 	}
-	tmp, err := os.CreateTemp(tempDir, "credlease-*.yaml")
+	tmp, err := os.CreateTemp(tempDir, "envvault-*.yaml")
 	if err != nil {
 		return "", clerr.Wrap(clerr.RuntimeUnavailable, "create temporary talos config path", err)
 	}

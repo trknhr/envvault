@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/pkg/browsersession"
+	"github.com/trknhr/envvault/pkg/browsersession"
 )
 
 func TestExchangeUsesAuthorizationBearerAndReturnsFixedCompleteURL(t *testing.T) {
@@ -31,12 +31,12 @@ func TestExchangeUsesAuthorizationBearerAndReturnsFixedCompleteURL(t *testing.T)
 		Verifier:     verifier,
 		ReplayStore:  browsersession.NewMemoryReplayStore(func() time.Time { return now }),
 		CodeStore:    codeStore,
-		CompleteURL:  "https://admin.dev.example.com/auth/credlease/complete",
+		CompleteURL:  "https://admin.dev.example.com/auth/envvault/complete",
 		LoginCodeTTL: 30 * time.Second,
 		Now:          func() time.Time { return now },
 	}
 
-	request := httptest.NewRequest(http.MethodPost, "/auth/credlease/browser-sessions?redirect=https://evil.example", strings.NewReader(`{"requested_session_ttl_seconds":1800}`))
+	request := httptest.NewRequest(http.MethodPost, "/auth/envvault/browser-sessions?redirect=https://evil.example", strings.NewReader(`{"requested_session_ttl_seconds":1800}`))
 	request.Header.Set("Authorization", "Bearer bootstrap-jwt")
 	response := httptest.NewRecorder()
 
@@ -62,7 +62,7 @@ func TestExchangeUsesAuthorizationBearerAndReturnsFixedCompleteURL(t *testing.T)
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("Decode() error = %v", err)
 	}
-	if body.LaunchURL != "https://admin.dev.example.com/auth/credlease/complete?code=opaque-code" {
+	if body.LaunchURL != "https://admin.dev.example.com/auth/envvault/complete?code=opaque-code" {
 		t.Fatalf("launch_url = %q", body.LaunchURL)
 	}
 	if body.ExpiresAt != now.Add(30*time.Second) {
@@ -78,9 +78,9 @@ func TestExchangeRejectsBootstrapTokenOutsideAuthorizationHeader(t *testing.T) {
 		Verifier:    &fakeBootstrapVerifier{},
 		ReplayStore: browsersession.NewMemoryReplayStore(time.Now),
 		CodeStore:   browsersession.NewMemoryLoginCodeStore(time.Now),
-		CompleteURL: "https://admin.dev.example.com/auth/credlease/complete",
+		CompleteURL: "https://admin.dev.example.com/auth/envvault/complete",
 	}
-	request := httptest.NewRequest(http.MethodPost, "/auth/credlease/browser-sessions?token=bootstrap-jwt", nil)
+	request := httptest.NewRequest(http.MethodPost, "/auth/envvault/browser-sessions?token=bootstrap-jwt", nil)
 	response := httptest.NewRecorder()
 
 	server.Exchange(response, request)
@@ -104,13 +104,13 @@ func TestExchangeRejectsBootstrapSessionReplay(t *testing.T) {
 		},
 		ReplayStore:  browsersession.NewMemoryReplayStore(func() time.Time { return now }),
 		CodeStore:    codeStore,
-		CompleteURL:  "https://admin.dev.example.com/auth/credlease/complete",
+		CompleteURL:  "https://admin.dev.example.com/auth/envvault/complete",
 		LoginCodeTTL: 30 * time.Second,
 		Now:          func() time.Time { return now },
 	}
 
 	first := httptest.NewRecorder()
-	firstRequest := httptest.NewRequest(http.MethodPost, "/auth/credlease/browser-sessions", nil)
+	firstRequest := httptest.NewRequest(http.MethodPost, "/auth/envvault/browser-sessions", nil)
 	firstRequest.Header.Set("Authorization", "Bearer bootstrap-jwt")
 	server.Exchange(first, firstRequest)
 	if first.Code != http.StatusCreated {
@@ -118,7 +118,7 @@ func TestExchangeRejectsBootstrapSessionReplay(t *testing.T) {
 	}
 
 	second := httptest.NewRecorder()
-	secondRequest := httptest.NewRequest(http.MethodPost, "/auth/credlease/browser-sessions", nil)
+	secondRequest := httptest.NewRequest(http.MethodPost, "/auth/envvault/browser-sessions", nil)
 	secondRequest.Header.Set("Authorization", "Bearer bootstrap-jwt")
 	server.Exchange(second, secondRequest)
 	if second.Code != http.StatusUnauthorized {
@@ -157,7 +157,7 @@ func TestCompleteConsumesCodeSetsCookieAndRedirectsToFixedPostLoginURL(t *testin
 		WebSessionTTL: 30 * time.Minute,
 		SecureCookies: true,
 	}
-	request := httptest.NewRequest(http.MethodGet, "/auth/credlease/complete?code="+code+"&redirect=https://evil.example", nil)
+	request := httptest.NewRequest(http.MethodGet, "/auth/envvault/complete?code="+code+"&redirect=https://evil.example", nil)
 	response := httptest.NewRecorder()
 
 	server.Complete(response, request)
@@ -221,13 +221,13 @@ func TestCompleteRejectsReusedCodeWithGenericError(t *testing.T) {
 	}
 
 	first := httptest.NewRecorder()
-	server.Complete(first, httptest.NewRequest(http.MethodGet, "/auth/credlease/complete?code="+code, nil))
+	server.Complete(first, httptest.NewRequest(http.MethodGet, "/auth/envvault/complete?code="+code, nil))
 	if first.Code != http.StatusSeeOther {
 		t.Fatalf("first status = %d, want %d", first.Code, http.StatusSeeOther)
 	}
 
 	second := httptest.NewRecorder()
-	server.Complete(second, httptest.NewRequest(http.MethodGet, "/auth/credlease/complete?code="+code, nil))
+	server.Complete(second, httptest.NewRequest(http.MethodGet, "/auth/envvault/complete?code="+code, nil))
 	if second.Code != http.StatusGone {
 		t.Fatalf("second status = %d, want generic used-code rejection", second.Code)
 	}

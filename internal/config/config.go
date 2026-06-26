@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/profile"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/profile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -78,6 +78,12 @@ type Profile struct {
 	PostLoginURL      string   `yaml:"post_login_url,omitempty"`
 	AllowedHosts      []string `yaml:"allowed_hosts,omitempty"`
 
+	Provider       string   `yaml:"provider,omitempty"`
+	TargetURL      string   `yaml:"target_url,omitempty"`
+	AllowedPaths   []string `yaml:"allowed_paths,omitempty"`
+	AllowedMethods []string `yaml:"allowed_methods,omitempty"`
+	LocalTokenTTL  Duration `yaml:"local_token_ttl,omitempty"`
+
 	ProjectBinding ProjectBinding `yaml:"project_binding,omitempty"`
 }
 
@@ -118,7 +124,7 @@ func Save(path string, cfg File) error {
 		return clerr.Wrap(clerr.ConfigInvalid, "create config directory", err)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".credlease-config-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".envvault-config-*")
 	if err != nil {
 		return clerr.Wrap(clerr.ConfigInvalid, "create temporary config", err)
 	}
@@ -185,7 +191,7 @@ func (f File) Profile(name string) (profile.Profile, error) {
 	if !ok {
 		return profile.Profile{}, clerr.New(clerr.ProfileNotFound, name)
 	}
-	if stored.Issuer != "talos" {
+	if stored.Kind != profile.KindProviderProxy && stored.Issuer != "talos" {
 		return profile.Profile{}, clerr.New(clerr.ConfigInvalid, "profile issuer must be talos")
 	}
 
@@ -227,6 +233,11 @@ func (p Profile) toProfile(name string, defaults Defaults) profile.Profile {
 		CompleteURL:       p.CompleteURL,
 		PostLoginURL:      p.PostLoginURL,
 		AllowedHosts:      append([]string(nil), p.AllowedHosts...),
+		Provider:          p.Provider,
+		TargetURL:         p.TargetURL,
+		AllowedPaths:      append([]string(nil), p.AllowedPaths...),
+		AllowedMethods:    append([]string(nil), p.AllowedMethods...),
+		LocalTokenTTL:     p.LocalTokenTTL.Duration(),
 	}
 }
 

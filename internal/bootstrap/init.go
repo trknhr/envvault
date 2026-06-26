@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/jwks"
-	"github.com/trknhr/credlease/internal/keyring"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
-	"github.com/trknhr/credlease/internal/sqlite"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/jwks"
+	"github.com/trknhr/envvault/internal/keyring"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/sqlite"
 )
 
 const (
@@ -23,8 +23,8 @@ const (
 	defaultHMACBytes      = 32
 	defaultSigningBytes   = 32
 	defaultSigningKeyID   = "current"
-	defaultSQLiteFilename = "credlease.sqlite"
-	defaultJWKSFilename   = "credlease-jwks.json"
+	defaultSQLiteFilename = "envvault.sqlite"
+	defaultJWKSFilename   = "envvault-jwks.json"
 )
 
 type RuntimeInstaller interface {
@@ -224,11 +224,11 @@ func (i Initializer) installationID() (string, error) {
 }
 
 func isConfigMissing(err error) bool {
-	var credleaseErr *clerr.Error
-	if !errors.As(err, &credleaseErr) || credleaseErr.Err == nil {
+	var envvaultErr *clerr.Error
+	if !errors.As(err, &envvaultErr) || envvaultErr.Err == nil {
 		return false
 	}
-	return errors.Is(credleaseErr.Err, os.ErrNotExist)
+	return errors.Is(envvaultErr.Err, os.ErrNotExist)
 }
 
 func zero(value []byte) {

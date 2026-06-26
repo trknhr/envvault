@@ -27,9 +27,9 @@ func TestParseConfigLoadsExplicitBackendConfig(t *testing.T) {
 	config, err := parseConfig([]string{
 		"--addr", "127.0.0.1:0",
 		"--jwks", jwksPath,
-		"--issuer", "credlease-local:test-install",
+		"--issuer", "envvault-local:test-install",
 		"--resource", "http://127.0.0.1:8080",
-		"--complete-url", "http://127.0.0.1:8080/auth/credlease/complete",
+		"--complete-url", "http://127.0.0.1:8080/auth/envvault/complete",
 		"--post-login-url", "http://127.0.0.1:8080/",
 		"--clock-skew", "2s",
 		"--login-code-ttl", "15s",
@@ -46,10 +46,10 @@ func TestParseConfigLoadsExplicitBackendConfig(t *testing.T) {
 	if string(config.JWKS) != string(jwks) {
 		t.Fatalf("JWKS = %s, want %s", config.JWKS, jwks)
 	}
-	if config.Issuer != "credlease-local:test-install" || config.Resource != "http://127.0.0.1:8080" {
+	if config.Issuer != "envvault-local:test-install" || config.Resource != "http://127.0.0.1:8080" {
 		t.Fatalf("issuer/resource = %q/%q", config.Issuer, config.Resource)
 	}
-	if config.CompleteURL != "http://127.0.0.1:8080/auth/credlease/complete" {
+	if config.CompleteURL != "http://127.0.0.1:8080/auth/envvault/complete" {
 		t.Fatalf("CompleteURL = %q", config.CompleteURL)
 	}
 	if config.PostLoginURL != "http://127.0.0.1:8080/" {
@@ -77,9 +77,9 @@ func TestParseConfigRejectsMissingRequiredValues(t *testing.T) {
 		{
 			name: "jwks",
 			args: []string{
-				"--issuer", "credlease-local:test-install",
+				"--issuer", "envvault-local:test-install",
 				"--resource", "http://127.0.0.1:8080",
-				"--complete-url", "http://127.0.0.1:8080/auth/credlease/complete",
+				"--complete-url", "http://127.0.0.1:8080/auth/envvault/complete",
 				"--post-login-url", "http://127.0.0.1:8080/",
 			},
 			want: "--jwks",
@@ -89,7 +89,7 @@ func TestParseConfigRejectsMissingRequiredValues(t *testing.T) {
 			args: []string{
 				"--jwks", jwksPath,
 				"--resource", "http://127.0.0.1:8080",
-				"--complete-url", "http://127.0.0.1:8080/auth/credlease/complete",
+				"--complete-url", "http://127.0.0.1:8080/auth/envvault/complete",
 				"--post-login-url", "http://127.0.0.1:8080/",
 			},
 			want: "--issuer",
@@ -98,8 +98,8 @@ func TestParseConfigRejectsMissingRequiredValues(t *testing.T) {
 			name: "resource",
 			args: []string{
 				"--jwks", jwksPath,
-				"--issuer", "credlease-local:test-install",
-				"--complete-url", "http://127.0.0.1:8080/auth/credlease/complete",
+				"--issuer", "envvault-local:test-install",
+				"--complete-url", "http://127.0.0.1:8080/auth/envvault/complete",
 				"--post-login-url", "http://127.0.0.1:8080/",
 			},
 			want: "--resource",
@@ -108,7 +108,7 @@ func TestParseConfigRejectsMissingRequiredValues(t *testing.T) {
 			name: "complete url",
 			args: []string{
 				"--jwks", jwksPath,
-				"--issuer", "credlease-local:test-install",
+				"--issuer", "envvault-local:test-install",
 				"--resource", "http://127.0.0.1:8080",
 				"--post-login-url", "http://127.0.0.1:8080/",
 			},
@@ -118,9 +118,9 @@ func TestParseConfigRejectsMissingRequiredValues(t *testing.T) {
 			name: "post login url",
 			args: []string{
 				"--jwks", jwksPath,
-				"--issuer", "credlease-local:test-install",
+				"--issuer", "envvault-local:test-install",
 				"--resource", "http://127.0.0.1:8080",
-				"--complete-url", "http://127.0.0.1:8080/auth/credlease/complete",
+				"--complete-url", "http://127.0.0.1:8080/auth/envvault/complete",
 			},
 			want: "--post-login-url",
 		},
@@ -142,9 +142,9 @@ func TestNewHandlerFromConfigServesProcessJWTEndpoints(t *testing.T) {
 	key := newTestRSAKey(t)
 	handler, err := newHandler(appConfig{
 		JWKS:         jwksForRSA(t, &key.PublicKey),
-		Issuer:       "credlease-local:test-install",
+		Issuer:       "envvault-local:test-install",
 		Resource:     "http://127.0.0.1:8080",
-		CompleteURL:  "http://127.0.0.1:8080/auth/credlease/complete",
+		CompleteURL:  "http://127.0.0.1:8080/auth/envvault/complete",
 		PostLoginURL: "http://127.0.0.1:8080/",
 		Now:          func() time.Time { return now },
 	})
@@ -153,13 +153,13 @@ func TestNewHandlerFromConfigServesProcessJWTEndpoints(t *testing.T) {
 	}
 
 	token := signRS256(t, key, map[string]any{
-		"iss":                  "credlease-local:test-install",
-		"exp":                  now.Add(5 * time.Minute).Unix(),
-		"scope":                "document:read",
-		"credlease_profile":    "backend-a/dev",
-		"credlease_resource":   "http://127.0.0.1:8080",
-		"credlease_session_id": "session-process-1",
-		"credlease_purpose":    "process",
+		"iss":                 "envvault-local:test-install",
+		"exp":                 now.Add(5 * time.Minute).Unix(),
+		"scope":               "document:read",
+		"envvault_profile":    "backend-a/dev",
+		"envvault_resource":   "http://127.0.0.1:8080",
+		"envvault_session_id": "session-process-1",
+		"envvault_purpose":    "process",
 	})
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/documents/read", nil)

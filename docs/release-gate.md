@@ -10,7 +10,7 @@ go test ./...
 go vet ./...
 go test -race ./...
 go test ./test/acceptance -run TestRelease -count=1
-go run ./cmd/credlease-ci secret-scan .
+go run ./cmd/envvault-ci secret-scan .
 ```
 
 The GitHub Actions workflow runs the same gate on the configured Ubuntu and
@@ -23,12 +23,12 @@ maintainer action.
 |---|---|
 | AT-INIT-001 | `test/acceptance.TestATINIT001And002InitCreatesLocalStateAndIsIdempotent` verifies CLI init creates config, SQLite, JWKS, managed runtime artifact, and keyring secrets; `internal/bootstrap.TestInitializerCreatesConfigRuntimeSQLiteJWKSAndKeyringSecrets`; `internal/bootstrap.TestInitializerPreparesRuntimeWithStoredSecretsBeforeJWKS`; `internal/cli.TestRunInitCallsInitializer` |
 | AT-INIT-002 | `test/acceptance.TestATINIT001And002InitCreatesLocalStateAndIsIdempotent` verifies rerunning CLI init does not reinstall, refetch JWKS, regenerate secrets, rotate keys, or destroy state; `internal/bootstrap.TestInitializerIsIdempotentAndDoesNotRotateExistingSecrets` |
-| AT-SEC-001 | `test/acceptance.TestATSEC001LocalFlowDoesNotPersistRawLongLivedSecretMarkers`; `cmd/credlease-ci` secret scan |
+| AT-SEC-001 | `test/acceptance.TestATSEC001LocalFlowDoesNotPersistRawLongLivedSecretMarkers`; `cmd/envvault-ci` secret scan |
 | AT-PROFILE-001 | `test/acceptance.TestATPROFILE001ProfileAddCreatesSeparateParentKeysWithBoundedTalosScopes` verifies CLI profile creation, separate keyring parent keys, Talos parent-key metadata, and profile-bounded parent scopes; `internal/profilemgr.TestAddProcessProfileIssuesParentKeyStoresSecretInKeyringOnly`; `internal/profilemgr.TestAddBrowserSessionProfileIssuesParentKeyAndStoresPolicy` |
 | AT-REF-001 | `test/acceptance.TestExecResolvesReferenceAndDoesNotPassParentAuthority` verifies `.env` reference resolution, file preservation, and the signed process JWT injected into the child |
 | AT-REF-002 | `test/acceptance.TestExecUnknownProfileFailsClosedWithoutParentFallback`; `internal/config.TestLoadProfileRejectsUnknownProfileFailClosed` |
 | AT-REF-003 | `test/acceptance.TestExecRejectsQueryReferenceBeforeStartingChild`; `internal/envref` reference parser tests |
-| AT-EXEC-001 | `test/acceptance.TestExecResolvesReferenceAndDoesNotPassParentAuthority`; `internal/process.TestBuildEnvWorksWithLocalIssuerAndDropsCredleaseAuthorityEnv` |
+| AT-EXEC-001 | `test/acceptance.TestExecResolvesReferenceAndDoesNotPassParentAuthority`; `internal/process.TestBuildEnvWorksWithLocalIssuerAndDropsEnvVaultAuthorityEnv` |
 | AT-EXEC-002 | `test/acceptance.TestExecStartsChildAfterOnDemandRuntimeStops` verifies child start after on-demand runtime shutdown and closed loopback port; `internal/issuer/talosruntime.TestClientDerivesJWTThroughRuntimeAndStopsBeforeReturning`; `internal/runtime/talos.TestRuntimeStartsOnLoopbackRandomPortAndStopsCleanly` |
 | AT-EXEC-003 | `test/acceptance.TestExecPropagatesChildExitCode` |
 | AT-EXEC-004 | `test/acceptance.TestExecForwardsSIGINTToChild`; `internal/cli.TestRunExecProvidesSignalChannelToRunner` |
@@ -44,11 +44,11 @@ maintainer action.
 | AT-BROWSER-003 | `test/acceptance.TestOpenCreatesBrowserSessionThroughSampleBackend`; `pkg/browsersession.TestCompleteRejectsReusedCodeWithGenericError`; SQLite store single-use tests |
 | AT-BROWSER-004 | `test/acceptance.TestATBROWSER004ExpiredLoginCodeDoesNotCreateSessionThroughSampleBackend` verifies the sample backend rejects an expired 2-second login code without creating a session; `pkg/browsersession` login-code expiration tests; SQLite store expiration tests |
 | AT-BROWSER-005 | `test/acceptance.TestATBROWSER005BootstrapJWTReplayRejectedThroughSampleBackend` verifies replaying the same bootstrap JWT/session ID against the sample backend only issues the first code and rejects the replay; `pkg/browsersession.TestExchangeRejectsBootstrapSessionReplay`; SQLite replay persistence tests |
-| AT-BROWSER-006 | `test/acceptance.TestATBROWSER006LaunchURLAllowlistRejectsEvilBackendResponse` verifies `credlease open` rejects a backend-provided evil launch URL before starting the browser and without leaking the code or JWT; `internal/browser.TestOpenRejectsBackendLaunchURLOutsideProfilePolicy`; profile launch URL validation tests |
+| AT-BROWSER-006 | `test/acceptance.TestATBROWSER006LaunchURLAllowlistRejectsEvilBackendResponse` verifies `envvault open` rejects a backend-provided evil launch URL before starting the browser and without leaking the code or JWT; `internal/browser.TestOpenRejectsBackendLaunchURLOutsideProfilePolicy`; profile launch URL validation tests |
 | AT-BROWSER-007 | `test/acceptance.TestATBROWSER007ProductionHTTPSCookieSecurityAttributesThroughSampleBackend` verifies the sample backend over HTTPS sets `HttpOnly`, `Secure`, and `SameSite=Lax` session cookies; `examples/backend-go.TestBrowserSessionExchangeAndCompleteSetSecureCookie`; `pkg/browsersession.TestCompleteConsumesCodeSetsCookieAndRedirectsToFixedPostLoginURL` |
 | AT-BROWSER-008 | `test/acceptance.TestOpenCreatesBrowserSessionThroughSampleBackend`; `examples/backend-go.TestBrowserSessionExchangeAndCompleteSetSecureCookie`; `pkg/browsersession.TestCompleteConsumesCodeSetsCookieAndRedirectsToFixedPostLoginURL` |
 | AT-KEYRING-001 | `test/acceptance.TestATKEYRING001InitFailsClosedWhenKeyringUnavailable`; keyring and bootstrap fail-closed tests |
-| AT-RESET-001 | `test/acceptance.TestATRESET001ResetRequiresConfirmationDeletesCredleaseStateAndPreservesRepository` verifies CLI confirmation, Credlease-owned file/cache deletion, keyring entry deletion, and repository file preservation; `internal/reset.TestPlannerResetDeletesCredleaseFilesAndKnownKeyringEntries`; `internal/cli` reset command tests |
+| AT-RESET-001 | `test/acceptance.TestATRESET001ResetRequiresConfirmationDeletesEnvVaultStateAndPreservesRepository` verifies CLI confirmation, EnvVault-owned file/cache deletion, keyring entry deletion, and repository file preservation; `internal/reset.TestPlannerResetDeletesEnvVaultFilesAndKnownKeyringEntries`; `internal/cli` reset command tests |
 
 ## Open Release Notes
 

@@ -22,11 +22,11 @@ import (
 	"testing"
 	"time"
 
-	backendgo "github.com/trknhr/credlease/examples/backend-go"
-	"github.com/trknhr/credlease/internal/browser"
-	"github.com/trknhr/credlease/internal/cli"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/profile"
+	backendgo "github.com/trknhr/envvault/examples/backend-go"
+	"github.com/trknhr/envvault/internal/browser"
+	"github.com/trknhr/envvault/internal/cli"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/profile"
 )
 
 func TestOpenCreatesBrowserSessionThroughSampleBackend(t *testing.T) {
@@ -35,11 +35,11 @@ func TestOpenCreatesBrowserSessionThroughSampleBackend(t *testing.T) {
 	server, browserProfile, recorder := newAcceptanceBrowserBackend(t, key, now)
 	fakeBrowser := buildFixture(t, findRepoRoot(t), "fake-browser")
 	capturePath := filepath.Join(t.TempDir(), "fake-browser.jsonl")
-	t.Setenv("CREDLEASE_FAKE_BROWSER_CAPTURE", capturePath)
+	t.Setenv("ENVVAULT_FAKE_BROWSER_CAPTURE", capturePath)
 
 	tokenIssuer := &signingAcceptanceIssuer{
 		key:    key,
-		issuer: "credlease-local:test-install",
+		issuer: "envvault-local:test-install",
 		now:    now,
 	}
 	app := cli.New(cli.Options{
@@ -73,10 +73,10 @@ func TestOpenCreatesBrowserSessionThroughSampleBackend(t *testing.T) {
 		t.Fatalf("issuer grants = %d, want 1", len(tokenIssuer.grants))
 	}
 	grant := tokenIssuer.grants[0]
-	if grant.Claims["credlease_purpose"] != "browser-bootstrap" {
-		t.Fatalf("grant purpose = %#v, want browser-bootstrap", grant.Claims["credlease_purpose"])
+	if grant.Claims["envvault_purpose"] != "browser-bootstrap" {
+		t.Fatalf("grant purpose = %#v, want browser-bootstrap", grant.Claims["envvault_purpose"])
 	}
-	sessionID, _ := grant.Claims["credlease_session_id"].(string)
+	sessionID, _ := grant.Claims["envvault_session_id"].(string)
 	if sessionID == "" {
 		t.Fatalf("grant claims missing session id: %#v", grant.Claims)
 	}
@@ -166,7 +166,7 @@ func TestATBROWSER004ExpiredLoginCodeDoesNotCreateSessionThroughSampleBackend(t 
 
 	tokenIssuer := &signingAcceptanceIssuer{
 		key:    key,
-		issuer: "credlease-local:test-install",
+		issuer: "envvault-local:test-install",
 		now:    start,
 	}
 	app := cli.New(cli.Options{
@@ -212,7 +212,7 @@ func TestATBROWSER004ExpiredLoginCodeDoesNotCreateSessionThroughSampleBackend(t 
 		t.Fatalf("expired code Location = %q, want none", location)
 	}
 	body := responseBody(t, expired)
-	sessionID, _ := tokenIssuer.grants[0].Claims["credlease_session_id"].(string)
+	sessionID, _ := tokenIssuer.grants[0].Claims["envvault_session_id"].(string)
 	if strings.Contains(body, "expiring-code") || strings.Contains(body, sessionID) || strings.Contains(body, tokenIssuer.token) {
 		t.Fatalf("expired code error leaked browser secret: %q", body)
 	}
@@ -270,14 +270,14 @@ func TestATBROWSER006LaunchURLAllowlistRejectsEvilBackendResponse(t *testing.T) 
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	key := newAcceptanceRSAKey(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.Method != http.MethodPost || req.URL.Path != "/auth/credlease/browser-sessions" {
+		if req.Method != http.MethodPost || req.URL.Path != "/auth/envvault/browser-sessions" {
 			http.NotFound(w, req)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"launch_url":"https://evil.example/auth/credlease/complete?code=evil-code","expires_at":"2026-06-22T12:00:30Z"}`))
+		_, _ = w.Write([]byte(`{"launch_url":"https://evil.example/auth/envvault/complete?code=evil-code","expires_at":"2026-06-22T12:00:30Z"}`))
 	}))
 	t.Cleanup(server.Close)
 	parsed, err := url.Parse(server.URL)
@@ -292,17 +292,17 @@ func TestATBROWSER006LaunchURLAllowlistRejectsEvilBackendResponse(t *testing.T) 
 		BootstrapTokenTTL: 60 * time.Second,
 		LoginCodeTTL:      30 * time.Second,
 		WebSessionTTL:     30 * time.Minute,
-		ExchangeURL:       server.URL + "/auth/credlease/browser-sessions",
-		CompleteURL:       server.URL + "/auth/credlease/complete",
+		ExchangeURL:       server.URL + "/auth/envvault/browser-sessions",
+		CompleteURL:       server.URL + "/auth/envvault/complete",
 		PostLoginURL:      server.URL + "/admin",
 		AllowedHosts:      []string{parsed.Host},
 	}
 	fakeBrowser := buildFixture(t, findRepoRoot(t), "fake-browser")
 	capturePath := filepath.Join(t.TempDir(), "fake-browser.jsonl")
-	t.Setenv("CREDLEASE_FAKE_BROWSER_CAPTURE", capturePath)
+	t.Setenv("ENVVAULT_FAKE_BROWSER_CAPTURE", capturePath)
 	tokenIssuer := &signingAcceptanceIssuer{
 		key:    key,
-		issuer: "credlease-local:test-install",
+		issuer: "envvault-local:test-install",
 		now:    now,
 	}
 	app := cli.New(cli.Options{
@@ -329,7 +329,7 @@ func TestATBROWSER006LaunchURLAllowlistRejectsEvilBackendResponse(t *testing.T) 
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "CREDLEASE_BROWSER_URL_REJECTED") {
+	if !strings.Contains(stderr.String(), "ENVVAULT_BROWSER_URL_REJECTED") {
 		t.Fatalf("stderr = %q, want browser URL rejection", stderr.String())
 	}
 	if strings.Contains(stderr.String(), "evil-code") || strings.Contains(stderr.String(), tokenIssuer.token) {
@@ -354,7 +354,7 @@ func TestATBROWSER007ProductionHTTPSCookieSecurityAttributesThroughSampleBackend
 	})
 	tokenIssuer := &signingAcceptanceIssuer{
 		key:    key,
-		issuer: "credlease-local:test-install",
+		issuer: "envvault-local:test-install",
 		now:    now,
 	}
 	app := cli.New(cli.Options{
@@ -427,7 +427,7 @@ type recordingBackend struct {
 }
 
 func (r *recordingBackend) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if req.URL.Path == "/auth/credlease/browser-sessions" {
+	if req.URL.Path == "/auth/envvault/browser-sessions" {
 		r.exchanges = append(r.exchanges, recordedExchange{
 			Authorization: req.Header.Get("Authorization"),
 			CacheControl:  req.Header.Get("Cache-Control"),
@@ -475,11 +475,11 @@ func newAcceptanceBrowserBackendWithConfig(t *testing.T, key *rsa.PrivateKey, co
 	baseURL := scheme + "://" + server.Listener.Addr().String()
 	backend, err := backendgo.New(backendgo.Config{
 		JWKS:                 acceptanceJWKSForRSA(t, &key.PublicKey),
-		Issuer:               "credlease-local:test-install",
+		Issuer:               "envvault-local:test-install",
 		Resource:             baseURL,
 		ClockSkew:            10 * time.Second,
 		Now:                  config.Now,
-		CompleteURL:          baseURL + "/auth/credlease/complete",
+		CompleteURL:          baseURL + "/auth/envvault/complete",
 		PostLoginURL:         baseURL + "/admin",
 		LoginCodeTTL:         config.LoginCodeTTL,
 		WebSessionTTL:        30 * time.Minute,
@@ -510,8 +510,8 @@ func newAcceptanceBrowserBackendWithConfig(t *testing.T, key *rsa.PrivateKey, co
 		BootstrapTokenTTL: 60 * time.Second,
 		LoginCodeTTL:      config.LoginCodeTTL,
 		WebSessionTTL:     30 * time.Minute,
-		ExchangeURL:       baseURL + "/auth/credlease/browser-sessions",
-		CompleteURL:       baseURL + "/auth/credlease/complete",
+		ExchangeURL:       baseURL + "/auth/envvault/browser-sessions",
+		CompleteURL:       baseURL + "/auth/envvault/complete",
 		PostLoginURL:      baseURL + "/admin",
 		AllowedHosts:      []string{parsed.Host},
 	}, recorder
@@ -519,8 +519,8 @@ func newAcceptanceBrowserBackendWithConfig(t *testing.T, key *rsa.PrivateKey, co
 
 func exchangeBrowserSession(t *testing.T, server *httptest.Server, token string) *http.Response {
 	t.Helper()
-	body := strings.NewReader(`{"requested_session_ttl_seconds":1800,"client":"credlease-cli","client_version":"0.1.0"}`)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+"/auth/credlease/browser-sessions", body)
+	body := strings.NewReader(`{"requested_session_ttl_seconds":1800,"client":"envvault-cli","client_version":"0.1.0"}`)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+"/auth/envvault/browser-sessions", body)
 	if err != nil {
 		t.Fatalf("NewRequest(exchange) error = %v", err)
 	}
@@ -538,16 +538,16 @@ func exchangeBrowserSession(t *testing.T, server *httptest.Server, token string)
 func acceptanceBrowserBootstrapJWT(t *testing.T, key *rsa.PrivateKey, now time.Time, resource, sessionID string, ttl time.Duration) string {
 	t.Helper()
 	token, err := signAcceptanceRS256(key, map[string]any{
-		"iss":                  "credlease-local:test-install",
-		"sub":                  "local-user",
-		"nbf":                  now.Add(-time.Second).Unix(),
-		"exp":                  now.Add(ttl).Unix(),
-		"scope":                "browser:session:create",
-		"credlease_profile":    "admin-web/dev",
-		"credlease_resource":   resource,
-		"credlease_session_id": sessionID,
-		"credlease_client":     "credlease-cli",
-		"credlease_purpose":    "browser-bootstrap",
+		"iss":                 "envvault-local:test-install",
+		"sub":                 "local-user",
+		"nbf":                 now.Add(-time.Second).Unix(),
+		"exp":                 now.Add(ttl).Unix(),
+		"scope":               "browser:session:create",
+		"envvault_profile":    "admin-web/dev",
+		"envvault_resource":   resource,
+		"envvault_session_id": sessionID,
+		"envvault_client":     "envvault-cli",
+		"envvault_purpose":    "browser-bootstrap",
 	})
 	if err != nil {
 		t.Fatalf("signAcceptanceRS256() error = %v", err)

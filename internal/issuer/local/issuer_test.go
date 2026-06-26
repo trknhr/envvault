@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/audit"
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/issuer/local"
-	"github.com/trknhr/credlease/internal/keyring"
-	"github.com/trknhr/credlease/internal/profile"
+	"github.com/trknhr/envvault/internal/audit"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/issuer/local"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/profile"
 )
 
 func TestIssuerLoadsParentKeyAndDerivesProfileBoundToken(t *testing.T) {
@@ -28,7 +28,7 @@ func TestIssuerLoadsParentKeyAndDerivesProfileBoundToken(t *testing.T) {
 		Profile: "backend-a/dev",
 		Scopes:  []string{"repository:read"},
 		TTL:     5 * time.Minute,
-		Claims:  map[string]any{"credlease_client": "codex"},
+		Claims:  map[string]any{"envvault_client": "codex"},
 	})
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
@@ -55,7 +55,7 @@ func TestIssuerLoadsParentKeyAndDerivesProfileBoundToken(t *testing.T) {
 	if deriver.grant.Claims["environment"] != "dev" {
 		t.Fatalf("profile claim missing: %#v", deriver.grant.Claims)
 	}
-	if deriver.grant.Claims["credlease_client"] != "codex" {
+	if deriver.grant.Claims["envvault_client"] != "codex" {
 		t.Fatalf("request claim missing: %#v", deriver.grant.Claims)
 	}
 }
@@ -82,7 +82,7 @@ func TestIssuerDefaultsToProfileScopesAndTTL(t *testing.T) {
 	}
 }
 
-func TestIssuerKeepsCredleaseBindingClaimsAuthoritative(t *testing.T) {
+func TestIssuerKeepsEnvVaultBindingClaimsAuthoritative(t *testing.T) {
 	ctx := context.Background()
 	secrets := keyring.NewMemoryStore()
 	if err := secrets.Put(ctx, keyring.ProfileParentKey("backend-a/dev"), []byte("parent-secret")); err != nil {
@@ -91,10 +91,10 @@ func TestIssuerKeepsCredleaseBindingClaimsAuthoritative(t *testing.T) {
 	profiles := fakeProfiles()
 	p := profiles["backend-a/dev"]
 	p.Claims = map[string]string{
-		"credlease_profile":  "profile-claim",
-		"credlease_resource": "https://profile-claim.example.com",
-		"credlease_purpose":  "profile-purpose",
-		"environment":        "dev",
+		"envvault_profile":  "profile-claim",
+		"envvault_resource": "https://profile-claim.example.com",
+		"envvault_purpose":  "profile-purpose",
+		"environment":       "dev",
 	}
 	profiles["backend-a/dev"] = p
 	deriver := &fakeDeriver{}
@@ -105,9 +105,9 @@ func TestIssuerKeepsCredleaseBindingClaimsAuthoritative(t *testing.T) {
 		Scopes:  []string{"repository:read"},
 		TTL:     5 * time.Minute,
 		Claims: map[string]any{
-			"credlease_profile":  "request-claim",
-			"credlease_resource": "https://request-claim.example.com",
-			"credlease_purpose":  "request-purpose",
+			"envvault_profile":  "request-claim",
+			"envvault_resource": "https://request-claim.example.com",
+			"envvault_purpose":  "request-purpose",
 		},
 	})
 	if err != nil {
@@ -115,10 +115,10 @@ func TestIssuerKeepsCredleaseBindingClaimsAuthoritative(t *testing.T) {
 	}
 
 	for key, want := range map[string]any{
-		"credlease_profile":  "backend-a/dev",
-		"credlease_resource": "https://api.dev.example.com",
-		"credlease_purpose":  "process",
-		"environment":        "dev",
+		"envvault_profile":  "backend-a/dev",
+		"envvault_resource": "https://api.dev.example.com",
+		"envvault_purpose":  "process",
+		"environment":       "dev",
 	} {
 		if got := deriver.grant.Claims[key]; got != want {
 			t.Fatalf("grant.Claims[%s] = %#v, want %#v", key, got, want)
@@ -268,8 +268,8 @@ func TestIssuerDerivesBrowserBootstrapToken(t *testing.T) {
 		Scopes:  []string{"browser:session:create"},
 		TTL:     45 * time.Second,
 		Claims: map[string]any{
-			"credlease_client":  "credlease-cli",
-			"credlease_purpose": "browser-bootstrap",
+			"envvault_client":  "envvault-cli",
+			"envvault_purpose": "browser-bootstrap",
 		},
 	})
 	if err != nil {
@@ -294,13 +294,13 @@ func TestIssuerDerivesBrowserBootstrapToken(t *testing.T) {
 	if len(deriver.grant.Scopes) != 1 || deriver.grant.Scopes[0] != "browser:session:create" {
 		t.Fatalf("grant scopes = %#v", deriver.grant.Scopes)
 	}
-	if deriver.grant.Claims["credlease_purpose"] != "browser-bootstrap" {
+	if deriver.grant.Claims["envvault_purpose"] != "browser-bootstrap" {
 		t.Fatalf("claims = %#v", deriver.grant.Claims)
 	}
-	if deriver.grant.Claims["credlease_resource"] != "https://admin.dev.example.com" {
+	if deriver.grant.Claims["envvault_resource"] != "https://admin.dev.example.com" {
 		t.Fatalf("claims = %#v", deriver.grant.Claims)
 	}
-	if deriver.grant.Claims["credlease_session_id"] == "" {
+	if deriver.grant.Claims["envvault_session_id"] == "" {
 		t.Fatalf("claims missing session id: %#v", deriver.grant.Claims)
 	}
 }
@@ -319,9 +319,9 @@ func TestIssuerRecordsSuccessfulCredentialIssueAuditWithoutSecrets(t *testing.T)
 		Scopes:  []string{"repository:read"},
 		TTL:     5 * time.Minute,
 		Claims: map[string]any{
-			"credlease_client":     "codex",
-			"credlease_session_id": "hex:session",
-			"credlease_project_id": "sha256:project",
+			"envvault_client":     "codex",
+			"envvault_session_id": "hex:session",
+			"envvault_project_id": "sha256:project",
 		},
 	})
 	if err != nil {
@@ -386,7 +386,7 @@ func TestIssuerRecordsFailedCredentialIssueAuditWithoutSecrets(t *testing.T) {
 		Scopes:  []string{"repository:read"},
 		TTL:     5 * time.Minute,
 		Claims: map[string]any{
-			"credlease_session_id": "hex:failed-session",
+			"envvault_session_id": "hex:failed-session",
 		},
 	})
 	if err == nil {
@@ -429,7 +429,7 @@ func TestIssuerRejectsBrowserBootstrapTTLAboveProfileLimit(t *testing.T) {
 		Profile: "admin-web/dev",
 		Scopes:  []string{"browser:session:create"},
 		TTL:     61 * time.Second,
-		Claims:  map[string]any{"credlease_purpose": "browser-bootstrap"},
+		Claims:  map[string]any{"envvault_purpose": "browser-bootstrap"},
 	})
 	if err == nil {
 		t.Fatal("Issue() error = nil, want error")
@@ -516,8 +516,8 @@ func fakeProfiles() fakeProfileResolver {
 			BootstrapTokenTTL: 60 * time.Second,
 			LoginCodeTTL:      30 * time.Second,
 			WebSessionTTL:     30 * time.Minute,
-			ExchangeURL:       "https://admin.dev.example.com/auth/credlease/browser-sessions",
-			CompleteURL:       "https://admin.dev.example.com/auth/credlease/complete",
+			ExchangeURL:       "https://admin.dev.example.com/auth/envvault/browser-sessions",
+			CompleteURL:       "https://admin.dev.example.com/auth/envvault/complete",
 			PostLoginURL:      "https://admin.dev.example.com/",
 			AllowedHosts:      []string{"admin.dev.example.com"},
 		},

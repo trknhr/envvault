@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	readyEnv   = "CREDLEASE_WAIT_SIGNAL_READY"
-	captureEnv = "CREDLEASE_WAIT_SIGNAL_CAPTURE"
+	readyEnv   = "ENVVAULT_WAIT_SIGNAL_READY"
+	captureEnv = "ENVVAULT_WAIT_SIGNAL_CAPTURE"
 )
 
 type signalRecord struct {

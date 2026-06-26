@@ -4,24 +4,28 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/bootstrap"
-	"github.com/trknhr/credlease/internal/browser"
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/cli"
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/doctor"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/process"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/profilemgr"
-	"github.com/trknhr/credlease/internal/projectbinding"
-	resetpkg "github.com/trknhr/credlease/internal/reset"
+	"github.com/trknhr/envvault/internal/bootstrap"
+	"github.com/trknhr/envvault/internal/browser"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/cli"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/doctor"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/process"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/profilemgr"
+	"github.com/trknhr/envvault/internal/projectbinding"
+	resetpkg "github.com/trknhr/envvault/internal/reset"
 )
 
 func TestRunRequiresCommand(t *testing.T) {
@@ -47,11 +51,13 @@ func TestRunCompletionBashWritesCommandsWithoutServices(t *testing.T) {
 		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 	}
 	for _, want := range []string{
-		"# bash completion for credlease",
-		"complete -F _credlease credlease",
-		"init reset doctor profile token exec open jwks issuer completion",
+		"# bash completion for envvault",
+		"complete -F _envvault envvault",
+		"init reset doctor profile secret proxy token exec open jwks issuer completion",
 		"--repair",
 		"browser-session",
+		"secret",
+		"proxy",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
@@ -73,7 +79,7 @@ func TestRunCompletionZshFishAndPowerShell(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 			}
-			for _, want := range []string{"credlease", "doctor", "profile", "completion"} {
+			for _, want := range []string{"envvault", "doctor", "profile", "secret", "proxy", "completion"} {
 				if !strings.Contains(stdout.String(), want) {
 					t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 				}
@@ -94,7 +100,7 @@ func TestRunCompletionRejectsUnknownShell(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("Run() code = %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "usage: credlease completion <bash|zsh|fish|powershell>") {
+	if !strings.Contains(stderr.String(), "usage: envvault completion <bash|zsh|fish|powershell>") {
 		t.Fatalf("stderr = %q, want completion usage", stderr.String())
 	}
 	if stdout.Len() != 0 {
@@ -106,8 +112,8 @@ func TestRunInitCallsInitializer(t *testing.T) {
 	paths := testPaths(t)
 	initializer := &fakeInitializer{result: bootstrap.Result{
 		ConfigPath: paths.ConfigFile,
-		SQLitePath: filepath.Join(paths.DataDir, "credlease.sqlite"),
-		JWKSPath:   filepath.Join(paths.DataDir, "credlease-jwks.json"),
+		SQLitePath: filepath.Join(paths.DataDir, "envvault.sqlite"),
+		JWKSPath:   filepath.Join(paths.DataDir, "envvault-jwks.json"),
 	}}
 	app := cli.New(cli.Options{
 		Paths:       paths,
@@ -143,7 +149,7 @@ func TestRunInitReturnsErrorWithoutLeakingSecret(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("Run() code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "CREDLEASE_KEYRING_UNAVAILABLE") {
+	if !strings.Contains(stderr.String(), "ENVVAULT_KEYRING_UNAVAILABLE") {
 		t.Fatalf("stderr = %q, want keyring error code", stderr.String())
 	}
 	if strings.Contains(stderr.String(), "secret-canary") {
@@ -159,14 +165,14 @@ func TestRunExecRejectsInvalidInlineEnvReference(t *testing.T) {
 
 	code := cli.Run([]string{
 		"exec",
-		"--env", "TOKEN=credlease://backend-a/dev?scope=admin",
+		"--env", "TOKEN=envvault://backend-a/dev?scope=admin",
 		"--", "inspect-child",
 	}, new(bytes.Buffer), &stderr)
 
 	if code != 1 {
 		t.Fatalf("Run() code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "CREDLEASE_REFERENCE_INVALID") {
+	if !strings.Contains(stderr.String(), "ENVVAULT_REFERENCE_INVALID") {
 		t.Fatalf("stderr = %q, want reference error code", stderr.String())
 	}
 	if strings.Contains(stderr.String(), "scope=admin") {
@@ -180,14 +186,14 @@ func TestRunExecReturnsNotImplementedForValidInlineEnvReferenceWhenExecUnavailab
 
 	code := app.Run(context.Background(), []string{
 		"exec",
-		"--env=TOKEN=credlease://backend-a/dev",
+		"--env=TOKEN=envvault://backend-a/dev",
 		"--", "inspect-child",
 	}, new(bytes.Buffer), &stderr)
 
 	if code != 2 {
 		t.Fatalf("Run() code = %d, want 2", code)
 	}
-	if strings.Contains(stderr.String(), "CREDLEASE_REFERENCE_INVALID") {
+	if strings.Contains(stderr.String(), "ENVVAULT_REFERENCE_INVALID") {
 		t.Fatalf("stderr = %q, did not expect reference error", stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "not implemented") {
@@ -197,7 +203,7 @@ func TestRunExecReturnsNotImplementedForValidInlineEnvReferenceWhenExecUnavailab
 
 func TestRunExecResolvesEnvAndRunsChild(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), ".env")
-	if err := os.WriteFile(envFile, []byte("TOKEN=credlease://backend-a/dev\nPLAIN=file-value\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://backend-a/dev\nPLAIN=file-value\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	issuer := &fakeTokenIssuer{}
@@ -247,7 +253,7 @@ func TestRunExecResolvesEnvAndRunsChild(t *testing.T) {
 func TestRunExecUsesProjectIdentityForApprovedBinding(t *testing.T) {
 	root := t.TempDir()
 	envFile := filepath.Join(root, ".env")
-	if err := os.WriteFile(envFile, []byte("TOKEN=credlease://backend-a/dev\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://backend-a/dev\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	profiles := fakeCLIProfiles()
@@ -283,7 +289,7 @@ func TestRunExecUsesProjectIdentityForApprovedBinding(t *testing.T) {
 
 func TestRunExecProvidesSignalChannelToRunner(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), ".env")
-	if err := os.WriteFile(envFile, []byte("TOKEN=credlease://backend-a/dev\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://backend-a/dev\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	runner := &fakeChildRunner{}
@@ -301,6 +307,176 @@ func TestRunExecProvidesSignalChannelToRunner(t *testing.T) {
 	}
 	if runner.input.Signals == nil {
 		t.Fatal("RunInput.Signals = nil, want signal forwarding channel")
+	}
+}
+
+func TestRunSecretAddStoresProviderAPIKey(t *testing.T) {
+	ctx := context.Background()
+	secrets := keyring.NewMemoryStore()
+	app := cli.New(cli.Options{
+		Secrets: secrets,
+		Stdin:   strings.NewReader("sk-test\n"),
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{
+		"secret", "add", "openai/dev",
+		"--provider", "openai-compatible",
+		"--api-key-stdin",
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	got, err := secrets.Get(ctx, keyring.ProviderAPIKey("openai/dev"))
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if string(got) != "sk-test" {
+		t.Fatalf("stored api key = %q, want sk-test", got)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunProxyAddStoresProviderProxyProfile(t *testing.T) {
+	paths := testPaths(t)
+	writeBaseConfig(t, paths)
+	app := cli.New(cli.Options{
+		Paths: paths,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{
+		"proxy", "add", "openai/dev",
+		"--provider", "openai-compatible",
+		"--target", "https://api.openai.com/v1",
+		"--allow-path", "/chat/completions",
+		"--allow-method", "POST",
+		"--token-ttl", "5m",
+		"--project-binding", "none",
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got, err := cfg.Profile("openai/dev")
+	if err != nil {
+		t.Fatalf("Profile() error = %v", err)
+	}
+	if got.Kind != profile.KindProviderProxy {
+		t.Fatalf("Kind = %q, want provider-proxy", got.Kind)
+	}
+	if got.Provider != "openai-compatible" || got.TargetURL != "https://api.openai.com/v1" {
+		t.Fatalf("provider/target = %q/%q", got.Provider, got.TargetURL)
+	}
+	if strings.Join(got.AllowedPaths, ",") != "/chat/completions" {
+		t.Fatalf("AllowedPaths = %#v", got.AllowedPaths)
+	}
+	if strings.Join(got.AllowedMethods, ",") != "POST" {
+		t.Fatalf("AllowedMethods = %#v", got.AllowedMethods)
+	}
+	if got.LocalTokenTTL != 5*time.Minute {
+		t.Fatalf("LocalTokenTTL = %s, want 5m", got.LocalTokenTTL)
+	}
+	if got.ProjectBinding.Mode != profile.ProjectBindingNone {
+		t.Fatalf("ProjectBinding.Mode = %q, want none", got.ProjectBinding.Mode)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExecRewritesProviderProxyEnvAndForwardsThroughProxy(t *testing.T) {
+	ctx := context.Background()
+	var providerAuth, providerPath string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		providerAuth = r.Header.Get("Authorization")
+		providerPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer target.Close()
+	paths := testPaths(t)
+	writeBaseConfig(t, paths)
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	cfg.Profiles["openai/dev"] = config.Profile{
+		Kind:           profile.KindProviderProxy,
+		Provider:       "openai-compatible",
+		TargetURL:      target.URL + "/v1",
+		AllowedPaths:   []string{"/chat/completions"},
+		AllowedMethods: []string{http.MethodPost},
+		LocalTokenTTL:  config.Duration(10 * time.Minute),
+		ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
+	}
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(ctx, keyring.ProviderAPIKey("openai/dev"), []byte("sk-real")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	runner := childRunnerFunc(func(ctx context.Context, input process.RunInput) (int, error) {
+		baseURL := input.Env["OPENAI_BASE_URL"]
+		localToken := input.Env["OPENAI_API_KEY"]
+		if !strings.HasPrefix(baseURL, "http://127.0.0.1:") {
+			t.Fatalf("OPENAI_BASE_URL = %q, want localhost proxy", baseURL)
+		}
+		if !strings.HasPrefix(localToken, "envvault-local-") {
+			t.Fatalf("OPENAI_API_KEY = %q, want local proxy token", localToken)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", strings.NewReader(`{"messages":[]}`))
+		if err != nil {
+			return 0, err
+		}
+		req.Header.Set("Authorization", "Bearer "+localToken)
+		resp, err := target.Client().Do(req)
+		if err != nil {
+			return 0, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("proxy status = %d, want 200; body=%q", resp.StatusCode, body)
+		}
+		return 17, nil
+	})
+	app := cli.New(cli.Options{
+		Paths:           paths,
+		Secrets:         secrets,
+		Profiles:        config.ProfileStore{Path: paths.ConfigFile},
+		Issuer:          &fakeTokenIssuer{},
+		Runner:          runner,
+		ProjectStartDir: t.TempDir(),
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{
+		"exec",
+		"--env", "OPENAI_BASE_URL=envvault://openai/dev/base-url",
+		"--env", "OPENAI_API_KEY=envvault://openai/dev/token",
+		"--", "demo-client",
+	}, &stdout, &stderr)
+
+	if code != 17 {
+		t.Fatalf("Run() code = %d, want child code 17; stderr=%q", code, stderr.String())
+	}
+	if providerAuth != "Bearer sk-real" {
+		t.Fatalf("provider Authorization = %q, want provider bearer", providerAuth)
+	}
+	if providerPath != "/v1/chat/completions" {
+		t.Fatalf("provider path = %q, want /v1/chat/completions", providerPath)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
 	}
 }
 
@@ -522,27 +698,27 @@ func TestRunTokenGrantIncludesProjectClaims(t *testing.T) {
 	}
 	claims := tokenIssuer.grants[0].Claims
 	for key, want := range map[string]any{
-		"credlease_profile":    "backend-a/dev",
-		"credlease_resource":   "https://api.dev.example.com",
-		"credlease_purpose":    "process",
-		"credlease_project_id": wantProjectID,
+		"envvault_profile":    "backend-a/dev",
+		"envvault_resource":   "https://api.dev.example.com",
+		"envvault_purpose":    "process",
+		"envvault_project_id": wantProjectID,
 	} {
 		if got := claims[key]; got != want {
 			t.Fatalf("Claims[%s] = %#v, want %#v", key, got, want)
 		}
 	}
-	if claims["credlease_project_id"] == projectRoot {
-		t.Fatalf("credlease_project_id leaked raw project root: %q", projectRoot)
+	if claims["envvault_project_id"] == projectRoot {
+		t.Fatalf("envvault_project_id leaked raw project root: %q", projectRoot)
 	}
-	if claims["credlease_session_id"] == "" {
-		t.Fatal("credlease_session_id is empty")
+	if claims["envvault_session_id"] == "" {
+		t.Fatal("envvault_session_id is empty")
 	}
 }
 
 func TestRunOpenPrintsLaunchURL(t *testing.T) {
 	browserClient := &fakeBrowserClient{
 		result: browser.OpenResult{
-			LaunchURL: "https://admin.dev.example.com/auth/credlease/complete?code=opaque-code",
+			LaunchURL: "https://admin.dev.example.com/auth/envvault/complete?code=opaque-code",
 			ExpiresAt: time.Date(2026, 6, 22, 12, 0, 30, 0, time.UTC),
 		},
 	}
@@ -558,7 +734,7 @@ func TestRunOpenPrintsLaunchURL(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 	}
-	if got, want := stdout.String(), "https://admin.dev.example.com/auth/credlease/complete?code=opaque-code\n"; got != want {
+	if got, want := stdout.String(), "https://admin.dev.example.com/auth/envvault/complete?code=opaque-code\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 	if stderr.Len() != 0 {
@@ -587,7 +763,7 @@ func TestRunOpenRejectsUnapprovedProjectBindingBeforeExchange(t *testing.T) {
 	profiles["admin-web/dev"] = p
 	browserClient := &fakeBrowserClient{
 		result: browser.OpenResult{
-			LaunchURL: "https://admin.dev.example.com/auth/credlease/complete?code=opaque-code",
+			LaunchURL: "https://admin.dev.example.com/auth/envvault/complete?code=opaque-code",
 			ExpiresAt: time.Date(2026, 6, 22, 12, 0, 30, 0, time.UTC),
 		},
 	}
@@ -750,8 +926,8 @@ func TestRunProfileAddBrowserSessionCallsManagerWithPolicy(t *testing.T) {
 	code := app.Run(context.Background(), []string{
 		"profile", "add", "browser-session", "admin-web/dev",
 		"--resource", "https://admin.dev.example.com",
-		"--exchange-url", "https://admin.dev.example.com/auth/credlease/browser-sessions",
-		"--complete-url", "https://admin.dev.example.com/auth/credlease/complete",
+		"--exchange-url", "https://admin.dev.example.com/auth/envvault/browser-sessions",
+		"--complete-url", "https://admin.dev.example.com/auth/envvault/complete",
 		"--post-login-url", "https://admin.dev.example.com/",
 		"--scope", "browser:session:create",
 		"--bootstrap-ttl", "60s",
@@ -778,10 +954,10 @@ func TestRunProfileAddBrowserSessionCallsManagerWithPolicy(t *testing.T) {
 	if got.BootstrapTokenTTL != time.Minute || got.LoginCodeTTL != 30*time.Second || got.WebSessionTTL != 30*time.Minute {
 		t.Fatalf("TTLs = %s/%s/%s, want 60s/30s/30m", got.BootstrapTokenTTL, got.LoginCodeTTL, got.WebSessionTTL)
 	}
-	if got.ExchangeURL != "https://admin.dev.example.com/auth/credlease/browser-sessions" {
+	if got.ExchangeURL != "https://admin.dev.example.com/auth/envvault/browser-sessions" {
 		t.Fatalf("ExchangeURL = %q", got.ExchangeURL)
 	}
-	if got.CompleteURL != "https://admin.dev.example.com/auth/credlease/complete" {
+	if got.CompleteURL != "https://admin.dev.example.com/auth/envvault/complete" {
 		t.Fatalf("CompleteURL = %q", got.CompleteURL)
 	}
 	if got.PostLoginURL != "https://admin.dev.example.com/" {
@@ -804,8 +980,8 @@ func TestRunProfileAddBrowserSessionCallsManagerWithPolicy(t *testing.T) {
 func TestRunResetDryRunPrintsPlan(t *testing.T) {
 	resetter := &fakeResetter{
 		result: resetpkg.Result{
-			Files:       []string{"/tmp/credlease/config.yaml", "/tmp/credlease/credlease.sqlite"},
-			KeyringKeys: []string{"credlease/talos/hmac/current", "credlease/profile/backend-a/dev/parent-key"},
+			Files:       []string{"/tmp/envvault/config.yaml", "/tmp/envvault/envvault.sqlite"},
+			KeyringKeys: []string{"envvault/talos/hmac/current", "envvault/profile/backend-a/dev/parent-key"},
 		},
 	}
 	app := cli.New(cli.Options{
@@ -823,9 +999,9 @@ func TestRunResetDryRunPrintsPlan(t *testing.T) {
 		t.Fatal("DryRun = false, want true")
 	}
 	for _, want := range []string{
-		"/tmp/credlease/config.yaml",
-		"credlease/talos/hmac/current",
-		"credlease/profile/backend-a/dev/parent-key",
+		"/tmp/envvault/config.yaml",
+		"envvault/talos/hmac/current",
+		"envvault/profile/backend-a/dev/parent-key",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
@@ -1002,7 +1178,7 @@ func TestRunJWKSExportCopiesStableJWKSFile(t *testing.T) {
 	paths := testPaths(t)
 	body := `{"keys":[{"kty":"RSA","kid":"test","use":"sig"}]}`
 	writeJWKS(t, paths, body)
-	output := filepath.Join(t.TempDir(), "backend", "credlease-jwks.json")
+	output := filepath.Join(t.TempDir(), "backend", "envvault-jwks.json")
 	app := cli.New(cli.Options{Paths: paths})
 	var stdout, stderr bytes.Buffer
 
@@ -1063,7 +1239,7 @@ func TestRunIssuerShowWritesLocalIssuerID(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 	}
-	if got, want := stdout.String(), "credlease-local:01JTESTINSTALL\n"; got != want {
+	if got, want := stdout.String(), "envvault-local:01JTESTINSTALL\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 	if stderr.Len() != 0 {
@@ -1087,8 +1263,32 @@ func writeJWKS(t *testing.T, paths config.Paths, body string) {
 	if err := os.MkdirAll(paths.DataDir, 0o700); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.DataDir, "credlease-jwks.json"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.DataDir, "envvault-jwks.json"), []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
+	}
+}
+
+func writeBaseConfig(t *testing.T, paths config.Paths) {
+	t.Helper()
+	if err := config.Save(paths.ConfigFile, config.File{
+		Version: 1,
+		Installation: config.Installation{
+			ID: "01JTESTINSTALL",
+		},
+		Runtime: config.Runtime{
+			Talos: config.TalosRuntime{
+				Mode:      "managed",
+				Version:   "test-talos",
+				Lifecycle: "on-demand",
+			},
+		},
+		Defaults: config.Defaults{
+			TokenTTL:    config.Duration(10 * time.Minute),
+			MaxTokenTTL: config.Duration(time.Hour),
+		},
+		Profiles: map[string]config.Profile{},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
 	}
 }
 
@@ -1151,6 +1351,12 @@ type fakeChildRunner struct {
 func (r *fakeChildRunner) Run(_ context.Context, input process.RunInput) (int, error) {
 	r.input = input
 	return r.code, nil
+}
+
+type childRunnerFunc func(context.Context, process.RunInput) (int, error)
+
+func (f childRunnerFunc) Run(ctx context.Context, input process.RunInput) (int, error) {
+	return f(ctx, input)
 }
 
 type fakeBrowserClient struct {
@@ -1240,8 +1446,8 @@ func fakeCLIProfiles() fakeCLIProfileResolver {
 			BootstrapTokenTTL: 60 * time.Second,
 			LoginCodeTTL:      30 * time.Second,
 			WebSessionTTL:     30 * time.Minute,
-			ExchangeURL:       "https://admin.dev.example.com/auth/credlease/browser-sessions",
-			CompleteURL:       "https://admin.dev.example.com/auth/credlease/complete",
+			ExchangeURL:       "https://admin.dev.example.com/auth/envvault/browser-sessions",
+			CompleteURL:       "https://admin.dev.example.com/auth/envvault/complete",
 			PostLoginURL:      "https://admin.dev.example.com/",
 			AllowedHosts:      []string{"admin.dev.example.com"},
 		},
@@ -1262,7 +1468,7 @@ func assertTokenGrant(t *testing.T, grant issuer.Grant) {
 	if grant.TTL != 10*time.Minute {
 		t.Fatalf("grant ttl = %s, want 10m", grant.TTL)
 	}
-	if grant.Claims["credlease_purpose"] != "process" {
-		t.Fatalf("grant purpose = %#v, want process", grant.Claims["credlease_purpose"])
+	if grant.Claims["envvault_purpose"] != "process" {
+		t.Fatalf("grant purpose = %#v, want process", grant.Claims["envvault_purpose"])
 	}
 }

@@ -16,15 +16,15 @@ import (
 )
 
 var (
-	ErrInvalidToken     = errors.New("credlease verifier: invalid token")
-	ErrInvalidJWKS      = errors.New("credlease verifier: invalid jwks")
-	ErrUnauthorized     = errors.New("credlease verifier: unauthorized token")
-	ErrTokenExpired     = errors.New("credlease verifier: token expired")
-	ErrTokenNotYetValid = errors.New("credlease verifier: token not yet valid")
-	ErrIssuerMismatch   = errors.New("credlease verifier: issuer mismatch")
-	ErrResourceMismatch = errors.New("credlease verifier: resource mismatch")
-	ErrPurposeMismatch  = errors.New("credlease verifier: purpose mismatch")
-	ErrScopeMissing     = errors.New("credlease verifier: required scope missing")
+	ErrInvalidToken     = errors.New("envvault verifier: invalid token")
+	ErrInvalidJWKS      = errors.New("envvault verifier: invalid jwks")
+	ErrUnauthorized     = errors.New("envvault verifier: unauthorized token")
+	ErrTokenExpired     = errors.New("envvault verifier: token expired")
+	ErrTokenNotYetValid = errors.New("envvault verifier: token not yet valid")
+	ErrIssuerMismatch   = errors.New("envvault verifier: issuer mismatch")
+	ErrResourceMismatch = errors.New("envvault verifier: resource mismatch")
+	ErrPurposeMismatch  = errors.New("envvault verifier: purpose mismatch")
+	ErrScopeMissing     = errors.New("envvault verifier: required scope missing")
 )
 
 type Options struct {
@@ -223,10 +223,10 @@ func parseClaims(payload []byte) (Claims, error) {
 	claims := Claims{
 		Issuer:    stringClaim(raw["iss"]),
 		Subject:   stringClaim(raw["sub"]),
-		Profile:   stringClaim(raw["credlease_profile"]),
-		Resource:  stringClaim(raw["credlease_resource"]),
-		SessionID: stringClaim(raw["credlease_session_id"]),
-		Purpose:   stringClaim(raw["credlease_purpose"]),
+		Profile:   stringClaim(raw["envvault_profile"]),
+		Resource:  stringClaim(raw["envvault_resource"]),
+		SessionID: stringClaim(raw["envvault_session_id"]),
+		Purpose:   stringClaim(raw["envvault_purpose"]),
 		Scopes:    scopeClaims(raw),
 		ExpiresAt: exp,
 		NotBefore: nbf,

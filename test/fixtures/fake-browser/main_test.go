@@ -13,7 +13,7 @@ func TestRunCapturesLaunchURLAsJSONLine(t *testing.T) {
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 
 	code := run(runInput{
-		Args:      []string{"https://admin.dev.example.com/auth/credlease/complete?code=opaque-code"},
+		Args:      []string{"https://admin.dev.example.com/auth/envvault/complete?code=opaque-code"},
 		Environ:   []string{captureEnv + "=" + path},
 		Now:       func() time.Time { return now },
 		Stdout:    discardWriter{},
@@ -28,7 +28,7 @@ func TestRunCapturesLaunchURLAsJSONLine(t *testing.T) {
 	if len(records) != 1 {
 		t.Fatalf("records = %d, want 1", len(records))
 	}
-	if records[0].URL != "https://admin.dev.example.com/auth/credlease/complete?code=opaque-code" {
+	if records[0].URL != "https://admin.dev.example.com/auth/envvault/complete?code=opaque-code" {
 		t.Fatalf("URL = %q", records[0].URL)
 	}
 	if records[0].OpenedAt != "2026-06-22T12:00:00Z" {
@@ -66,7 +66,7 @@ func TestRunAppendsLaunchRecords(t *testing.T) {
 
 func TestRunRejectsMissingCapturePath(t *testing.T) {
 	code := run(runInput{
-		Args:   []string{"https://admin.dev.example.com/auth/credlease/complete?code=opaque-code"},
+		Args:   []string{"https://admin.dev.example.com/auth/envvault/complete?code=opaque-code"},
 		Stdout: discardWriter{},
 		Stderr: discardWriter{},
 	})

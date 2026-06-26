@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/bootstrap"
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/keyring"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
-	"github.com/trknhr/credlease/internal/sqlite"
+	"github.com/trknhr/envvault/internal/bootstrap"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/keyring"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/sqlite"
 )
 
 func TestInitializerCreatesConfigRuntimeSQLiteJWKSAndKeyringSecrets(t *testing.T) {
@@ -63,10 +63,10 @@ func TestInitializerCreatesConfigRuntimeSQLiteJWKSAndKeyringSecrets(t *testing.T
 	if result.ConfigPath != paths.ConfigFile {
 		t.Fatalf("ConfigPath = %q, want %q", result.ConfigPath, paths.ConfigFile)
 	}
-	if result.SQLitePath != filepath.Join(paths.DataDir, "credlease.sqlite") {
+	if result.SQLitePath != filepath.Join(paths.DataDir, "envvault.sqlite") {
 		t.Fatalf("SQLitePath = %q", result.SQLitePath)
 	}
-	if result.JWKSPath != filepath.Join(paths.DataDir, "credlease-jwks.json") {
+	if result.JWKSPath != filepath.Join(paths.DataDir, "envvault-jwks.json") {
 		t.Fatalf("JWKSPath = %q", result.JWKSPath)
 	}
 	if !installer.called {

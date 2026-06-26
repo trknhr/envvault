@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/projectbinding"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/projectbinding"
 )
 
 func TestCheckAllowsProjectBindingNone(t *testing.T) {

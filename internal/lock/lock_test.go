@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/lock"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/lock"
 )
 
 func TestAcquireCreatesPrivateLockAndReleaseRemovesIt(t *testing.T) {

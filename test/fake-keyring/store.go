@@ -3,7 +3,7 @@ package fakekeyring
 import (
 	"context"
 
-	"github.com/trknhr/credlease/internal/keyring"
+	"github.com/trknhr/envvault/internal/keyring"
 )
 
 var _ keyring.Store = (*Store)(nil)

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/profile"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/profile"
 )
 
 func TestLoadProfileAppliesDefaultsAndValidates(t *testing.T) {
@@ -78,6 +78,63 @@ profiles:
 	}
 	if got.Claims["environment"] != "dev" {
 		t.Fatalf("Claims[environment] = %q", got.Claims["environment"])
+	}
+}
+
+func TestLoadProviderProxyProfile(t *testing.T) {
+	path := writeConfig(t, `
+version: 1
+installation:
+  id: 01JTESTINSTALL
+runtime:
+  talos:
+    mode: managed
+    version: test-talos
+    lifecycle: on-demand
+defaults:
+  token_ttl: 10m
+  max_token_ttl: 60m
+profiles:
+  openai/dev:
+    kind: provider-proxy
+    provider: openai-compatible
+    target_url: https://api.openai.com/v1
+    allowed_paths:
+      - /chat/completions
+      - /responses
+    allowed_methods:
+      - POST
+    local_token_ttl: 10m
+    project_binding:
+      mode: none
+`)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got, err := cfg.Profile("openai/dev")
+	if err != nil {
+		t.Fatalf("Profile() error = %v", err)
+	}
+
+	if got.Kind != profile.KindProviderProxy {
+		t.Fatalf("Kind = %q, want provider-proxy", got.Kind)
+	}
+	if got.Provider != "openai-compatible" {
+		t.Fatalf("Provider = %q", got.Provider)
+	}
+	if got.TargetURL != "https://api.openai.com/v1" {
+		t.Fatalf("TargetURL = %q", got.TargetURL)
+	}
+	if strings.Join(got.AllowedPaths, ",") != "/chat/completions,/responses" {
+		t.Fatalf("AllowedPaths = %#v", got.AllowedPaths)
+	}
+	if strings.Join(got.AllowedMethods, ",") != "POST" {
+		t.Fatalf("AllowedMethods = %#v", got.AllowedMethods)
+	}
+	if got.LocalTokenTTL != 10*time.Minute {
+		t.Fatalf("LocalTokenTTL = %s, want 10m", got.LocalTokenTTL)
 	}
 }
 

@@ -9,22 +9,27 @@ import (
 	"os"
 	"strings"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/envref"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/projectbinding"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/envref"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/projectbinding"
 )
 
 type ProfileResolver interface {
 	Profile(name string) (profile.Profile, error)
 }
 
+type ReferenceResolver interface {
+	ResolveReference(ctx context.Context, ref envref.Reference, identity projectbinding.Identity) (string, error)
+}
+
 type EnvInput struct {
-	Parent          []string
-	EnvFiles        []string
-	InlineEnv       []string
-	ProjectIdentity projectbinding.Identity
+	Parent            []string
+	EnvFiles          []string
+	InlineEnv         []string
+	ProjectIdentity   projectbinding.Identity
+	ReferenceResolver ReferenceResolver
 }
 
 func BuildEnv(ctx context.Context, input EnvInput, profiles ProfileResolver, tokenIssuer issuer.Issuer) (map[string]string, error) {
@@ -55,6 +60,15 @@ func BuildEnv(ctx context.Context, input EnvInput, profiles ProfileResolver, tok
 			return nil, err
 		}
 		if !ok {
+			continue
+		}
+
+		if input.ReferenceResolver != nil {
+			resolved, err := input.ReferenceResolver.ResolveReference(ctx, ref, input.ProjectIdentity)
+			if err != nil {
+				return nil, err
+			}
+			env[key] = resolved
 			continue
 		}
 
@@ -149,9 +163,9 @@ func removeAuthorityEnv(env map[string]string) {
 }
 
 var authorityEnvKeys = []string{
-	"CREDLEASE_TALOS_HMAC_SECRET",
-	"CREDLEASE_TALOS_SIGNING_KEY",
-	"CREDLEASE_PROFILE_PARENT_KEY",
+	"ENVVAULT_TALOS_HMAC_SECRET",
+	"ENVVAULT_TALOS_SIGNING_KEY",
+	"ENVVAULT_PROFILE_PARENT_KEY",
 }
 
 func parseAssignment(raw string) (string, string, error) {
@@ -182,15 +196,15 @@ func ProcessClaims(p profile.Profile, identity projectbinding.Identity) (map[str
 		return nil, err
 	}
 	claims := map[string]any{
-		"credlease_session_id": sessionID,
-		"credlease_project_id": projectID,
+		"envvault_session_id": sessionID,
+		"envvault_project_id": projectID,
 	}
 	for key, value := range p.Claims {
 		claims[key] = value
 	}
-	claims["credlease_profile"] = p.Name
-	claims["credlease_resource"] = p.Resource
-	claims["credlease_purpose"] = "process"
+	claims["envvault_profile"] = p.Name
+	claims["envvault_resource"] = p.Resource
+	claims["envvault_purpose"] = "process"
 	return claims, nil
 }
 

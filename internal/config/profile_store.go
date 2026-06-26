@@ -1,6 +1,6 @@
 package config
 
-import "github.com/trknhr/credlease/internal/profile"
+import "github.com/trknhr/envvault/internal/profile"
 
 type ProfileStore struct {
 	Path string

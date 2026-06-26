@@ -4,18 +4,18 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 )
 
 func TestErrorFormatsCodeWithoutSecretDetail(t *testing.T) {
 	err := clerr.New(clerr.ReferenceInvalid, "query and fragment are not allowed")
 
-	if got, want := err.Error(), "CREDLEASE_REFERENCE_INVALID: query and fragment are not allowed"; got != want {
+	if got, want := err.Error(), "ENVVAULT_REFERENCE_INVALID: query and fragment are not allowed"; got != want {
 		t.Fatalf("Error() = %q, want %q", got, want)
 	}
 }
 
-func TestCodeOfFindsWrappedCredleaseError(t *testing.T) {
+func TestCodeOfFindsWrappedEnvVaultError(t *testing.T) {
 	err := errors.Join(errors.New("outer"), clerr.New(clerr.ProfileNotFound, "backend-a/dev"))
 
 	if got, ok := clerr.CodeOf(err); !ok || got != clerr.ProfileNotFound {

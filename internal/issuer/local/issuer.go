@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trknhr/credlease/internal/audit"
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/keyring"
-	"github.com/trknhr/credlease/internal/profile"
+	"github.com/trknhr/envvault/internal/audit"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/profile"
 )
 
 type ProfileResolver interface {
@@ -76,8 +76,8 @@ func (i *Issuer) recordCredentialIssued(ctx context.Context, p profile.Profile, 
 		Resource:   grant.Resource,
 		Scopes:     append([]string(nil), grant.Scopes...),
 		TTLSeconds: int64(grant.TTL.Seconds()),
-		SessionID:  claimString(grant.Claims, "credlease_session_id"),
-		ProjectID:  claimString(grant.Claims, "credlease_project_id"),
+		SessionID:  claimString(grant.Claims, "envvault_session_id"),
+		ProjectID:  claimString(grant.Claims, "envvault_project_id"),
 		Result:     result,
 	}
 	if code, ok := clerr.CodeOf(cause); ok {
@@ -102,7 +102,7 @@ func boundedProcessGrant(p profile.Profile, requested issuer.Grant) (issuer.Gran
 }
 
 func boundedBrowserGrant(p profile.Profile, requested issuer.Grant) (issuer.Grant, error) {
-	if requested.Claims["credlease_purpose"] != "browser-bootstrap" {
+	if requested.Claims["envvault_purpose"] != "browser-bootstrap" {
 		return issuer.Grant{}, clerr.New(clerr.ConfigInvalid, "browser-session grant purpose must be browser-bootstrap")
 	}
 	return boundedGrantWithTTL(p, requested, p.BootstrapTokenTTL, p.BootstrapTokenTTL, "browser-bootstrap")
@@ -158,16 +158,16 @@ func boundedClaims(p profile.Profile, requested map[string]any, defaultPurpose s
 	for key, value := range p.Claims {
 		claims[key] = value
 	}
-	if _, ok := claims["credlease_session_id"]; !ok {
+	if _, ok := claims["envvault_session_id"]; !ok {
 		sessionID, err := newSessionID()
 		if err != nil {
 			return nil, err
 		}
-		claims["credlease_session_id"] = sessionID
+		claims["envvault_session_id"] = sessionID
 	}
-	claims["credlease_profile"] = p.Name
-	claims["credlease_resource"] = p.Resource
-	claims["credlease_purpose"] = defaultPurpose
+	claims["envvault_profile"] = p.Name
+	claims["envvault_resource"] = p.Resource
+	claims["envvault_purpose"] = defaultPurpose
 	return claims, nil
 }
 

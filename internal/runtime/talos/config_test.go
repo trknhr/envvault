@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"testing"
 
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,8 +21,8 @@ func TestWriteLocalConfigCreatesPrivateTalosConfig(t *testing.T) {
 	err := runtimetalos.WriteLocalConfig(path, runtimetalos.LocalConfig{
 		HTTPAddress:  "127.0.0.1:49152",
 		MetricsAddr:  "127.0.0.1:49153",
-		DatabaseDSN:  "sqlite3:///tmp/credlease/talos.db?_journal_mode=WAL",
-		Issuer:       "credlease-local:01JTESTINSTALL",
+		DatabaseDSN:  "sqlite3:///tmp/envvault/talos.db?_journal_mode=WAL",
+		Issuer:       "envvault-local:01JTESTINSTALL",
 		HMACSecret:   hmacSecret,
 		SigningSeed:  signingSeed,
 		SigningKeyID: "current",
@@ -60,10 +60,10 @@ func TestWriteLocalConfigCreatesPrivateTalosConfig(t *testing.T) {
 	if cfg.Serve.Metrics.Host != "127.0.0.1" || cfg.Serve.Metrics.Port != 49153 {
 		t.Fatalf("metrics bind = %s:%d, want 127.0.0.1:49153", cfg.Serve.Metrics.Host, cfg.Serve.Metrics.Port)
 	}
-	if cfg.Credentials.Issuer != "credlease-local:01JTESTINSTALL" {
+	if cfg.Credentials.Issuer != "envvault-local:01JTESTINSTALL" {
 		t.Fatalf("issuer = %q", cfg.Credentials.Issuer)
 	}
-	if cfg.DB.DSN != "sqlite3:///tmp/credlease/talos.db?_journal_mode=WAL" {
+	if cfg.DB.DSN != "sqlite3:///tmp/envvault/talos.db?_journal_mode=WAL" {
 		t.Fatalf("db dsn = %q", cfg.DB.DSN)
 	}
 	if cfg.Secrets.HMAC.Current == "" {
@@ -74,7 +74,7 @@ func TestWriteLocalConfigCreatesPrivateTalosConfig(t *testing.T) {
 	if len(cfg.Credentials.DerivedTokens.JWT.SigningKeys.URLs) != 1 || len(jwksURL) <= len("base64://") {
 		t.Fatalf("signing key URLs = %#v", cfg.Credentials.DerivedTokens.JWT.SigningKeys.URLs)
 	}
-	rawJWKS, err := base64.RawURLEncoding.DecodeString(jwksURL[len("base64://"):])
+	rawJWKS, err := base64.StdEncoding.DecodeString(jwksURL[len("base64://"):])
 	if err != nil {
 		t.Fatalf("DecodeString(JWKS URL) error = %v", err)
 	}
@@ -106,7 +106,7 @@ func TestWriteLocalConfigRejectsNonLoopbackHTTPAddress(t *testing.T) {
 		HTTPAddress:  "0.0.0.0:4420",
 		MetricsAddr:  "127.0.0.1:4422",
 		DatabaseDSN:  "sqlite3:///tmp/talos.db",
-		Issuer:       "credlease-local:test",
+		Issuer:       "envvault-local:test",
 		HMACSecret:   []byte("0123456789abcdef0123456789abcdef"),
 		SigningSeed:  []byte("0123456789abcdef0123456789abcdef"),
 		SigningKeyID: "current",

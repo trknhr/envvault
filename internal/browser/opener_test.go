@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trknhr/credlease/internal/browser"
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/browser"
+	"github.com/trknhr/envvault/internal/clerr"
 )
 
 func TestCommandOpenerUsesOSDefaultBrowser(t *testing.T) {
@@ -17,15 +17,15 @@ func TestCommandOpenerUsesOSDefaultBrowser(t *testing.T) {
 	}{
 		{
 			goos: "darwin",
-			want: commandCall{name: "open", args: []string{"https://admin.dev.example.com/auth/credlease/complete?code=opaque"}},
+			want: commandCall{name: "open", args: []string{"https://admin.dev.example.com/auth/envvault/complete?code=opaque"}},
 		},
 		{
 			goos: "linux",
-			want: commandCall{name: "xdg-open", args: []string{"https://admin.dev.example.com/auth/credlease/complete?code=opaque"}},
+			want: commandCall{name: "xdg-open", args: []string{"https://admin.dev.example.com/auth/envvault/complete?code=opaque"}},
 		},
 		{
 			goos: "windows",
-			want: commandCall{name: "rundll32", args: []string{"url.dll,FileProtocolHandler", "https://admin.dev.example.com/auth/credlease/complete?code=opaque"}},
+			want: commandCall{name: "rundll32", args: []string{"url.dll,FileProtocolHandler", "https://admin.dev.example.com/auth/envvault/complete?code=opaque"}},
 		},
 	}
 
@@ -37,7 +37,7 @@ func TestCommandOpenerUsesOSDefaultBrowser(t *testing.T) {
 				Runner: runner,
 			}
 
-			err := opener.Open(context.Background(), "https://admin.dev.example.com/auth/credlease/complete?code=opaque", "")
+			err := opener.Open(context.Background(), "https://admin.dev.example.com/auth/envvault/complete?code=opaque", "")
 			if err != nil {
 				t.Fatalf("Open() error = %v", err)
 			}
@@ -62,7 +62,7 @@ func TestCommandOpenerUsesExplicitBrowser(t *testing.T) {
 			browser: "chrome",
 			want: commandCall{
 				name: "open",
-				args: []string{"-a", "Google Chrome", "https://admin.dev.example.com/auth/credlease/complete?code=opaque"},
+				args: []string{"-a", "Google Chrome", "https://admin.dev.example.com/auth/envvault/complete?code=opaque"},
 			},
 		},
 		{
@@ -71,7 +71,7 @@ func TestCommandOpenerUsesExplicitBrowser(t *testing.T) {
 			browser: "chrome",
 			want: commandCall{
 				name: "google-chrome",
-				args: []string{"https://admin.dev.example.com/auth/credlease/complete?code=opaque"},
+				args: []string{"https://admin.dev.example.com/auth/envvault/complete?code=opaque"},
 			},
 		},
 		{
@@ -80,7 +80,7 @@ func TestCommandOpenerUsesExplicitBrowser(t *testing.T) {
 			browser: "chromium",
 			want: commandCall{
 				name: "chromium-browser",
-				args: []string{"https://admin.dev.example.com/auth/credlease/complete?code=opaque"},
+				args: []string{"https://admin.dev.example.com/auth/envvault/complete?code=opaque"},
 			},
 		},
 		{
@@ -89,7 +89,7 @@ func TestCommandOpenerUsesExplicitBrowser(t *testing.T) {
 			browser: "chrome",
 			want: commandCall{
 				name: "cmd",
-				args: []string{"/c", "start", "", "chrome", "https://admin.dev.example.com/auth/credlease/complete?code=opaque"},
+				args: []string{"/c", "start", "", "chrome", "https://admin.dev.example.com/auth/envvault/complete?code=opaque"},
 			},
 		},
 	}
@@ -102,7 +102,7 @@ func TestCommandOpenerUsesExplicitBrowser(t *testing.T) {
 				Runner: runner,
 			}
 
-			err := opener.Open(context.Background(), "https://admin.dev.example.com/auth/credlease/complete?code=opaque", tt.browser)
+			err := opener.Open(context.Background(), "https://admin.dev.example.com/auth/envvault/complete?code=opaque", tt.browser)
 			if err != nil {
 				t.Fatalf("Open() error = %v", err)
 			}
@@ -121,7 +121,7 @@ func TestCommandOpenerUsesExplicitBrowserPath(t *testing.T) {
 		Runner: runner,
 	}
 
-	err := opener.Open(context.Background(), "https://admin.dev.example.com/auth/credlease/complete?code=opaque", "/tmp/fake-browser")
+	err := opener.Open(context.Background(), "https://admin.dev.example.com/auth/envvault/complete?code=opaque", "/tmp/fake-browser")
 
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
@@ -131,7 +131,7 @@ func TestCommandOpenerUsesExplicitBrowserPath(t *testing.T) {
 	}
 	assertCommandCall(t, runner.calls[0], commandCall{
 		name: "/tmp/fake-browser",
-		args: []string{"https://admin.dev.example.com/auth/credlease/complete?code=opaque"},
+		args: []string{"https://admin.dev.example.com/auth/envvault/complete?code=opaque"},
 	})
 }
 
@@ -142,7 +142,7 @@ func TestCommandOpenerRejectsUnknownExplicitBrowser(t *testing.T) {
 		Runner: runner,
 	}
 
-	err := opener.Open(context.Background(), "https://admin.dev.example.com/auth/credlease/complete?code=opaque", "lynx")
+	err := opener.Open(context.Background(), "https://admin.dev.example.com/auth/envvault/complete?code=opaque", "lynx")
 	if err == nil {
 		t.Fatal("Open() error = nil, want error")
 	}
@@ -155,13 +155,13 @@ func TestCommandOpenerRejectsUnknownExplicitBrowser(t *testing.T) {
 }
 
 func TestCommandOpenerRedactsLaunchURLWhenCommandFails(t *testing.T) {
-	runner := &recordingCommandRunner{err: errors.New("failed to open https://admin.dev.example.com/auth/credlease/complete?code=opaque")}
+	runner := &recordingCommandRunner{err: errors.New("failed to open https://admin.dev.example.com/auth/envvault/complete?code=opaque")}
 	opener := browser.CommandOpener{
 		GOOS:   "linux",
 		Runner: runner,
 	}
 
-	err := opener.Open(context.Background(), "https://admin.dev.example.com/auth/credlease/complete?code=opaque", "")
+	err := opener.Open(context.Background(), "https://admin.dev.example.com/auth/envvault/complete?code=opaque", "")
 	if err == nil {
 		t.Fatal("Open() error = nil, want error")
 	}
@@ -182,7 +182,7 @@ func TestCommandOpenerHonorsCanceledContextBeforeRunningCommand(t *testing.T) {
 		Runner: runner,
 	}
 
-	err := opener.Open(ctx, "https://admin.dev.example.com/auth/credlease/complete?code=opaque", "")
+	err := opener.Open(ctx, "https://admin.dev.example.com/auth/envvault/complete?code=opaque", "")
 	if err == nil {
 		t.Fatal("Open() error = nil, want context error")
 	}

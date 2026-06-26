@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/issuer"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/issuer"
 )
 
 const (
@@ -66,12 +66,12 @@ func (c *Client) IssueParentKey(ctx context.Context, request ParentKeyRequest) (
 		Secret string `json:"secret"`
 	}
 	body := map[string]any{
-		"name":     "credlease:" + request.Profile,
-		"actor_id": "credlease-local:" + request.InstallationID,
+		"name":     "envvault:" + request.Profile,
+		"actor_id": "envvault-local:" + request.InstallationID,
 		"scopes":   append([]string(nil), request.Scopes...),
 		"ttl":      request.TTL.String(),
 		"metadata": map[string]string{
-			"credlease_profile": request.Profile,
+			"envvault_profile": request.Profile,
 		},
 	}
 	if err := c.postJSON(ctx, parentKeyPath, body, &response); err != nil {
@@ -143,6 +143,24 @@ func (c *Client) JWKS(ctx context.Context) ([]byte, error) {
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, clerr.Wrap(clerr.IssueFailed, "read talos jwks response", err)
+	}
+	jwks, err := unwrapJWKSResponse(raw)
+	if err != nil {
+		return nil, err
+	}
+	return jwks, nil
+}
+
+func unwrapJWKSResponse(raw []byte) ([]byte, error) {
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, clerr.Wrap(clerr.IssueFailed, "decode talos jwks response", err)
+	}
+	if _, ok := body["keys"]; ok {
+		return raw, nil
+	}
+	if jwks, ok := body["jwks"]; ok {
+		return jwks, nil
 	}
 	return raw, nil
 }

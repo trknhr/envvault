@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/doctor"
-	"github.com/trknhr/credlease/internal/keyring"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
-	"github.com/trknhr/credlease/internal/sqlite"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/doctor"
+	"github.com/trknhr/envvault/internal/keyring"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/sqlite"
 )
 
 func TestCheckerReportsHealthyInstallationWithoutSecrets(t *testing.T) {
@@ -40,11 +40,11 @@ func TestCheckerReportsHealthyInstallationWithoutSecrets(t *testing.T) {
 			MaxTokenTTL: config.Duration(30 * time.Minute),
 		},
 	})
-	if err := sqlite.Migrate(ctx, sqlite.Options{Path: filepath.Join(paths.DataDir, "credlease.sqlite")}); err != nil {
+	if err := sqlite.Migrate(ctx, sqlite.Options{Path: filepath.Join(paths.DataDir, "envvault.sqlite")}); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	createTalosSQLite(t, filepath.Join(paths.DataDir, "talos.sqlite"))
-	if err := os.WriteFile(filepath.Join(paths.DataDir, "credlease-jwks.json"), []byte(`{"keys":[{"kid":"test","kty":"OKP"}]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.DataDir, "envvault-jwks.json"), []byte(`{"keys":[{"kid":"test","kty":"OKP"}]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile(jwks) error = %v", err)
 	}
 	secrets := keyring.NewMemoryStore()
@@ -131,7 +131,7 @@ func TestCheckerReportsStaleRuntimeLockAndTempFilesWithoutRepair(t *testing.T) {
 	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
 		t.Fatalf("MkdirAll(tmp) error = %v", err)
 	}
-	staleTemp := filepath.Join(tmpDir, "credlease-secret-canary.tmp")
+	staleTemp := filepath.Join(tmpDir, "envvault-secret-canary.tmp")
 	if err := os.WriteFile(staleTemp, []byte("secret-canary"), 0o600); err != nil {
 		t.Fatalf("WriteFile(stale temp) error = %v", err)
 	}
@@ -176,10 +176,10 @@ func TestCheckerReportsKeyringUnavailableFailClosed(t *testing.T) {
 		t.Fatalf("Ensure() error = %v", err)
 	}
 	saveDoctorConfig(t, paths, map[string]config.Profile{})
-	if err := sqlite.Migrate(ctx, sqlite.Options{Path: filepath.Join(paths.DataDir, "credlease.sqlite")}); err != nil {
+	if err := sqlite.Migrate(ctx, sqlite.Options{Path: filepath.Join(paths.DataDir, "envvault.sqlite")}); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.DataDir, "credlease-jwks.json"), []byte(`{"keys":[]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.DataDir, "envvault-jwks.json"), []byte(`{"keys":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile(jwks) error = %v", err)
 	}
 
@@ -210,10 +210,10 @@ func TestCheckerReportsInvalidJWKS(t *testing.T) {
 		t.Fatalf("Ensure() error = %v", err)
 	}
 	saveDoctorConfig(t, paths, map[string]config.Profile{})
-	if err := sqlite.Migrate(ctx, sqlite.Options{Path: filepath.Join(paths.DataDir, "credlease.sqlite")}); err != nil {
+	if err := sqlite.Migrate(ctx, sqlite.Options{Path: filepath.Join(paths.DataDir, "envvault.sqlite")}); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.DataDir, "credlease-jwks.json"), []byte(`{"not_keys":[]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.DataDir, "envvault-jwks.json"), []byte(`{"not_keys":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile(jwks) error = %v", err)
 	}
 	secrets := keyring.NewMemoryStore()
@@ -241,11 +241,11 @@ func TestCheckerReportsPrivateJWKS(t *testing.T) {
 		t.Fatalf("Ensure() error = %v", err)
 	}
 	saveDoctorConfig(t, paths, map[string]config.Profile{})
-	if err := sqlite.Migrate(ctx, sqlite.Options{Path: filepath.Join(paths.DataDir, "credlease.sqlite")}); err != nil {
+	if err := sqlite.Migrate(ctx, sqlite.Options{Path: filepath.Join(paths.DataDir, "envvault.sqlite")}); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	createTalosSQLite(t, filepath.Join(paths.DataDir, "talos.sqlite"))
-	if err := os.WriteFile(filepath.Join(paths.DataDir, "credlease-jwks.json"), []byte(`{"keys":[{"kid":"test","kty":"OKP","d":"private-seed"}]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.DataDir, "envvault-jwks.json"), []byte(`{"keys":[{"kid":"test","kty":"OKP","d":"private-seed"}]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile(jwks) error = %v", err)
 	}
 	secrets := keyring.NewMemoryStore()
@@ -266,7 +266,7 @@ func TestCheckerReportsPrivateJWKS(t *testing.T) {
 	}
 }
 
-func TestCheckerRepairRemovesOnlyStaleRuntimeLockAndCredleaseTempFiles(t *testing.T) {
+func TestCheckerRepairRemovesOnlyStaleRuntimeLockAndEnvVaultTempFiles(t *testing.T) {
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	paths := testPaths(t)
 	if err := paths.Ensure(); err != nil {
@@ -287,8 +287,8 @@ func TestCheckerRepairRemovesOnlyStaleRuntimeLockAndCredleaseTempFiles(t *testin
 	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
 		t.Fatalf("MkdirAll(tmp) error = %v", err)
 	}
-	staleTemp := filepath.Join(tmpDir, "credlease-secret-canary.tmp")
-	freshTemp := filepath.Join(tmpDir, "credlease-fresh.tmp")
+	staleTemp := filepath.Join(tmpDir, "envvault-secret-canary.tmp")
+	freshTemp := filepath.Join(tmpDir, "envvault-fresh.tmp")
 	unrelated := filepath.Join(tmpDir, "other.tmp")
 	for _, item := range []struct {
 		path string
@@ -354,7 +354,7 @@ func TestCheckerRepairStopsStaleManagedTalosProcess(t *testing.T) {
 	if err := os.Chtimes(lockDir, stale, stale); err != nil {
 		t.Fatalf("Chtimes(lock) error = %v", err)
 	}
-	configPath := filepath.Join(paths.CacheDir, "tmp", "credlease-stale.yaml")
+	configPath := filepath.Join(paths.CacheDir, "tmp", "envvault-stale.yaml")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatalf("MkdirAll(tmp) error = %v", err)
 	}
@@ -363,7 +363,7 @@ func TestCheckerRepairStopsStaleManagedTalosProcess(t *testing.T) {
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestDoctorManagedTalosProcessHelper", "--", configPath)
-	cmd.Env = append(os.Environ(), "CREDLEASE_DOCTOR_PROCESS_HELPER=1")
+	cmd.Env = append(os.Environ(), "ENVVAULT_DOCTOR_PROCESS_HELPER=1")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Start(helper) error = %v", err)
 	}
@@ -418,7 +418,7 @@ func TestCheckerRepairStopsStaleManagedTalosProcess(t *testing.T) {
 }
 
 func TestDoctorManagedTalosProcessHelper(t *testing.T) {
-	if os.Getenv("CREDLEASE_DOCTOR_PROCESS_HELPER") != "1" {
+	if os.Getenv("ENVVAULT_DOCTOR_PROCESS_HELPER") != "1" {
 		return
 	}
 	signals := make(chan os.Signal, 1)
@@ -465,11 +465,11 @@ func prepareHealthyDoctorInstallation(t *testing.T, ctx context.Context) doctorF
 			MaxTokenTTL: config.Duration(30 * time.Minute),
 		},
 	})
-	if err := sqlite.Migrate(ctx, sqlite.Options{Path: filepath.Join(paths.DataDir, "credlease.sqlite")}); err != nil {
+	if err := sqlite.Migrate(ctx, sqlite.Options{Path: filepath.Join(paths.DataDir, "envvault.sqlite")}); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	createTalosSQLite(t, filepath.Join(paths.DataDir, "talos.sqlite"))
-	if err := os.WriteFile(filepath.Join(paths.DataDir, "credlease-jwks.json"), []byte(`{"keys":[{"kid":"test","kty":"OKP"}]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.DataDir, "envvault-jwks.json"), []byte(`{"keys":[{"kid":"test","kty":"OKP"}]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile(jwks) error = %v", err)
 	}
 	secrets := keyring.NewMemoryStore()

@@ -3,23 +3,55 @@ package envref_test
 import (
 	"testing"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/envref"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/envref"
 )
 
-func TestParseValueReturnsReferenceForWholeCredleaseURI(t *testing.T) {
-	ref, ok, err := envref.ParseValue("credlease://backend-a/dev")
+func TestParseValueReturnsReferenceForWholeEnvVaultURI(t *testing.T) {
+	ref, ok, err := envref.ParseValue("envvault://backend-a/dev")
 	if err != nil {
 		t.Fatalf("ParseValue() error = %v", err)
 	}
 	if !ok {
 		t.Fatal("ParseValue() ok = false, want true")
 	}
-	if ref.Raw != "credlease://backend-a/dev" {
+	if ref.Raw != "envvault://backend-a/dev" {
 		t.Fatalf("Raw = %q", ref.Raw)
 	}
 	if ref.Profile != "backend-a/dev" {
 		t.Fatalf("Profile = %q, want backend-a/dev", ref.Profile)
+	}
+	if ref.Part != envref.PartDefault {
+		t.Fatalf("Part = %q, want default", ref.Part)
+	}
+}
+
+func TestParseValueReturnsProxyReferenceParts(t *testing.T) {
+	tests := []struct {
+		value   string
+		profile string
+		part    envref.Part
+	}{
+		{value: "envvault://openai/dev/base-url", profile: "openai/dev", part: envref.PartBaseURL},
+		{value: "envvault://openai/dev/token", profile: "openai/dev", part: envref.PartToken},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			ref, ok, err := envref.ParseValue(tt.value)
+			if err != nil {
+				t.Fatalf("ParseValue() error = %v", err)
+			}
+			if !ok {
+				t.Fatal("ParseValue() ok = false, want true")
+			}
+			if ref.Profile != tt.profile {
+				t.Fatalf("Profile = %q, want %q", ref.Profile, tt.profile)
+			}
+			if ref.Part != tt.part {
+				t.Fatalf("Part = %q, want %q", ref.Part, tt.part)
+			}
+		})
 	}
 }
 
@@ -27,9 +59,9 @@ func TestParseValueIgnoresNonReferenceAndTemplateValues(t *testing.T) {
 	tests := []string{
 		"",
 		"plain-secret",
-		"Bearer credlease://backend-a/dev",
-		"${credlease://backend-a/dev}",
-		"https://example.com/credlease://backend-a/dev",
+		"Bearer envvault://backend-a/dev",
+		"${envvault://backend-a/dev}",
+		"https://example.com/envvault://backend-a/dev",
 	}
 
 	for _, tt := range tests {
@@ -47,17 +79,17 @@ func TestParseValueIgnoresNonReferenceAndTemplateValues(t *testing.T) {
 
 func TestParseValueRejectsInvalidReferences(t *testing.T) {
 	tests := []string{
-		"credlease://",
-		"credlease://backend-a/dev?scope=admin",
-		"credlease://backend-a/dev#frag",
-		"credlease://backend-a//dev",
-		"credlease://backend-a/./dev",
-		"credlease://backend-a/../dev",
-		"credlease://backend-a/dev/..",
-		"credlease://backend-a/%2Fdev",
-		"credlease://backend-a/%2fdev",
-		"credlease://backend-a/%5Cdev",
-		"credlease://backend-a/%5cdev",
+		"envvault://",
+		"envvault://backend-a/dev?scope=admin",
+		"envvault://backend-a/dev#frag",
+		"envvault://backend-a//dev",
+		"envvault://backend-a/./dev",
+		"envvault://backend-a/../dev",
+		"envvault://backend-a/dev/..",
+		"envvault://backend-a/%2Fdev",
+		"envvault://backend-a/%2fdev",
+		"envvault://backend-a/%5Cdev",
+		"envvault://backend-a/%5cdev",
 	}
 
 	for _, tt := range tests {

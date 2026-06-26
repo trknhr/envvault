@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/audit"
+	"github.com/trknhr/envvault/internal/audit"
 )
 
 func TestFileRecorderAppendsMetadataOnlyJSONLine(t *testing.T) {

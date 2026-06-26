@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 )
 
 type PathEnv struct {
@@ -41,22 +41,22 @@ func PathsFor(env PathEnv, goos string) (Paths, error) {
 	}
 
 	configBase, dataBase, cacheBase := baseDirs(env, goos)
-	configDir := filepath.Join(configBase, "credlease")
+	configDir := filepath.Join(configBase, "envvault")
 	return Paths{
 		ConfigDir:  configDir,
 		ConfigFile: filepath.Join(configDir, "config.yaml"),
-		DataDir:    filepath.Join(dataBase, "credlease"),
-		CacheDir:   filepath.Join(cacheBase, "credlease"),
+		DataDir:    filepath.Join(dataBase, "envvault"),
+		CacheDir:   filepath.Join(cacheBase, "envvault"),
 	}, nil
 }
 
 func (p Paths) Ensure() error {
 	for _, dir := range []string{p.ConfigDir, p.DataDir, p.CacheDir} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return clerr.Wrap(clerr.ConfigInvalid, "create credlease directory", err)
+			return clerr.Wrap(clerr.ConfigInvalid, "create envvault directory", err)
 		}
 		if err := os.Chmod(dir, 0o700); err != nil {
-			return clerr.Wrap(clerr.ConfigInvalid, "set credlease directory permissions", err)
+			return clerr.Wrap(clerr.ConfigInvalid, "set envvault directory permissions", err)
 		}
 	}
 	return nil

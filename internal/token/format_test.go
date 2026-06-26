@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/token"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/token"
 )
 
 func TestWriteRawToken(t *testing.T) {

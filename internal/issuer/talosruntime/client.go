@@ -4,10 +4,10 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/issuer/talos"
-	runtimetalos "github.com/trknhr/credlease/internal/runtime/talos"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/issuer/talos"
+	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 )
 
 type Runtime interface {

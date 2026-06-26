@@ -15,21 +15,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/pkg/verifier"
+	"github.com/trknhr/envvault/pkg/verifier"
 )
 
 func TestBrowserBootstrapVerifierReturnsGrantForSessionServer(t *testing.T) {
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	key := newTestRSAKey(t)
 	token := signRS256(t, key, map[string]any{
-		"iss":                          "credlease-local:test-install",
-		"exp":                          now.Add(60 * time.Second).Unix(),
-		"scope":                        "browser:session:create",
-		"credlease_profile":            "admin-web/dev",
-		"credlease_resource":           "https://admin.dev.example.com",
-		"credlease_session_id":         "session-1",
-		"credlease_purpose":            "browser-bootstrap",
-		"non_credlease_application_id": "kept",
+		"iss":                         "envvault-local:test-install",
+		"exp":                         now.Add(60 * time.Second).Unix(),
+		"scope":                       "browser:session:create",
+		"envvault_profile":            "admin-web/dev",
+		"envvault_resource":           "https://admin.dev.example.com",
+		"envvault_session_id":         "session-1",
+		"envvault_purpose":            "browser-bootstrap",
+		"non_envvault_application_id": "kept",
 	})
 	v := newVerifier(t, key, now, "https://admin.dev.example.com")
 	bootstrap := verifier.BrowserBootstrapVerifier{
@@ -66,18 +66,18 @@ func TestVerifierAcceptsJWKSBackedJWTWithResourceScopeAndPurpose(t *testing.T) {
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	key := newTestRSAKey(t)
 	token := signRS256(t, key, map[string]any{
-		"iss":                          "credlease-local:test-install",
-		"sub":                          "local-user",
-		"exp":                          now.Add(5 * time.Minute).Unix(),
-		"nbf":                          now.Add(-time.Minute).Unix(),
-		"scope":                        "repository:read issue:read",
-		"credlease_profile":            "backend-a/dev",
-		"credlease_resource":           "https://api.dev.example.com",
-		"credlease_session_id":         "session-1",
-		"credlease_purpose":            "process",
-		"credlease_client":             "codex",
-		"credlease_project_id":         "sha256:project",
-		"non_credlease_application_id": "kept",
+		"iss":                         "envvault-local:test-install",
+		"sub":                         "local-user",
+		"exp":                         now.Add(5 * time.Minute).Unix(),
+		"nbf":                         now.Add(-time.Minute).Unix(),
+		"scope":                       "repository:read issue:read",
+		"envvault_profile":            "backend-a/dev",
+		"envvault_resource":           "https://api.dev.example.com",
+		"envvault_session_id":         "session-1",
+		"envvault_purpose":            "process",
+		"envvault_client":             "codex",
+		"envvault_project_id":         "sha256:project",
+		"non_envvault_application_id": "kept",
 	})
 
 	v := newVerifier(t, key, now, "https://api.dev.example.com")
@@ -89,7 +89,7 @@ func TestVerifierAcceptsJWKSBackedJWTWithResourceScopeAndPurpose(t *testing.T) {
 		t.Fatalf("Verify() error = %v", err)
 	}
 
-	if claims.Issuer != "credlease-local:test-install" {
+	if claims.Issuer != "envvault-local:test-install" {
 		t.Fatalf("Issuer = %q", claims.Issuer)
 	}
 	if claims.Subject != "local-user" {
@@ -110,7 +110,7 @@ func TestVerifierAcceptsJWKSBackedJWTWithResourceScopeAndPurpose(t *testing.T) {
 	if got, want := strings.Join(claims.Scopes, " "), "repository:read issue:read"; got != want {
 		t.Fatalf("Scopes = %q, want %q", got, want)
 	}
-	if claims.Raw["non_credlease_application_id"] != "kept" {
+	if claims.Raw["non_envvault_application_id"] != "kept" {
 		t.Fatalf("Raw omitted application claim: %#v", claims.Raw)
 	}
 }
@@ -122,17 +122,17 @@ func TestVerifierAcceptsEd25519JWKSBackedJWT(t *testing.T) {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
 	token := signEdDSA(t, privateKey, map[string]any{
-		"iss":                  "credlease-local:test-install",
-		"exp":                  now.Add(5 * time.Minute).Unix(),
-		"scope":                "repository:read",
-		"credlease_profile":    "backend-a/dev",
-		"credlease_resource":   "https://api.dev.example.com",
-		"credlease_session_id": "session-1",
-		"credlease_purpose":    "process",
+		"iss":                 "envvault-local:test-install",
+		"exp":                 now.Add(5 * time.Minute).Unix(),
+		"scope":               "repository:read",
+		"envvault_profile":    "backend-a/dev",
+		"envvault_resource":   "https://api.dev.example.com",
+		"envvault_session_id": "session-1",
+		"envvault_purpose":    "process",
 	})
 	v, err := verifier.New(verifier.Options{
 		JWKS:          jwksForEd25519(t, publicKey),
-		Issuer:        "credlease-local:test-install",
+		Issuer:        "envvault-local:test-install",
 		Resource:      "https://api.dev.example.com",
 		ClockSkew:     10 * time.Second,
 		Now:           func() time.Time { return now },
@@ -159,10 +159,10 @@ func TestVerifierRejectsExpiredJWT(t *testing.T) {
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	key := newTestRSAKey(t)
 	token := signRS256(t, key, map[string]any{
-		"iss":                "credlease-local:test-install",
-		"exp":                now.Add(-30 * time.Second).Unix(),
-		"credlease_resource": "https://api.dev.example.com",
-		"credlease_purpose":  "process",
+		"iss":               "envvault-local:test-install",
+		"exp":               now.Add(-30 * time.Second).Unix(),
+		"envvault_resource": "https://api.dev.example.com",
+		"envvault_purpose":  "process",
 	})
 	v := newVerifier(t, key, now, "https://api.dev.example.com")
 
@@ -182,10 +182,10 @@ func TestVerifierRejectsResourceMismatch(t *testing.T) {
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	key := newTestRSAKey(t)
 	token := signRS256(t, key, map[string]any{
-		"iss":                "credlease-local:test-install",
-		"exp":                now.Add(time.Minute).Unix(),
-		"credlease_resource": "https://api.dev.example.com",
-		"credlease_purpose":  "process",
+		"iss":               "envvault-local:test-install",
+		"exp":               now.Add(time.Minute).Unix(),
+		"envvault_resource": "https://api.dev.example.com",
+		"envvault_purpose":  "process",
 	})
 	v := newVerifier(t, key, now, "https://other.dev.example.com")
 
@@ -202,11 +202,11 @@ func TestVerifierRejectsMissingRequiredScope(t *testing.T) {
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	key := newTestRSAKey(t)
 	token := signRS256(t, key, map[string]any{
-		"iss":                "credlease-local:test-install",
-		"exp":                now.Add(time.Minute).Unix(),
-		"scope":              "repository:read",
-		"credlease_resource": "https://api.dev.example.com",
-		"credlease_purpose":  "process",
+		"iss":               "envvault-local:test-install",
+		"exp":               now.Add(time.Minute).Unix(),
+		"scope":             "repository:read",
+		"envvault_resource": "https://api.dev.example.com",
+		"envvault_purpose":  "process",
 	})
 	v := newVerifier(t, key, now, "https://api.dev.example.com")
 
@@ -227,10 +227,10 @@ func TestVerifierRejectsUnsignedAlgorithm(t *testing.T) {
 	key := newTestRSAKey(t)
 	header := base64.RawURLEncoding.EncodeToString(mustJSON(t, map[string]any{"alg": "none", "kid": "test-kid"}))
 	payload := base64.RawURLEncoding.EncodeToString(mustJSON(t, map[string]any{
-		"iss":                "credlease-local:test-install",
-		"exp":                now.Add(time.Minute).Unix(),
-		"credlease_resource": "https://api.dev.example.com",
-		"credlease_purpose":  "process",
+		"iss":               "envvault-local:test-install",
+		"exp":               now.Add(time.Minute).Unix(),
+		"envvault_resource": "https://api.dev.example.com",
+		"envvault_purpose":  "process",
 	}))
 	token := header + "." + payload + "."
 	v := newVerifier(t, key, now, "https://api.dev.example.com")
@@ -245,7 +245,7 @@ func newVerifier(t *testing.T, key *rsa.PrivateKey, now time.Time, resource stri
 	t.Helper()
 	v, err := verifier.New(verifier.Options{
 		JWKS:          jwksForRSA(t, &key.PublicKey),
-		Issuer:        "credlease-local:test-install",
+		Issuer:        "envvault-local:test-install",
 		Resource:      resource,
 		ClockSkew:     10 * time.Second,
 		Now:           func() time.Time { return now },

@@ -2,10 +2,10 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 
-const jwks = JSON.parse(fs.readFileSync(process.env.JWKS_FILE ?? "credlease-jwks.json", "utf8"));
+const jwks = JSON.parse(fs.readFileSync(process.env.JWKS_FILE ?? "envvault-jwks.json", "utf8"));
 const issuer = process.env.ISSUER ?? "";
 const resource = process.env.RESOURCE ?? "http://127.0.0.1:8080";
-const completeURL = process.env.COMPLETE_URL ?? `${resource}/auth/credlease/complete`;
+const completeURL = process.env.COMPLETE_URL ?? `${resource}/auth/envvault/complete`;
 const postLoginURL = process.env.POST_LOGIN_URL ?? `${resource}/`;
 const replay = new Set();
 const codes = new Map();
@@ -30,7 +30,7 @@ function bearer(req) {
   return /\s/.test(token) ? "" : token;
 }
 
-function verifyCredleaseJWT(token, purpose, requiredScope) {
+function verifyEnvVaultJWT(token, purpose, requiredScope) {
   const [encodedHeader, encodedPayload, encodedSignature] = token.split(".");
   if (!encodedHeader || !encodedPayload || !encodedSignature) throw new Error("invalid token");
   const header = JSON.parse(Buffer.from(encodedHeader, "base64url").toString("utf8"));
@@ -48,8 +48,8 @@ function verifyCredleaseJWT(token, purpose, requiredScope) {
   const now = Math.floor(Date.now() / 1000);
   if (issuer && payload.iss !== issuer) throw new Error("issuer mismatch");
   if (!payload.exp || payload.exp <= now) throw new Error("expired");
-  if (payload.credlease_resource !== resource) throw new Error("resource mismatch");
-  if (payload.credlease_purpose !== purpose) throw new Error("purpose mismatch");
+  if (payload.envvault_resource !== resource) throw new Error("resource mismatch");
+  if (payload.envvault_purpose !== purpose) throw new Error("purpose mismatch");
   const scopes = String(payload.scope ?? "").split(/\s+/).filter(Boolean);
   if (!scopes.includes(requiredScope)) throw new Error("scope missing");
   return payload;
@@ -57,12 +57,12 @@ function verifyCredleaseJWT(token, purpose, requiredScope) {
 
 function handleRead(req, res) {
   try {
-    const claims = verifyCredleaseJWT(bearer(req), "process", "document:read");
+    const claims = verifyEnvVaultJWT(bearer(req), "process", "document:read");
     json(res, 200, {
       ok: true,
       operation: "read",
-      profile: claims.credlease_profile,
-      session_id: claims.credlease_session_id,
+      profile: claims.envvault_profile,
+      session_id: claims.envvault_session_id,
     });
   } catch {
     fail(res, 401, "credential not authorized");
@@ -71,8 +71,8 @@ function handleRead(req, res) {
 
 function handleExchange(req, res) {
   try {
-    const claims = verifyCredleaseJWT(bearer(req), "browser-bootstrap", "browser:session:create");
-    const sessionID = claims.credlease_session_id;
+    const claims = verifyEnvVaultJWT(bearer(req), "browser-bootstrap", "browser:session:create");
+    const sessionID = claims.envvault_session_id;
     if (!sessionID || replay.has(sessionID)) throw new Error("replay");
     replay.add(sessionID);
     const code = crypto.randomBytes(32).toString("base64url");
@@ -97,7 +97,7 @@ function handleComplete(req, res) {
   res.writeHead(303, {
     "Cache-Control": "no-store",
     "Referrer-Policy": "no-referrer",
-    "Set-Cookie": "credlease_admin_session=local-example; HttpOnly; SameSite=Lax; Path=/",
+    "Set-Cookie": "envvault_admin_session=local-example; HttpOnly; SameSite=Lax; Path=/",
     Location: postLoginURL,
   });
   res.end();
@@ -106,8 +106,8 @@ function handleComplete(req, res) {
 http
   .createServer((req, res) => {
     if (req.method === "GET" && req.url === "/documents/read") return handleRead(req, res);
-    if (req.method === "POST" && req.url?.startsWith("/auth/credlease/browser-sessions")) return handleExchange(req, res);
-    if (req.method === "GET" && req.url?.startsWith("/auth/credlease/complete")) return handleComplete(req, res);
+    if (req.method === "POST" && req.url?.startsWith("/auth/envvault/browser-sessions")) return handleExchange(req, res);
+    if (req.method === "GET" && req.url?.startsWith("/auth/envvault/complete")) return handleComplete(req, res);
     fail(res, 404, "not found");
   })
   .listen(new URL(resource).port || 8080);

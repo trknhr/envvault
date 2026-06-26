@@ -8,26 +8,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/keyring"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/reset"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/reset"
 )
 
-func TestPlannerDryRunReportsCredleaseOwnedFilesAndKeyringEntries(t *testing.T) {
+func TestPlannerDryRunReportsEnvVaultOwnedFilesAndKeyringEntries(t *testing.T) {
 	ctx := context.Background()
 	paths := testPaths(t)
 	writeResetConfig(t, paths)
-	writeFile(t, filepath.Join(paths.DataDir, "credlease.sqlite"), "metadata-only-db")
+	writeFile(t, filepath.Join(paths.DataDir, "envvault.sqlite"), "metadata-only-db")
 	writeFile(t, filepath.Join(paths.DataDir, "talos.sqlite"), "talos-metadata-db")
-	writeFile(t, filepath.Join(paths.DataDir, "credlease-jwks.json"), `{"keys":[]}`)
+	writeFile(t, filepath.Join(paths.DataDir, "envvault-jwks.json"), `{"keys":[]}`)
 	writeFile(t, filepath.Join(paths.DataDir, "audit.jsonl"), `{"event":"credential_issued"}`)
 	secrets := keyring.NewMemoryStore()
 	putSecret(t, ctx, secrets, keyring.TalosHMACKey(), "secret-canary-hmac")
 	putSecret(t, ctx, secrets, keyring.TalosSigningKey("current"), "secret-canary-signing")
 	putSecret(t, ctx, secrets, keyring.ProfileParentKey("backend-a/dev"), "secret-canary-parent")
+	putSecret(t, ctx, secrets, keyring.ProviderAPIKey("openai/dev"), "secret-canary-provider")
 	repoFile := filepath.Join(t.TempDir(), ".env")
-	writeFile(t, repoFile, "TOKEN=credlease://backend-a/dev\n")
+	writeFile(t, repoFile, "TOKEN=envvault://backend-a/dev\n")
 
 	result, err := reset.Planner{Paths: paths, Secrets: secrets}.Reset(ctx, reset.Options{DryRun: true})
 	if err != nil {
@@ -37,7 +38,7 @@ func TestPlannerDryRunReportsCredleaseOwnedFilesAndKeyringEntries(t *testing.T) 
 	if !contains(result.Files, paths.ConfigFile) {
 		t.Fatalf("Files = %#v, want config file", result.Files)
 	}
-	if !contains(result.Files, filepath.Join(paths.DataDir, "credlease.sqlite")) {
+	if !contains(result.Files, filepath.Join(paths.DataDir, "envvault.sqlite")) {
 		t.Fatalf("Files = %#v, want sqlite file", result.Files)
 	}
 	if !contains(result.Files, filepath.Join(paths.DataDir, "talos.sqlite")) {
@@ -49,24 +50,27 @@ func TestPlannerDryRunReportsCredleaseOwnedFilesAndKeyringEntries(t *testing.T) 
 	if !contains(result.KeyringKeys, string(keyring.ProfileParentKey("backend-a/dev"))) {
 		t.Fatalf("KeyringKeys = %#v, want profile parent key", result.KeyringKeys)
 	}
+	if !contains(result.KeyringKeys, string(keyring.ProviderAPIKey("openai/dev"))) {
+		t.Fatalf("KeyringKeys = %#v, want provider api key", result.KeyringKeys)
+	}
 	if _, err := os.Stat(paths.ConfigFile); err != nil {
 		t.Fatalf("config removed during dry-run: %v", err)
 	}
 	if _, err := secrets.Get(ctx, keyring.TalosHMACKey()); err != nil {
 		t.Fatalf("keyring changed during dry-run: %v", err)
 	}
-	if got := readFile(t, repoFile); got != "TOKEN=credlease://backend-a/dev\n" {
+	if got := readFile(t, repoFile); got != "TOKEN=envvault://backend-a/dev\n" {
 		t.Fatalf("repository file changed: %q", got)
 	}
 }
 
-func TestPlannerResetDeletesCredleaseFilesAndKnownKeyringEntries(t *testing.T) {
+func TestPlannerResetDeletesEnvVaultFilesAndKnownKeyringEntries(t *testing.T) {
 	ctx := context.Background()
 	paths := testPaths(t)
 	writeResetConfig(t, paths)
-	sqlitePath := filepath.Join(paths.DataDir, "credlease.sqlite")
+	sqlitePath := filepath.Join(paths.DataDir, "envvault.sqlite")
 	talosSQLitePath := filepath.Join(paths.DataDir, "talos.sqlite")
-	jwksPath := filepath.Join(paths.DataDir, "credlease-jwks.json")
+	jwksPath := filepath.Join(paths.DataDir, "envvault-jwks.json")
 	auditPath := filepath.Join(paths.DataDir, "audit.jsonl")
 	writeFile(t, sqlitePath, "metadata-only-db")
 	writeFile(t, talosSQLitePath, "talos-metadata-db")
@@ -77,6 +81,7 @@ func TestPlannerResetDeletesCredleaseFilesAndKnownKeyringEntries(t *testing.T) {
 	putSecret(t, ctx, secrets, keyring.TalosHMACKey(), "hmac")
 	putSecret(t, ctx, secrets, keyring.TalosSigningKey("current"), "signing")
 	putSecret(t, ctx, secrets, keyring.ProfileParentKey("backend-a/dev"), "parent")
+	putSecret(t, ctx, secrets, keyring.ProviderAPIKey("openai/dev"), "provider")
 
 	result, err := reset.Planner{Paths: paths, Secrets: secrets}.Reset(ctx, reset.Options{})
 	if err != nil {
@@ -95,6 +100,7 @@ func TestPlannerResetDeletesCredleaseFilesAndKnownKeyringEntries(t *testing.T) {
 		keyring.TalosHMACKey(),
 		keyring.TalosSigningKey("current"),
 		keyring.ProfileParentKey("backend-a/dev"),
+		keyring.ProviderAPIKey("openai/dev"),
 	} {
 		if _, err := secrets.Get(ctx, key); err == nil {
 			t.Fatalf("key %s still exists after reset", key)
@@ -102,6 +108,9 @@ func TestPlannerResetDeletesCredleaseFilesAndKnownKeyringEntries(t *testing.T) {
 	}
 	if !contains(result.KeyringKeys, string(keyring.ProfileParentKey("backend-a/dev"))) {
 		t.Fatalf("KeyringKeys = %#v, want profile parent key", result.KeyringKeys)
+	}
+	if !contains(result.KeyringKeys, string(keyring.ProviderAPIKey("openai/dev"))) {
+		t.Fatalf("KeyringKeys = %#v, want provider api key", result.KeyringKeys)
 	}
 }
 
@@ -142,6 +151,14 @@ func writeResetConfig(t *testing.T, paths config.Paths) {
 				Scopes:      []string{"repository:read"},
 				TokenTTL:    config.Duration(10 * time.Minute),
 				MaxTokenTTL: config.Duration(30 * time.Minute),
+			},
+			"openai/dev": {
+				Kind:           profile.KindProviderProxy,
+				Provider:       "openai-compatible",
+				TargetURL:      "https://api.openai.com/v1",
+				AllowedPaths:   []string{"/chat/completions"},
+				AllowedMethods: []string{"POST"},
+				LocalTokenTTL:  config.Duration(10 * time.Minute),
 			},
 		},
 	}

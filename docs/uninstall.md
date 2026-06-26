@@ -1,45 +1,45 @@
 # Uninstall
 
-Uninstall removes Credlease-owned local state. It must not delete repository files.
+Uninstall removes EnvVault-owned local state. It must not delete repository files.
 
 ## Preferred Reset
 
 Preview removal:
 
 ```bash
-credlease reset --dry-run
+envvault reset --dry-run
 ```
 
-Remove Credlease config, data, cache, JWKS, SQLite, and known OS credential store entries:
+Remove EnvVault config, data, cache, JWKS, SQLite, and known OS credential store entries:
 
 ```bash
-credlease reset --yes
+envvault reset --yes
 ```
 
 ## Manual Cleanup
 
-Use this only if `credlease reset` is unavailable.
+Use this only if `envvault reset` is unavailable.
 
-1. Remove Credlease config, data, and cache directories for the current OS user.
+1. Remove EnvVault config, data, and cache directories for the current OS user.
 2. Delete OS credential store entries with these account names:
 
 ```text
-credlease/talos/hmac/current
-credlease/talos/signing/current
-credlease/profile/<profile-name>/parent-key
+envvault/talos/hmac/current
+envvault/talos/signing/current
+envvault/profile/<profile-name>/parent-key
 ```
 
 3. Remove exported JWKS copies that you configured for local backends.
-4. Remove `credlease://` references from project `.env` files if those projects no longer use Credlease.
+4. Remove `envvault://` references from project `.env` files if those projects no longer use EnvVault.
 
-Do not remove repository files as part of Credlease cleanup unless you intentionally own that project change.
+Do not remove repository files as part of EnvVault cleanup unless you intentionally own that project change.
 
 ## Verification
 
 Run:
 
 ```bash
-credlease doctor
+envvault doctor
 ```
 
 After uninstall, missing config, SQLite, JWKS, and keyring entries are expected.

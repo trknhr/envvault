@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/config"
-	"github.com/trknhr/credlease/internal/issuer/talos"
-	"github.com/trknhr/credlease/internal/keyring"
-	"github.com/trknhr/credlease/internal/profile"
-	"github.com/trknhr/credlease/internal/profilemgr"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/issuer/talos"
+	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/profile"
+	"github.com/trknhr/envvault/internal/profilemgr"
 )
 
 func TestAddProcessProfileIssuesParentKeyStoresSecretInKeyringOnly(t *testing.T) {
@@ -167,8 +167,8 @@ func TestAddBrowserSessionProfileIssuesParentKeyAndStoresPolicy(t *testing.T) {
 		BootstrapTokenTTL: 60 * time.Second,
 		LoginCodeTTL:      30 * time.Second,
 		WebSessionTTL:     30 * time.Minute,
-		ExchangeURL:       "https://admin.dev.example.com/auth/credlease/browser-sessions",
-		CompleteURL:       "https://admin.dev.example.com/auth/credlease/complete",
+		ExchangeURL:       "https://admin.dev.example.com/auth/envvault/browser-sessions",
+		CompleteURL:       "https://admin.dev.example.com/auth/envvault/complete",
 		PostLoginURL:      "https://admin.dev.example.com/",
 		AllowedHosts:      []string{"admin.dev.example.com"},
 		ProjectBinding: profile.ProjectBinding{
@@ -198,7 +198,7 @@ func TestAddBrowserSessionProfileIssuesParentKeyAndStoresPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Profile() error = %v", err)
 	}
-	if stored.ExchangeURL != "https://admin.dev.example.com/auth/credlease/browser-sessions" {
+	if stored.ExchangeURL != "https://admin.dev.example.com/auth/envvault/browser-sessions" {
 		t.Fatalf("ExchangeURL = %q", stored.ExchangeURL)
 	}
 	if stored.ProjectBinding.PathHash != "sha256:browser-project" {
@@ -228,8 +228,8 @@ func TestAddBrowserSessionRejectsInvalidTTLBeforeIssuingParentKey(t *testing.T) 
 		BootstrapTokenTTL: 61 * time.Second,
 		LoginCodeTTL:      30 * time.Second,
 		WebSessionTTL:     30 * time.Minute,
-		ExchangeURL:       "https://admin.dev.example.com/auth/credlease/browser-sessions",
-		CompleteURL:       "https://admin.dev.example.com/auth/credlease/complete",
+		ExchangeURL:       "https://admin.dev.example.com/auth/envvault/browser-sessions",
+		CompleteURL:       "https://admin.dev.example.com/auth/envvault/complete",
 		PostLoginURL:      "https://admin.dev.example.com/",
 		AllowedHosts:      []string{"admin.dev.example.com"},
 	})

@@ -67,7 +67,7 @@ func TestSecretScanRejectsUnknownCommand(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("run() code = %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "usage: credlease-ci secret-scan") {
+	if !strings.Contains(stderr.String(), "usage: envvault-ci secret-scan") {
 		t.Fatalf("stderr = %q, want usage", stderr.String())
 	}
 }

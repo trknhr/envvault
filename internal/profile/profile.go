@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 )
 
 type Kind string
@@ -15,6 +15,7 @@ type Kind string
 const (
 	KindProcess        Kind = "process"
 	KindBrowserSession Kind = "browser-session"
+	KindProviderProxy  Kind = "provider-proxy"
 )
 
 type ProjectBindingMode string
@@ -51,6 +52,12 @@ type Profile struct {
 	CompleteURL       string
 	PostLoginURL      string
 	AllowedHosts      []string
+
+	Provider       string
+	TargetURL      string
+	AllowedPaths   []string
+	AllowedMethods []string
+	LocalTokenTTL  time.Duration
 }
 
 var errInvalidURL = errors.New("invalid url")
@@ -59,6 +66,29 @@ func (p Profile) Validate() error {
 	if strings.TrimSpace(p.Name) == "" {
 		return configInvalid("profile name is required")
 	}
+	if err := p.ProjectBinding.validate(); err != nil {
+		return err
+	}
+
+	switch p.Kind {
+	case KindProcess:
+		if err := p.validateTokenProfile(); err != nil {
+			return err
+		}
+		return p.validateProcess()
+	case KindBrowserSession:
+		if err := p.validateTokenProfile(); err != nil {
+			return err
+		}
+		return p.validateBrowserSession()
+	case KindProviderProxy:
+		return p.validateProviderProxy()
+	default:
+		return configInvalid("unknown profile kind")
+	}
+}
+
+func (p Profile) validateTokenProfile() error {
 	if err := validateResourceURL(p.Resource); err != nil {
 		return err
 	}
@@ -68,18 +98,7 @@ func (p Profile) Validate() error {
 	if err := validateClaims(p.Claims); err != nil {
 		return err
 	}
-	if err := p.ProjectBinding.validate(); err != nil {
-		return err
-	}
-
-	switch p.Kind {
-	case KindProcess:
-		return p.validateProcess()
-	case KindBrowserSession:
-		return p.validateBrowserSession()
-	default:
-		return configInvalid("unknown profile kind")
-	}
+	return nil
 }
 
 func (b ProjectBinding) validate() error {
@@ -100,8 +119,8 @@ func validateClaims(claims map[string]string) error {
 		if reservedJWTClaims[name] {
 			return configInvalid("reserved jwt claim is not allowed in profile claims")
 		}
-		if strings.HasPrefix(name, "credlease_") {
-			return configInvalid("credlease claim namespace is reserved")
+		if strings.HasPrefix(name, "envvault_") {
+			return configInvalid("envvault claim namespace is reserved")
 		}
 	}
 	return nil
@@ -158,6 +177,37 @@ func (p Profile) validateBrowserSession() error {
 	}
 	if err := validateHTTPSOrLocalhostURL(p.PostLoginURL, "post-login url"); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (p Profile) validateProviderProxy() error {
+	switch strings.TrimSpace(p.Provider) {
+	case "openai-compatible":
+	default:
+		return configInvalid("provider must be openai-compatible")
+	}
+	if err := validateHTTPSOrLocalhostURL(p.TargetURL, "target url"); err != nil {
+		return err
+	}
+	if len(p.AllowedPaths) == 0 {
+		return configInvalid("allowed paths are required")
+	}
+	for _, path := range p.AllowedPaths {
+		if err := validateProxyPath(path); err != nil {
+			return err
+		}
+	}
+	if len(p.AllowedMethods) == 0 {
+		return configInvalid("allowed methods are required")
+	}
+	for _, method := range p.AllowedMethods {
+		if err := validateProxyMethod(method); err != nil {
+			return err
+		}
+	}
+	if p.LocalTokenTTL <= 0 {
+		return configInvalid("local token ttl must be positive")
 	}
 	return nil
 }
@@ -263,6 +313,34 @@ func parseAbsoluteURL(raw string) (*url.URL, error) {
 		return nil, errInvalidURL
 	}
 	return u, nil
+}
+
+func validateProxyPath(path string) error {
+	if path == "" || !strings.HasPrefix(path, "/") {
+		return configInvalid("allowed path must start with /")
+	}
+	if strings.ContainsAny(path, "?#\\") {
+		return configInvalid("allowed path must not include query, fragment, or backslash")
+	}
+	for _, segment := range strings.Split(path, "/") {
+		if segment == "." || segment == ".." {
+			return configInvalid("allowed path traversal segment is not allowed")
+		}
+	}
+	return nil
+}
+
+func validateProxyMethod(method string) error {
+	trimmed := strings.TrimSpace(method)
+	if trimmed == "" || trimmed != strings.ToUpper(trimmed) {
+		return configInvalid("allowed method must be uppercase")
+	}
+	for _, r := range trimmed {
+		if r < 'A' || r > 'Z' {
+			return configInvalid("allowed method must contain only letters")
+		}
+	}
+	return nil
 }
 
 func isHTTPSOrLocalhostHTTP(u *url.URL) bool {

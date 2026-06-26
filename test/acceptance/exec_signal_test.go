@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/cli"
-	"github.com/trknhr/credlease/internal/process"
+	"github.com/trknhr/envvault/internal/cli"
+	"github.com/trknhr/envvault/internal/process"
 )
 
 func TestExecForwardsSIGINTToChild(t *testing.T) {
@@ -21,8 +21,8 @@ func TestExecForwardsSIGINTToChild(t *testing.T) {
 	readyPath := filepath.Join(t.TempDir(), "ready")
 	capturePath := filepath.Join(t.TempDir(), "signal.json")
 	parentEnv := append(os.Environ(),
-		"CREDLEASE_WAIT_SIGNAL_READY="+readyPath,
-		"CREDLEASE_WAIT_SIGNAL_CAPTURE="+capturePath,
+		"ENVVAULT_WAIT_SIGNAL_READY="+readyPath,
+		"ENVVAULT_WAIT_SIGNAL_CAPTURE="+capturePath,
 	)
 	app := cli.New(cli.Options{
 		ParentEnv:       parentEnv,
@@ -51,7 +51,7 @@ func TestExecForwardsSIGINTToChild(t *testing.T) {
 	select {
 	case code = <-done:
 	case <-time.After(10 * time.Second):
-		t.Fatalf("credlease exec did not exit after SIGINT; stdout=%q stderr=%q", stdout.String(), stderr.String())
+		t.Fatalf("envvault exec did not exit after SIGINT; stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 	if code != 130 {
 		t.Fatalf("Run() code = %d, want 130 after SIGINT; stdout=%q stderr=%q", code, stdout.String(), stderr.String())

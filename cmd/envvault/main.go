@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/trknhr/credlease/internal/cli"
+	"github.com/trknhr/envvault/internal/cli"
 )
 
 func main() {

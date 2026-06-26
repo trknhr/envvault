@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trknhr/credlease/internal/clerr"
-	"github.com/trknhr/credlease/internal/issuer"
-	"github.com/trknhr/credlease/internal/issuer/talos"
+	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/issuer"
+	"github.com/trknhr/envvault/internal/issuer/talos"
 )
 
 func TestIssueParentKeyPostsTalosContract(t *testing.T) {
@@ -45,10 +45,10 @@ func TestIssueParentKeyPostsTalosContract(t *testing.T) {
 	if parent.Secret != "parent-secret" {
 		t.Fatalf("Secret = %q", parent.Secret)
 	}
-	if got["name"] != "credlease:backend-a/dev" {
+	if got["name"] != "envvault:backend-a/dev" {
 		t.Fatalf("name = %v", got["name"])
 	}
-	if got["actor_id"] != "credlease-local:01JTESTINSTALL" {
+	if got["actor_id"] != "envvault-local:01JTESTINSTALL" {
 		t.Fatalf("actor_id = %v", got["actor_id"])
 	}
 	if got["ttl"] != "2160h0m0s" {
@@ -59,7 +59,7 @@ func TestIssueParentKeyPostsTalosContract(t *testing.T) {
 		t.Fatalf("scopes = %#v", scopes)
 	}
 	metadata := got["metadata"].(map[string]any)
-	if metadata["credlease_profile"] != "backend-a/dev" {
+	if metadata["envvault_profile"] != "backend-a/dev" {
 		t.Fatalf("metadata = %#v", metadata)
 	}
 }
@@ -85,10 +85,10 @@ func TestDeriveJWTPostsExplicitScopesAndCustomClaims(t *testing.T) {
 		Scopes:   []string{"repository:read"},
 		TTL:      10 * time.Minute,
 		Claims: map[string]any{
-			"credlease_profile":    "backend-a/dev",
-			"credlease_resource":   "https://api.dev.example.com",
-			"credlease_session_id": "01JSESSION",
-			"credlease_purpose":    "process",
+			"envvault_profile":    "backend-a/dev",
+			"envvault_resource":   "https://api.dev.example.com",
+			"envvault_session_id": "01JSESSION",
+			"envvault_purpose":    "process",
 		},
 	})
 	if err != nil {
@@ -115,7 +115,7 @@ func TestDeriveJWTPostsExplicitScopesAndCustomClaims(t *testing.T) {
 		t.Fatalf("scopes = %#v", scopes)
 	}
 	claims := got["custom_claims"].(map[string]any)
-	if claims["credlease_resource"] != "https://api.dev.example.com" {
+	if claims["envvault_resource"] != "https://api.dev.example.com" {
 		t.Fatalf("custom_claims = %#v", claims)
 	}
 }
@@ -181,7 +181,7 @@ func TestTalosHTTPErrorDoesNotEchoSecretOrBody(t *testing.T) {
 		Profile: "backend-a/dev",
 		Scopes:  []string{"repository:read"},
 		TTL:     10 * time.Minute,
-		Claims:  map[string]any{"credlease_profile": "backend-a/dev"},
+		Claims:  map[string]any{"envvault_profile": "backend-a/dev"},
 	})
 	if err == nil {
 		t.Fatal("DeriveJWT() error = nil, want error")
@@ -202,6 +202,26 @@ func TestJWKSFetchesPublicKeySet(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"keys":[{"kid":"test-kid"}]}`))
+	}))
+	defer server.Close()
+
+	client := talos.NewClient(server.URL, server.Client())
+	jwks, err := client.JWKS(context.Background())
+	if err != nil {
+		t.Fatalf("JWKS() error = %v", err)
+	}
+	if string(jwks) != `{"keys":[{"kid":"test-kid"}]}` {
+		t.Fatalf("JWKS() = %s", jwks)
+	}
+}
+
+func TestJWKSUnwrapsTalosV26Response(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v2alpha1/derivedKeys/jwks.json" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jwks":{"keys":[{"kid":"test-kid"}]}}`))
 	}))
 	defer server.Close()
 

@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/trknhr/credlease/internal/clerr"
+	"github.com/trknhr/envvault/internal/clerr"
 )
 
 type CommandRunner interface {
