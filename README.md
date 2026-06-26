@@ -60,6 +60,7 @@ Local archive packaging is available through `go run ./cmd/envvault-release pack
 ## Documentation
 
 - [Quickstart](docs/quickstart.md)
+- [Manual E2E playbook](docs/manual-e2e.md)
 - [Profiles](docs/profiles.md)
 - [Browser session protocol](docs/browser-session.md)
 - [Threat model](docs/threat-model.md)
