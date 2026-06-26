@@ -838,9 +838,9 @@ envvault/
 │   └── browsersession/
 ├── examples/
 │   ├── backend-go/
-│   ├── backend-typescript/
-│   ├── browser-session-go/
-│   └── codex/
+│   ├── inject-app/
+│   ├── local-mvp-app/
+│   └── openai-proxy-app/
 ├── test/
 │   ├── acceptance/
 │   ├── fixtures/

@@ -291,39 +291,40 @@ func TestReleaseDocsCoverProfilesBrowserSessionAndRemoteSTS(t *testing.T) {
 	}
 }
 
-func TestSpecLayoutIncludesExamplesAndFakeKeyringFixture(t *testing.T) {
+func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	requiredFiles := map[string][]string{
-		"examples/backend-typescript/README.md": {
-			"# TypeScript Backend Example",
-			"Authorization",
-			"envvault_resource",
-			"browser session",
+		"examples/inject-app/README.md": {
+			"# Raw Inject App Example",
+			"envvault inject add",
+			"envvault://database/dev/value",
 		},
-		"examples/backend-typescript/server.mjs": {
+		"examples/inject-app/app.sh": {
+			"DATABASE_URL",
+			"postgres://",
+		},
+		"examples/local-mvp-app/README.md": {
+			"# Local MVP App Example",
+			"BACKEND_A_TOKEN",
+			"examples/backend-go/cmd/backend",
+		},
+		"examples/local-mvp-app/app.sh": {
+			"BACKEND_A_TOKEN",
 			"/documents/read",
-			"/auth/envvault/browser-sessions",
-			"Cache-Control",
-			"no-store",
 		},
-		"examples/browser-session-go/README.md": {
-			"# Browser Session Go Example",
-			"pkg/browsersession",
-			"SQLite",
-			"Authorization",
+		"examples/openai-proxy-app/README.md": {
+			"# OpenAI-Compatible Proxy App Example",
+			"envvault proxy add openai/dev",
+			"mock-provider",
 		},
-		"examples/browser-session-go/cmd/server/main.go": {
-			"browsersession.NewSQLiteStore",
-			"/auth/envvault/browser-sessions",
-			"/auth/envvault/complete",
+		"examples/openai-proxy-app/app.sh": {
+			"OPENAI_BASE_URL",
+			"OPENAI_API_KEY",
+			"/chat/completions",
 		},
-		"examples/codex/README.md": {
-			"# Codex Example",
-			"envvault exec",
-			"envvault://backend-a/dev",
-		},
-		"examples/codex/.env.example": {
-			"BACKEND_A_TOKEN=envvault://backend-a/dev",
+		"examples/openai-proxy-app/mock-provider.go": {
+			"/v1/chat/completions",
+			"missing provider bearer",
 		},
 		"test/fake-keyring/store.go": {
 			"package fakekeyring",
@@ -354,9 +355,10 @@ func TestSpecLayoutIncludesExamplesAndFakeKeyringFixture(t *testing.T) {
 		t.Fatalf("ReadFile(README.md) error = %v", err)
 	}
 	for _, want := range []string{
-		"[TypeScript backend example](examples/backend-typescript/README.md)",
-		"[Browser session Go example](examples/browser-session-go/README.md)",
-		"[Codex example](examples/codex/README.md)",
+		"[Go backend example](examples/backend-go)",
+		"[OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)",
+		"[Raw inject app example](examples/inject-app/README.md)",
+		"[Local MVP app example](examples/local-mvp-app/README.md)",
 	} {
 		if !strings.Contains(string(readme), want) {
 			t.Fatalf("README.md missing example link %q", want)

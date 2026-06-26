@@ -75,11 +75,9 @@ Local archive packaging is available through `go run ./cmd/envvault-release pack
 ## Examples
 
 - [Go backend example](examples/backend-go)
-- [TypeScript backend example](examples/backend-typescript/README.md)
-- [Browser session Go example](examples/browser-session-go/README.md)
 - [OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)
 - [Raw inject app example](examples/inject-app/README.md)
-- [Codex example](examples/codex/README.md)
+- [Local MVP app example](examples/local-mvp-app/README.md)
 
 ## Development
 
