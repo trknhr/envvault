@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node app.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.0",
+    "ai": "^7.0.2"
+  }
+}

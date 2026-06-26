@@ -344,6 +344,25 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"GEMINI_API_KEY=envvault://gemini/dev/value",
 			"GEMINI_MODEL",
 		},
+		"examples/gemini-ai-sdk-proxy-app/README.md": {
+			"# Gemini AI SDK Proxy App Example",
+			"envvault proxy add gemini-openai/dev",
+			"@ai-sdk/openai-compatible",
+		},
+		"examples/gemini-ai-sdk-proxy-app/app.mjs": {
+			"createOpenAICompatible",
+			"generateText",
+			"ENVVAULT_PROXY_URL",
+			"ENVVAULT_PROXY_TOKEN",
+		},
+		"examples/gemini-ai-sdk-proxy-app/package.json": {
+			"@ai-sdk/openai-compatible",
+			"ai",
+		},
+		"examples/gemini-ai-sdk-proxy-app/.env": {
+			"ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url",
+			"ENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token",
+		},
 		"test/fake-keyring/store.go": {
 			"package fakekeyring",
 			"type Store",
@@ -376,6 +395,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		"[Go backend example](examples/backend-go)",
 		"[OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)",
 		"[Gemini SDK app example](examples/gemini-sdk-app/README.md)",
+		"[Gemini AI SDK proxy app example](examples/gemini-ai-sdk-proxy-app/README.md)",
 		"[Raw inject app example](examples/inject-app/README.md)",
 		"[Local MVP app example](examples/local-mvp-app/README.md)",
 	} {
