@@ -79,7 +79,7 @@ func scanSecrets(root string) ([]string, error) {
 
 func shouldSkipDir(name string) bool {
 	switch name {
-	case ".git", ".idea", ".vscode", "bin", "build", "dist", "tmp":
+	case ".git", ".idea", ".vscode", "bin", "build", "dist", "node_modules", "tmp":
 		return true
 	default:
 		return false

@@ -61,7 +61,7 @@ const canary = "secret-canary"
 
 func TestSecretScanIgnoresGeneratedOutputDirectories(t *testing.T) {
 	root := t.TempDir()
-	for _, dir := range []string{"bin", "tmp", "dist", "build"} {
+	for _, dir := range []string{"bin", "tmp", "dist", "build", "node_modules"} {
 		path := filepath.Join(root, dir)
 		if err := os.MkdirAll(path, 0o700); err != nil {
 			t.Fatalf("MkdirAll(%s) error = %v", dir, err)
