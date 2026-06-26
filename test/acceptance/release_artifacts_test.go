@@ -326,6 +326,24 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"/v1/chat/completions",
 			"missing provider bearer",
 		},
+		"examples/gemini-sdk-app/README.md": {
+			"# Gemini SDK App Example",
+			"envvault inject add gemini/dev",
+			"@google/genai",
+		},
+		"examples/gemini-sdk-app/app.mjs": {
+			"GoogleGenAI",
+			"interactions.create",
+			"GEMINI_API_KEY",
+		},
+		"examples/gemini-sdk-app/package.json": {
+			"@google/genai",
+			"start",
+		},
+		"examples/gemini-sdk-app/.env": {
+			"GEMINI_API_KEY=envvault://gemini/dev/value",
+			"GEMINI_MODEL",
+		},
 		"test/fake-keyring/store.go": {
 			"package fakekeyring",
 			"type Store",
@@ -357,6 +375,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 	for _, want := range []string{
 		"[Go backend example](examples/backend-go)",
 		"[OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)",
+		"[Gemini SDK app example](examples/gemini-sdk-app/README.md)",
 		"[Raw inject app example](examples/inject-app/README.md)",
 		"[Local MVP app example](examples/local-mvp-app/README.md)",
 	} {

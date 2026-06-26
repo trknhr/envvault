@@ -76,6 +76,7 @@ Local archive packaging is available through `go run ./cmd/envvault-release pack
 
 - [Go backend example](examples/backend-go)
 - [OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)
+- [Gemini SDK app example](examples/gemini-sdk-app/README.md)
 - [Raw inject app example](examples/inject-app/README.md)
 - [Local MVP app example](examples/local-mvp-app/README.md)
 
