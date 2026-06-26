@@ -59,6 +59,7 @@ Local archive packaging is available through `go run ./cmd/envvault-release pack
 
 ## Documentation
 
+- [Documentation site](site/index.html)
 - [Quickstart](docs/quickstart.md)
 - [Manual E2E playbook](docs/manual-e2e.md)
 - [Profiles](docs/profiles.md)

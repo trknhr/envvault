@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>EnvVault Documentation</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="doc-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="brand" href="#top" aria-label="EnvVault documentation home">
+          <span class="brand-mark">EV</span>
+          <span>
+            <strong>EnvVault</strong>
+            <small>Local MVP docs</small>
+          </span>
+        </a>
+        <nav>
+          <a href="#overview">Overview</a>
+          <a href="#flows">Credential Flows</a>
+          <a href="#quickstart">Quickstart</a>
+          <a href="#examples">Examples</a>
+          <a href="#security">Security Notes</a>
+          <a href="#reference">Reference</a>
+        </nav>
+      </aside>
+
+      <main id="top">
+        <section class="intro" id="overview">
+          <div class="intro-copy">
+            <p class="eyebrow">Local-first credential launcher</p>
+            <h1>Replace repository secrets with runtime-only credentials.</h1>
+            <p class="lead">
+              EnvVault keeps long-lived provider keys in the OS credential
+              store, then resolves repository-safe <code>envvault://</code>
+              references only when launching a child process.
+            </p>
+            <div class="quick-actions" aria-label="Primary documentation links">
+              <a href="../docs/quickstart.md">Quickstart</a>
+              <a href="../docs/profiles.md">Profiles</a>
+              <a href="../docs/threat-model.md">Threat model</a>
+            </div>
+          </div>
+          <figure class="flow-visual">
+            <img src="assets/envvault-flow.svg" alt="EnvVault exec resolving env references into a local token or proxy URL before starting a child process.">
+            <figcaption>
+              The app receives short-lived local values. The stored provider
+              credential stays outside the repository.
+            </figcaption>
+          </figure>
+        </section>
+
+        <section id="flows" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Concepts</p>
+            <h2>Credential Flows</h2>
+            <p>
+              Pick the narrowest flow your tool supports. Proxy mode keeps the
+              real provider key out of the child process; raw injection is the
+              fallback for SDKs that cannot use a localhost endpoint.
+            </p>
+          </div>
+
+          <div class="flow-grid">
+            <article>
+              <h3>Provider proxy</h3>
+              <p>
+                Use this for OpenAI-compatible APIs and SDKs that accept a
+                custom base URL.
+              </p>
+              <pre><code>ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url
+ENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token</code></pre>
+              <p>
+                <code>/base-url</code> resolves to a dynamic localhost proxy
+                URL for the selected profile. It is documented as a proxy URL
+                because the actual value changes each run.
+              </p>
+            </article>
+
+            <article>
+              <h3>Raw inject</h3>
+              <p>
+                Use this when an SDK requires the real provider key in code or
+                in an environment variable.
+              </p>
+              <pre><code>GEMINI_API_KEY=envvault://gemini/dev/value
+GEMINI_MODEL=gemini-3.5-flash</code></pre>
+              <p>
+                <code>/value</code> intentionally places the raw credential in
+                the child process environment.
+              </p>
+            </article>
+
+            <article>
+              <h3>First-party process token</h3>
+              <p>
+                Use this for local backends that verify EnvVault-issued JWTs.
+              </p>
+              <pre><code>BACKEND_A_TOKEN=envvault://backend-a/dev</code></pre>
+              <p>
+                Scope, resource, TTL, and project binding come from local
+                trusted profile policy, not from repository files.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="quickstart" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Run it locally</p>
+            <h2>Quickstart</h2>
+          </div>
+          <div class="command-list">
+            <div>
+              <span class="step">1</span>
+              <div>
+                <h3>Build the CLI</h3>
+                <pre><code>go build -o ./bin/envvault ./cmd/envvault</code></pre>
+              </div>
+            </div>
+            <div>
+              <span class="step">2</span>
+              <div>
+                <h3>Store a provider credential</h3>
+                <pre><code>printf 'YOUR_GEMINI_API_KEY\n' | ./bin/envvault credential add gemini-api-key \
+  --value-stdin</code></pre>
+              </div>
+            </div>
+            <div>
+              <span class="step">3</span>
+              <div>
+                <h3>Create a proxy profile</h3>
+                <pre><code>./bin/envvault proxy add gemini-openai/dev \
+  --credential gemini-api-key \
+  --provider openai-compatible \
+  --target https://generativelanguage.googleapis.com/v1beta/openai \
+  --allow-path /chat/completions \
+  --allow-method POST \
+  --project-binding none</code></pre>
+              </div>
+            </div>
+            <div>
+              <span class="step">4</span>
+              <div>
+                <h3>Launch through EnvVault</h3>
+                <pre><code>./bin/envvault exec --env-file examples/gemini-ai-sdk-proxy-app/.env -- \
+  npm --prefix examples/gemini-ai-sdk-proxy-app start</code></pre>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="examples" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Runnable examples</p>
+            <h2>Examples</h2>
+          </div>
+          <div class="link-grid">
+            <a href="../examples/gemini-ai-sdk-proxy-app/README.md">
+              <strong>Gemini AI SDK proxy</strong>
+              <span>AI SDK with EnvVault proxy URL and local proxy token.</span>
+            </a>
+            <a href="../examples/gemini-sdk-app/README.md">
+              <strong>Gemini SDK inject</strong>
+              <span>Official Gemini SDK with a raw injected API key.</span>
+            </a>
+            <a href="../examples/openai-proxy-app/README.md">
+              <strong>OpenAI-compatible proxy</strong>
+              <span>Mock OpenAI-compatible provider behind EnvVault proxy.</span>
+            </a>
+            <a href="../examples/inject-app/README.md">
+              <strong>Raw inject app</strong>
+              <span>Database-style credential fallback for non-proxy tools.</span>
+            </a>
+          </div>
+        </section>
+
+        <section id="security" class="section split">
+          <div>
+            <p class="eyebrow">Security model</p>
+            <h2>What EnvVault protects</h2>
+            <p>
+              EnvVault reduces repository and child-process exposure. It does
+              not sandbox the launched process, redact application logs, or
+              protect a compromised OS credential store.
+            </p>
+          </div>
+          <ul class="check-list">
+            <li>Repository files contain references, not long-lived values.</li>
+            <li>Proxy profiles attach real provider keys only after allowlist checks.</li>
+            <li>Raw inject is explicit and should be used only when proxying is not possible.</li>
+            <li>The admin UI lists metadata but does not display stored credential values.</li>
+          </ul>
+        </section>
+
+        <section id="reference" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Reference</p>
+            <h2>Read next</h2>
+          </div>
+          <div class="reference-list">
+            <a href="../docs/quickstart.md">Quickstart</a>
+            <a href="../docs/profiles.md">Profiles</a>
+            <a href="../docs/manual-e2e.md">Manual E2E playbook</a>
+            <a href="../docs/browser-session.md">Browser session protocol</a>
+            <a href="../docs/recovery.md">Recovery</a>
+            <a href="../docs/release-gate.md">Release gate</a>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

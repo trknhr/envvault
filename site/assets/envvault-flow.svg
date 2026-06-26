@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="560" viewBox="0 0 920 560" role="img" aria-labelledby="title desc">
+  <title id="title">EnvVault credential flow</title>
+  <desc id="desc">EnvVault exec reads environment references, resolves profile policy, fetches credentials from the OS credential store, and gives the child process a local proxy URL and token.</desc>
+  <rect width="920" height="560" fill="#f8faf8"/>
+  <rect x="44" y="42" width="832" height="476" rx="16" fill="#ffffff" stroke="#d9e2dc" stroke-width="2"/>
+  <text x="84" y="96" fill="#17221d" font-family="ui-sans-serif, system-ui, sans-serif" font-size="30" font-weight="800">EnvVault exec</text>
+  <text x="84" y="126" fill="#52615a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="17">Resolve repository-safe references at process launch.</text>
+
+  <rect x="84" y="170" width="220" height="118" rx="10" fill="#edf4ef" stroke="#b8c9bf"/>
+  <text x="112" y="213" fill="#17221d" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20" font-weight="800">.env file</text>
+  <text x="112" y="244" fill="#52615a" font-family="ui-monospace, SFMono-Regular, monospace" font-size="15">envvault://.../base-url</text>
+  <text x="112" y="269" fill="#52615a" font-family="ui-monospace, SFMono-Regular, monospace" font-size="15">envvault://.../token</text>
+
+  <rect x="350" y="170" width="220" height="118" rx="10" fill="#eef3fb" stroke="#b8c7e4"/>
+  <text x="378" y="213" fill="#17221d" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20" font-weight="800">Profile policy</text>
+  <text x="378" y="244" fill="#52615a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15">Target URL</text>
+  <text x="378" y="269" fill="#52615a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15">Method and path allowlist</text>
+
+  <rect x="616" y="170" width="220" height="118" rx="10" fill="#fff4e4" stroke="#e2c59b"/>
+  <text x="644" y="213" fill="#17221d" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20" font-weight="800">OS credential store</text>
+  <text x="644" y="244" fill="#52615a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15">Provider key</text>
+  <text x="644" y="269" fill="#52615a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15">Never stored in repo</text>
+
+  <path d="M304 229H350" stroke="#16704a" stroke-width="4" stroke-linecap="round"/>
+  <path d="M570 229H616" stroke="#16704a" stroke-width="4" stroke-linecap="round"/>
+  <path d="M338 217L350 229L338 241" fill="none" stroke="#16704a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M604 217L616 229L604 241" fill="none" stroke="#16704a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="208" y="344" width="504" height="106" rx="12" fill="#17221d"/>
+  <text x="244" y="386" fill="#eef7f0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="800">Child process receives local values</text>
+  <text x="244" y="419" fill="#b6c6bd" font-family="ui-monospace, SFMono-Regular, monospace" font-size="16">ENVVAULT_PROXY_URL=http://127.0.0.1:xxxxx</text>
+  <text x="244" y="446" fill="#b6c6bd" font-family="ui-monospace, SFMono-Regular, monospace" font-size="16">ENVVAULT_PROXY_TOKEN=local-only-token</text>
+
+  <path d="M460 288V344" stroke="#275cba" stroke-width="4" stroke-linecap="round"/>
+  <path d="M448 332L460 344L472 332" fill="none" stroke="#275cba" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="360" y="506" fill="#52615a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">The localhost proxy adds the real provider key only after allowlist checks.</text>
+</svg>

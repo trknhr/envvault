@@ -40,6 +40,9 @@ var packageDocs = []string{
 	"docs/uninstall.md",
 	"docs/recovery.md",
 	"docs/third-party-notices.md",
+	"site/index.html",
+	"site/styles.css",
+	"site/assets/envvault-flow.svg",
 }
 
 func Package(options PackageOptions) (Artifact, error) {

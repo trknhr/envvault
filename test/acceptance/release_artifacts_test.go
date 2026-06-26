@@ -363,6 +363,22 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url",
 			"ENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token",
 		},
+		"site/index.html": {
+			"EnvVault Documentation",
+			"Credential Flows",
+			"ENVVAULT_PROXY_URL",
+			"Gemini AI SDK proxy",
+		},
+		"site/styles.css": {
+			".doc-shell",
+			"prefers-color-scheme",
+			"grid-template-columns",
+		},
+		"site/assets/envvault-flow.svg": {
+			"EnvVault exec",
+			"OS credential store",
+			"localhost proxy",
+		},
 		"test/fake-keyring/store.go": {
 			"package fakekeyring",
 			"type Store",
@@ -392,6 +408,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		t.Fatalf("ReadFile(README.md) error = %v", err)
 	}
 	for _, want := range []string{
+		"[Documentation site](site/index.html)",
 		"[Go backend example](examples/backend-go)",
 		"[OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)",
 		"[Gemini SDK app example](examples/gemini-sdk-app/README.md)",
@@ -558,6 +575,9 @@ func assertReleasePackageEntries(t *testing.T, entries map[string]os.FileMode, r
 		root + "/docs/uninstall.md",
 		root + "/docs/recovery.md",
 		root + "/docs/third-party-notices.md",
+		root + "/site/index.html",
+		root + "/site/styles.css",
+		root + "/site/assets/envvault-flow.svg",
 	} {
 		if _, ok := entries[want]; !ok {
 			t.Fatalf("release package entries missing %q; entries=%v", want, entries)
