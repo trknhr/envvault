@@ -1,6 +1,6 @@
 # OpenAI-Compatible Proxy App Example
 
-This example shows the third-party API flow:
+This example shows the API proxy flow:
 
 ```dotenv
 OPENAI_BASE_URL=envvault://openai/dev/base-url
@@ -33,6 +33,18 @@ printf 'sk-local-demo\n' | ./bin/envvault credential add openai-key/dev \
   --project-binding none
 ```
 
+The command prints a generic `ENVVAULT_PROXY_URL` and `ENVVAULT_PROXY_TOKEN`
+snippet. This example uses the same generated references with the variable names
+expected by `app.sh`:
+
+```dotenv
+OPENAI_BASE_URL=envvault://openai/dev/base-url
+OPENAI_API_KEY=envvault://openai/dev/token
+```
+
+`base-url` is an EnvVault-generated proxy output, not a separate credential to
+register.
+
 Start the mock provider in one terminal:
 
 ```bash
@@ -40,6 +52,15 @@ go run ./examples/openai-proxy-app/mock-provider.go
 ```
 
 Run the app through EnvVault in another terminal:
+
+```bash
+./bin/envvault exec \
+  --env OPENAI_BASE_URL=envvault://openai/dev/base-url \
+  --env OPENAI_API_KEY=envvault://openai/dev/token \
+  -- examples/openai-proxy-app/app.sh
+```
+
+Or use the checked-in example `.env` file:
 
 ```bash
 ./bin/envvault exec --env-file examples/openai-proxy-app/.env -- \

@@ -164,6 +164,9 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 		t.Fatalf("ReadFile(HomebrewFormula) error = %v", err)
 	}
 	homebrewText := string(homebrew)
+	if !strings.Contains(homebrewText, `desc "Local-first credential launcher and localhost credential proxy"`) {
+		t.Fatalf("homebrew formula missing current description:\n%s", homebrewText)
+	}
 	for _, artifact := range artifacts[:4] {
 		assertReleaseSHA256(t, artifact.SHA256)
 		url := baseURL + "/" + artifact.Name
@@ -179,6 +182,7 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 		"secret-canary",
 		"Authorization: Bearer",
 		"parent-secret",
+		"short-lived scoped credentials",
 	} {
 		if strings.Contains(homebrewText, forbidden) {
 			t.Fatalf("homebrew formula contains forbidden text %q:\n%s", forbidden, homebrewText)
@@ -197,6 +201,9 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 	assertReleaseSHA256(t, windowsArtifact.SHA256)
 	if scoopManifest["version"] != "0.1.0" {
 		t.Fatalf("scoop version = %#v, want 0.1.0", scoopManifest["version"])
+	}
+	if scoopManifest["description"] != "Local-first credential launcher and localhost credential proxy" {
+		t.Fatalf("scoop description = %#v", scoopManifest["description"])
 	}
 	architecture, ok := scoopManifest["architecture"].(map[string]any)
 	if !ok {
@@ -217,42 +224,37 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 	}
 }
 
-func TestReleaseDocsCoverProfilesBrowserSessionAndRemoteSTS(t *testing.T) {
+func TestReleaseDocsCoverProxyAndInjectFlows(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	requiredDocs := map[string][]string{
+		"docs/quickstart.md": {
+			"# Quickstart",
+			"API proxy",
+			"envvault://openai/dev/base-url",
+			"envvault://openai/dev/token",
+			"npx skills add trknhr/envvault --skill envvault",
+			"Raw Injection",
+		},
 		"docs/profiles.md": {
 			"# Profiles",
-			"process",
-			"browser-session",
+			"provider-proxy",
+			"inject",
 			"project binding",
-			"scope",
-			"resource",
-			"TTL",
+			"target_url",
+			"allowed_paths",
 			"OS credential store",
 		},
-		"docs/browser-session.md": {
-			"# Browser Session Protocol",
-			"exchange endpoint",
-			"complete endpoint",
-			"one-time code",
-			"Authorization header",
-			"Cache-Control: no-store",
-			"SameSite",
-		},
-		"docs/remote-sts.md": {
-			"# Remote STS",
-			"Local MVP",
-			"out of scope",
-			"JWKS",
-			"centralized STS",
-			"future",
+		"docs/manual-e2e.md": {
+			"# Manual E2E Playbook",
+			"Raw Inject Flow",
+			"API Proxy Flow",
+			"envvault://openai/dev/base-url",
 		},
 		"docs/release-gate.md": {
 			"# Release Gate",
-			"AT-INIT-001",
-			"AT-SEC-001",
-			"AT-BROWSER-001",
-			"AT-RESET-001",
+			"Coverage Focus",
+			"Admin UI credential/profile creation",
+			"raw inject references",
 			"go test -race ./...",
 		},
 	}
@@ -280,10 +282,10 @@ func TestReleaseDocsCoverProfilesBrowserSessionAndRemoteSTS(t *testing.T) {
 		t.Fatalf("ReadFile(README.md) error = %v", err)
 	}
 	for _, want := range []string{
+		"https://trknhr.github.io/envvault/",
+		"[Quickstart](docs/quickstart.md)",
 		"[Profiles](docs/profiles.md)",
-		"[Browser session protocol](docs/browser-session.md)",
-		"[Release gate](docs/release-gate.md)",
-		"[Remote STS notes](docs/remote-sts.md)",
+		"[Threat model](docs/threat-model.md)",
 	} {
 		if !strings.Contains(string(readme), want) {
 			t.Fatalf("README.md missing documentation link %q", want)
@@ -302,15 +304,6 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		"examples/inject-app/app.sh": {
 			"DATABASE_URL",
 			"postgres://",
-		},
-		"examples/local-mvp-app/README.md": {
-			"# Local MVP App Example",
-			"BACKEND_A_TOKEN",
-			"examples/backend-go/cmd/backend",
-		},
-		"examples/local-mvp-app/app.sh": {
-			"BACKEND_A_TOKEN",
-			"/documents/read",
 		},
 		"examples/openai-proxy-app/README.md": {
 			"# OpenAI-Compatible Proxy App Example",
@@ -363,21 +356,73 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url",
 			"ENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token",
 		},
-		"site/index.html": {
-			"EnvVault Documentation",
-			"Credential Flows",
-			"ENVVAULT_PROXY_URL",
+		"package.json": {
+			"vitepress",
+			"docs:dev",
+			"docs:build",
+		},
+		"docs/.vitepress/config.mts": {
+			"defineConfig",
+			"EnvVault",
+			"base: '/envvault/'",
+			"sidebar",
+			"outDir: '../site'",
+			"manual-e2e.md",
+			"release-gate.md",
+		},
+		"skills/envvault/SKILL.md": {
+			"name: envvault",
+			"envvault exec --env-file .env -- <command>",
+			"envvault://openai/dev/base-url",
+			"envvault://database/dev/value",
+			"stay within the admin, credential, proxy, inject",
+		},
+		".github/workflows/pages.yml": {
+			"name: Deploy Docs",
+			"pages: write",
+			"npm run docs:build",
+			"actions/deploy-pages",
+		},
+		"docs/.vitepress/theme/custom.css": {
+			"--vp-c-brand-1",
+			"VPDoc",
+			"VPHero",
+		},
+		"docs/index.md": {
+			"# EnvVault",
+			"Store once. Resolve at launch.",
+			"Admin UI",
+			"prints a `.env` snippet",
+			"npx skills add trknhr/envvault --skill envvault",
+			"Credential flows",
 			"Gemini AI SDK proxy",
 		},
-		"site/styles.css": {
-			".doc-shell",
-			"prefers-color-scheme",
-			"grid-template-columns",
+		"docs/examples.md": {
+			"# Examples",
+			"Proxy examples",
+			"Inject examples",
+			"/examples/gemini-ai-sdk-proxy-app",
+			"/examples/openai-proxy-app",
 		},
-		"site/assets/envvault-flow.svg": {
-			"EnvVault exec",
-			"OS credential store",
-			"localhost proxy",
+		"docs/examples/gemini-ai-sdk-proxy-app.md": {
+			"# Gemini AI SDK Proxy App Example",
+			"@ai-sdk/openai-compatible",
+			"envvault proxy add gemini-openai/dev",
+			"prints this `.env` snippet",
+			"ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url",
+		},
+		"docs/examples/openai-proxy-app.md": {
+			"# OpenAI-Compatible Proxy App Example",
+			"envvault proxy add openai/dev",
+			"same generated references",
+			"mock-provider",
+			"OPENAI_BASE_URL=envvault://openai/dev/base-url",
+		},
+		"site/index.html": {
+			"EnvVault",
+			"VitePress",
+			"Store once. Resolve at launch.",
+			"Admin UI",
 		},
 		"test/fake-keyring/store.go": {
 			"package fakekeyring",
@@ -402,19 +447,68 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			}
 		}
 	}
+	removedFiles := []string{
+		"docs/browser-session.md",
+		"docs/remote-sts.md",
+		"docs/implementation-spec.md",
+		"docs/superpowers/plans/2026-06-22-core-foundation.md",
+		"examples/backend-go/backend.go",
+		"examples/local-mvp-app/README.md",
+	}
+	for _, rel := range removedFiles {
+		if _, err := os.Stat(filepath.Join(repoRoot, rel)); err == nil {
+			t.Fatalf("removed file still exists: %s", rel)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("Stat(%s) error = %v", rel, err)
+		}
+	}
+	siteIndex, err := os.ReadFile(filepath.Join(repoRoot, "site/index.html"))
+	if err != nil {
+		t.Fatalf("ReadFile(site/index.html) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "site", "superpowers")); err == nil {
+		t.Fatalf("site includes internal superpowers docs")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Stat(site/superpowers) error = %v", err)
+	}
+	for _, forbidden := range []string{
+		"First-party process token",
+		"BACKEND_A_TOKEN",
+		"envvault-flow.svg",
+		"https://github.com/trknhr/envvault/blob/feat/local-mvp/examples/",
+		"href=\"../",
+		"Local MVP docs",
+		"quickstart-panel",
+	} {
+		if strings.Contains(string(siteIndex), forbidden) {
+			t.Fatalf("site/index.html contains removed docs artifact %q", forbidden)
+		}
+	}
+	siteExamples, err := os.ReadFile(filepath.Join(repoRoot, "site", "examples.html"))
+	if err != nil {
+		t.Fatalf("ReadFile(site/examples.html) error = %v", err)
+	}
+	for _, forbidden := range []string{
+		"Third-party API proxy",
+		"First-party backend flow",
+	} {
+		if strings.Contains(string(siteExamples), forbidden) {
+			t.Fatalf("site/examples.html contains confusing example section %q", forbidden)
+		}
+	}
 
 	readme, err := os.ReadFile(filepath.Join(repoRoot, "README.md"))
 	if err != nil {
 		t.Fatalf("ReadFile(README.md) error = %v", err)
 	}
 	for _, want := range []string{
-		"[Documentation site](site/index.html)",
-		"[Go backend example](examples/backend-go)",
+		"[Documentation site](https://trknhr.github.io/envvault/)",
+		"npx skills add trknhr/envvault --skill envvault",
+		"npx skills add . --skill envvault",
 		"[OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)",
 		"[Gemini SDK app example](examples/gemini-sdk-app/README.md)",
 		"[Gemini AI SDK proxy app example](examples/gemini-ai-sdk-proxy-app/README.md)",
 		"[Raw inject app example](examples/inject-app/README.md)",
-		"[Local MVP app example](examples/local-mvp-app/README.md)",
 	} {
 		if !strings.Contains(string(readme), want) {
 			t.Fatalf("README.md missing example link %q", want)
@@ -576,12 +670,23 @@ func assertReleasePackageEntries(t *testing.T, entries map[string]os.FileMode, r
 		root + "/docs/recovery.md",
 		root + "/docs/third-party-notices.md",
 		root + "/site/index.html",
-		root + "/site/styles.css",
-		root + "/site/assets/envvault-flow.svg",
+		root + "/site/logo.svg",
+		root + "/site/quickstart.html",
+		root + "/site/vp-icons.css",
 	} {
 		if _, ok := entries[want]; !ok {
 			t.Fatalf("release package entries missing %q; entries=%v", want, entries)
 		}
+	}
+	hasSiteAsset := false
+	for entry := range entries {
+		if strings.HasPrefix(entry, root+"/site/assets/") {
+			hasSiteAsset = true
+			break
+		}
+	}
+	if !hasSiteAsset {
+		t.Fatalf("release package entries missing VitePress site/assets entry; entries=%v", entries)
 	}
 	if mode := entries[root+"/"+binaryName]; mode&0o111 == 0 {
 		t.Fatalf("binary mode = %v, want executable bit", mode)

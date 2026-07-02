@@ -71,6 +71,17 @@ dist/scoop/envvault.json
 
 The generated files reference only archive URLs and checksums from `SHA256SUMS`. They are publish-ready inputs for a tap or bucket review, but the command does not publish them.
 
+To prepare the Homebrew tap locally:
+
+```bash
+install -m 0644 dist/homebrew/envvault.rb \
+  ../homebrew-tap/Formula/envvault.rb
+```
+
+Commit the tap repository only after the matching GitHub release archives have
+been uploaded, otherwise `brew install trknhr/tap/envvault` cannot download the
+referenced artifacts.
+
 ## Verification
 
 Before publishing any release artifacts, run:

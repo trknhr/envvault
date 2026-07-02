@@ -54,6 +54,15 @@ Register an inject profile that maps `gemini/dev` to that credential:
 Run the app through EnvVault:
 
 ```bash
+./bin/envvault exec \
+  --env GEMINI_API_KEY=envvault://gemini/dev/value \
+  --env GEMINI_MODEL=gemini-3.5-flash \
+  -- npm --prefix examples/gemini-sdk-app start
+```
+
+Or use the checked-in example `.env` file:
+
+```bash
 ./bin/envvault exec --env-file examples/gemini-sdk-app/.env -- \
   npm --prefix examples/gemini-sdk-app start
 ```

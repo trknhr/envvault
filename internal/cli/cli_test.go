@@ -42,6 +42,54 @@ func TestRunRequiresCommand(t *testing.T) {
 	}
 }
 
+func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
+	app := cli.New(cli.Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"--help"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Usage:",
+		"envvault credential list",
+		"envvault profile list",
+		"envvault exec --env KEY=envvault://profile/output -- <command>",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunExecHelpShowsInlineEnvWithoutServices(t *testing.T) {
+	app := cli.New(cli.Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"exec", "--help"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Usage:",
+		"envvault exec --env-file .env -- <command>",
+		"envvault exec --env OPENAI_BASE_URL=envvault://openai/dev/base-url",
+		"--env KEY=VALUE",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+	if strings.Contains(stderr.String(), "not implemented") {
+		t.Fatalf("stderr = %q, did not expect not implemented", stderr.String())
+	}
+}
+
 func TestRunCompletionBashWritesCommandsWithoutServices(t *testing.T) {
 	app := cli.New(cli.Options{})
 	var stdout, stderr bytes.Buffer
@@ -54,13 +102,14 @@ func TestRunCompletionBashWritesCommandsWithoutServices(t *testing.T) {
 	for _, want := range []string{
 		"# bash completion for envvault",
 		"complete -F _envvault envvault",
-		"init reset doctor profile secret credential proxy inject admin token exec open jwks issuer completion",
+		"init reset doctor profile secret credential proxy inject list admin token exec open jwks issuer completion",
 		"--repair",
 		"browser-session",
 		"secret",
 		"credential",
 		"proxy",
 		"inject",
+		"list",
 		"admin",
 	} {
 		if !strings.Contains(stdout.String(), want) {
@@ -83,7 +132,7 @@ func TestRunCompletionZshFishAndPowerShell(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 			}
-			for _, want := range []string{"envvault", "doctor", "profile", "secret", "credential", "proxy", "inject", "admin", "completion"} {
+			for _, want := range []string{"envvault", "doctor", "profile", "secret", "credential", "proxy", "inject", "list", "admin", "completion"} {
 				if !strings.Contains(stdout.String(), want) {
 					t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 				}
@@ -498,6 +547,38 @@ func TestRunCredentialAddStoresCredentialValue(t *testing.T) {
 	}
 }
 
+func TestRunCredentialListPrintsNamesWithoutValues(t *testing.T) {
+	paths := testPaths(t)
+	writeBaseConfig(t, paths)
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	cfg.AddCredential("zeta/dev")
+	cfg.AddCredential("openai/dev")
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	app := cli.New(cli.Options{
+		Paths: paths,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"credential", "list"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{"NAME", "openai/dev", "zeta/dev"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+	if strings.Contains(stdout.String(), "sk-secret") || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q, want no secret and empty stderr", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunProxyAddStoresProviderProxyProfile(t *testing.T) {
 	paths := testPaths(t)
 	writeBaseConfig(t, paths)
@@ -551,8 +632,14 @@ func TestRunProxyAddStoresProviderProxyProfile(t *testing.T) {
 	if got.ProjectBinding.Mode != profile.ProjectBindingNone {
 		t.Fatalf("ProjectBinding.Mode = %q, want none", got.ProjectBinding.Mode)
 	}
-	if stdout.Len() != 0 || stderr.Len() != 0 {
-		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+	wantSnippet := strings.Join([]string{
+		"Add this to your .env:",
+		"ENVVAULT_PROXY_URL=envvault://openai/dev/base-url",
+		"ENVVAULT_PROXY_TOKEN=envvault://openai/dev/token",
+		"",
+	}, "\n")
+	if stdout.String() != wantSnippet || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q, want proxy dotenv snippet on stdout", stdout.String(), stderr.String())
 	}
 }
 
@@ -762,6 +849,63 @@ func TestRunExecResolvesInjectValueReference(t *testing.T) {
 	}
 	if stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunProfileListPrintsMetadataWithoutCredentialValues(t *testing.T) {
+	paths := testPaths(t)
+	writeBaseConfig(t, paths)
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	cfg.Profiles["openai/dev"] = config.Profile{
+		Kind:           profile.KindProviderProxy,
+		CredentialName: "openai-key/dev",
+		AuthMode:       "bearer",
+		Provider:       "generic",
+		TargetURL:      "https://api.openai.com/v1",
+		AllowedPaths:   []string{"/chat/completions"},
+		AllowedMethods: []string{"POST"},
+		LocalTokenTTL:  config.Duration(10 * time.Minute),
+		ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
+	}
+	cfg.Profiles["database/dev"] = config.Profile{
+		Kind:           profile.KindInject,
+		CredentialName: "database-url/dev",
+		ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
+	}
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	app := cli.New(cli.Options{
+		Paths: paths,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"profile", "list"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{
+		"NAME",
+		"KIND",
+		"CREDENTIAL",
+		"TARGET",
+		"database/dev",
+		"inject",
+		"database-url/dev",
+		"openai/dev",
+		"provider-proxy",
+		"https://api.openai.com/v1",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+	if strings.Contains(stdout.String(), "sk-secret") || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q, want no secret and empty stderr", stdout.String(), stderr.String())
 	}
 }
 

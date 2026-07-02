@@ -1,0 +1,7 @@
+bin/
+build/
+dist/
+tmp/
+node_modules/
+docs/.vitepress/cache/
+examples/*/node_modules/

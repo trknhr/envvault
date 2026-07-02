@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/trknhr/envvault/internal/admin"
@@ -203,6 +204,9 @@ func (a App) Run(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintln(stderr, "envvault: command required")
 		return 2
 	}
+	if target, ok := helpTarget(args); ok {
+		return writeHelp(target, stdout, stderr)
+	}
 
 	switch args[0] {
 	case "init":
@@ -221,6 +225,8 @@ func (a App) Run(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return a.runProxy(ctx, args[1:], stdout, stderr)
 	case "inject":
 		return a.runInject(ctx, args[1:], stdout, stderr)
+	case "list":
+		return a.runList(args[1:], stdout, stderr)
 	case "admin":
 		return a.runAdmin(ctx, args[1:], stdout, stderr)
 	case "token":
@@ -314,7 +320,10 @@ func (a App) runDoctor(ctx context.Context, args []string, stdout, stderr io.Wri
 	return 0
 }
 
-func (a App) runProfile(ctx context.Context, args []string, _ io.Writer, stderr io.Writer) int {
+func (a App) runProfile(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && args[0] == "list" {
+		return a.runProfileList(stdout, stderr)
+	}
 	if a.profileManager == nil {
 		fmt.Fprintln(stderr, "envvault: command \"profile\" is not implemented yet")
 		return 2
@@ -407,7 +416,10 @@ func (a App) runSecret(ctx context.Context, args []string, _ io.Writer, stderr i
 	return 0
 }
 
-func (a App) runCredential(ctx context.Context, args []string, _ io.Writer, stderr io.Writer) int {
+func (a App) runCredential(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && args[0] == "list" {
+		return a.runCredentialList(stdout, stderr)
+	}
 	if len(args) < 2 || args[0] != "add" {
 		fmt.Fprintln(stderr, "envvault: usage: envvault credential add <name> --value-stdin")
 		return 2
@@ -448,7 +460,93 @@ func (a App) runCredential(ctx context.Context, args []string, _ io.Writer, stde
 	return 0
 }
 
-func (a App) runProxy(ctx context.Context, args []string, _ io.Writer, stderr io.Writer) int {
+func (a App) runList(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "envvault: usage: envvault list <credentials|profiles>")
+		return 2
+	}
+	switch args[0] {
+	case "credential", "credentials":
+		return a.runCredentialList(stdout, stderr)
+	case "profile", "profiles":
+		return a.runProfileList(stdout, stderr)
+	default:
+		fmt.Fprintln(stderr, "envvault: usage: envvault list <credentials|profiles>")
+		return 2
+	}
+}
+
+func (a App) runCredentialList(stdout, stderr io.Writer) int {
+	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	rows := make([][]string, 0, len(cfg.CredentialNames()))
+	for _, name := range cfg.CredentialNames() {
+		rows = append(rows, []string{name})
+	}
+	if err := writeTable(stdout, []string{"NAME"}, rows); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func (a App) runProfileList(stdout, stderr io.Writer) int {
+	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	names := make([]string, 0, len(cfg.Profiles))
+	for name := range cfg.Profiles {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	rows := make([][]string, 0, len(names))
+	for _, name := range names {
+		stored := cfg.Profiles[name]
+		rows = append(rows, []string{
+			name,
+			string(stored.Kind),
+			stored.CredentialName,
+			listTarget(stored),
+			listProjectBinding(stored.ProjectBinding.Mode),
+		})
+	}
+	if err := writeTable(stdout, []string{"NAME", "KIND", "CREDENTIAL", "TARGET", "BINDING"}, rows); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func writeTable(stdout io.Writer, header []string, rows [][]string) error {
+	writer := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(writer, strings.Join(header, "\t"))
+	for _, row := range rows {
+		fmt.Fprintln(writer, strings.Join(row, "\t"))
+	}
+	return writer.Flush()
+}
+
+func listTarget(stored config.Profile) string {
+	if strings.TrimSpace(stored.TargetURL) == "" {
+		return "-"
+	}
+	return stored.TargetURL
+}
+
+func listProjectBinding(mode profile.ProjectBindingMode) string {
+	if mode == "" {
+		return string(profile.ProjectBindingNone)
+	}
+	return string(mode)
+}
+
+func (a App) runProxy(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) < 2 || args[0] != "add" {
 		fmt.Fprintln(stderr, "envvault: usage: envvault proxy add <name> [options]")
 		return 2
@@ -493,6 +591,8 @@ func (a App) runProxy(ctx context.Context, args []string, _ io.Writer, stderr io
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	fmt.Fprintln(stdout, "Add this to your .env:")
+	fmt.Fprint(stdout, envref.ProxyDotenv(request.Name))
 	return 0
 }
 

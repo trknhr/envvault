@@ -88,6 +88,14 @@ func TestServerIndexContainsAdminFormsAndBearerAPIClient(t *testing.T) {
 		"id=\"credential-options\"",
 		"id=\"inject-profile-form\"",
 		"id=\"proxy-profile-form\"",
+		"id=\"proxy-env-snippet\"",
+		"id=\"copy-proxy-snippet\"",
+		"Copy .env",
+		"data-dotenv",
+		"copyButtonFeedback",
+		"button.textContent = \"Copied\"",
+		"window.setTimeout",
+		"navigator.clipboard.writeText",
 		"Authorization",
 		"Bearer",
 		"/api/credentials",
@@ -205,6 +213,62 @@ func TestServerListsEmptyProfilesWithoutConfig(t *testing.T) {
 	}
 }
 
+func TestServerListsProxyProfilesWithDotenvSnippet(t *testing.T) {
+	paths := testPaths(t)
+	writeAdminConfig(t, paths)
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	cfg.Profiles["gemini-openai/dev"] = config.Profile{
+		Kind:           profile.KindProviderProxy,
+		CredentialName: "gemini-api-key",
+		AuthMode:       "bearer",
+		Provider:       "openai-compatible",
+		TargetURL:      "https://generativelanguage.googleapis.com/v1beta/openai",
+		AllowedPaths:   []string{"/chat/completions"},
+		AllowedMethods: []string{http.MethodPost},
+		LocalTokenTTL:  config.Duration(10 * time.Minute),
+		ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
+	}
+	cfg.Profiles["database/dev"] = config.Profile{
+		Kind:           profile.KindInject,
+		CredentialName: "database-url/dev",
+		ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
+	}
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	server := admin.Server{ConfigPath: paths.ConfigFile, Secrets: keyring.NewMemoryStore(), Token: "admin-token"}
+
+	req := authorizedRequest(http.MethodGet, "/api/profiles", "")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%q", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var response struct {
+		Profiles []struct {
+			Name   string `json:"name"`
+			Kind   string `json:"kind"`
+			Dotenv string `json:"dotenv"`
+		} `json:"profiles"`
+	}
+	decodeJSON(t, rec.Body.String(), &response)
+	byName := map[string]string{}
+	for _, got := range response.Profiles {
+		byName[got.Name] = got.Dotenv
+	}
+	wantSnippet := "ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url\nENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token\n"
+	if byName["gemini-openai/dev"] != wantSnippet {
+		t.Fatalf("proxy dotenv = %q, want %q; body=%q", byName["gemini-openai/dev"], wantSnippet, rec.Body.String())
+	}
+	if byName["database/dev"] != "" {
+		t.Fatalf("inject dotenv = %q, want empty", byName["database/dev"])
+	}
+}
+
 func TestServerAddsProxyProfileWithoutExistingConfig(t *testing.T) {
 	paths := testPaths(t)
 	server := admin.Server{ConfigPath: paths.ConfigFile, Secrets: keyring.NewMemoryStore(), Token: "admin-token"}
@@ -223,6 +287,18 @@ func TestServerAddsProxyProfileWithoutExistingConfig(t *testing.T) {
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("proxy status = %d, want %d; body=%q", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var response struct {
+		Name   string `json:"name"`
+		Dotenv string `json:"dotenv"`
+	}
+	decodeJSON(t, rec.Body.String(), &response)
+	if response.Name != "openai/dev" {
+		t.Fatalf("response name = %q, want openai/dev", response.Name)
+	}
+	wantSnippet := "ENVVAULT_PROXY_URL=envvault://openai/dev/base-url\nENVVAULT_PROXY_TOKEN=envvault://openai/dev/token\n"
+	if response.Dotenv != wantSnippet {
+		t.Fatalf("dotenv = %q, want %q", response.Dotenv, wantSnippet)
 	}
 	cfg, err := config.Load(paths.ConfigFile)
 	if err != nil {

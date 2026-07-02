@@ -13,6 +13,7 @@ import (
 
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/envref"
 	"github.com/trknhr/envvault/internal/keyring"
 	"github.com/trknhr/envvault/internal/profile"
 )
@@ -111,6 +112,7 @@ func (s Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 			AllowedPaths:   append([]string(nil), stored.AllowedPaths...),
 			AllowedMethods: append([]string(nil), stored.AllowedMethods...),
 			ProjectBinding: string(stored.ProjectBinding.Mode),
+			Dotenv:         profileDotenv(name, stored),
 		})
 	}
 	sort.Slice(profiles, func(i, j int) bool {
@@ -241,7 +243,10 @@ func (s Server) handleProxyProfiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]string{"name": request.Name})
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"name":   request.Name,
+		"dotenv": envref.ProxyDotenv(request.Name),
+	})
 }
 
 func (s Server) addProfile(_ context.Context, name string, stored config.Profile) error {
@@ -271,6 +276,14 @@ type profileSummary struct {
 	AllowedPaths   []string `json:"allowed_paths,omitempty"`
 	AllowedMethods []string `json:"allowed_methods,omitempty"`
 	ProjectBinding string   `json:"project_binding,omitempty"`
+	Dotenv         string   `json:"dotenv,omitempty"`
+}
+
+func profileDotenv(name string, stored config.Profile) string {
+	if stored.Kind != profile.KindProviderProxy {
+		return ""
+	}
+	return envref.ProxyDotenv(name)
 }
 
 type credentialRequest struct {
@@ -447,12 +460,45 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
       color: #171a1f;
       background: #ffffff;
     }
+    button.secondary:disabled {
+      cursor: default;
+      opacity: 0.55;
+    }
     .stack { display: grid; gap: 16px; }
     .toolbar {
       display: flex;
       justify-content: flex-end;
       padding: 12px 16px;
       border-bottom: 1px solid #e6e9ef;
+    }
+    .snippet-output {
+      display: grid;
+      gap: 8px;
+      margin: 0 16px 16px;
+      padding: 12px;
+      border: 1px solid #d9dde5;
+      border-radius: 6px;
+      background: #fbfcfd;
+    }
+    .snippet-output[hidden] { display: none; }
+    .snippet-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: #4a5567;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    pre {
+      margin: 0;
+      padding: 10px;
+      overflow-x: auto;
+      border-radius: 6px;
+      color: #f7f8fa;
+      background: #171a1f;
+      font: 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      white-space: pre;
     }
     table {
       width: 100%;
@@ -538,6 +584,13 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
           </label>
           <button type="submit">Add Proxy Profile</button>
         </form>
+        <div id="proxy-env-output" class="snippet-output" hidden>
+          <div class="snippet-header">
+            <span>.env snippet</span>
+            <button id="copy-proxy-snippet" class="secondary" type="button" disabled>Copy</button>
+          </div>
+          <pre id="proxy-env-snippet"></pre>
+        </div>
       </section>
       <datalist id="credential-options"></datalist>
     </div>
@@ -556,7 +609,7 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
         <h2>Profiles</h2>
         <table>
           <thead>
-            <tr><th>Name</th><th>Kind</th><th>Credential</th><th>Target</th></tr>
+            <tr><th>Name</th><th>Kind</th><th>Credential</th><th>Target</th><th>.env</th></tr>
           </thead>
           <tbody id="profiles"></tbody>
         </table>
@@ -570,6 +623,9 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
     const credentialsNode = document.getElementById("credentials");
     const credentialOptionsNode = document.getElementById("credential-options");
     const profilesNode = document.getElementById("profiles");
+    const proxyEnvOutputNode = document.getElementById("proxy-env-output");
+    const proxyEnvSnippetNode = document.getElementById("proxy-env-snippet");
+    const copyProxySnippetButton = document.getElementById("copy-proxy-snippet");
     const headers = () => ({
       "Content-Type": "application/json",
       "Authorization": "Bearer " + envvaultToken
@@ -608,19 +664,45 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
           cell.textContent = value;
           row.appendChild(cell);
         });
+        const actionCell = document.createElement("td");
+        if (profile.dotenv) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "secondary";
+          button.textContent = "Copy .env";
+          button.setAttribute("data-dotenv", profile.dotenv);
+          actionCell.appendChild(button);
+        }
+        row.appendChild(actionCell);
         return row;
       }));
     };
     const refreshAll = async () => {
       await Promise.all([refreshCredentials(), refreshProfiles()]);
     };
-    const bindForm = (id, path, payload) => {
+            const showProxySnippet = (dotenv) => {
+              proxyEnvSnippetNode.textContent = dotenv || "";
+              proxyEnvOutputNode.hidden = !dotenv;
+              copyProxySnippetButton.disabled = !dotenv;
+            };
+            const copyButtonFeedback = (button) => {
+              if (!button) return;
+              const originalText = button.textContent;
+              button.textContent = "Copied";
+              button.disabled = true;
+              window.setTimeout(() => {
+                button.textContent = originalText;
+                button.disabled = false;
+              }, 1200);
+            };
+            const bindForm = (id, path, payload, onSuccess) => {
       document.getElementById(id).addEventListener("submit", async (event) => {
         event.preventDefault();
         try {
-          await request(path, {method: "POST", body: JSON.stringify(payload(new FormData(event.currentTarget)))});
+          const data = await request(path, {method: "POST", body: JSON.stringify(payload(new FormData(event.currentTarget)))});
           event.currentTarget.reset();
           await refreshAll();
+          if (onSuccess) onSuccess(data);
           setStatus("Saved");
         } catch (error) {
           setStatus("Error");
@@ -644,7 +726,22 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
       allowed_paths: splitList(form.get("allowed_paths") || ""),
       allowed_methods: splitList(form.get("allowed_methods") || "POST"),
       project_binding: form.get("project_binding")
-    }));
+    }), (data) => showProxySnippet(data.dotenv));
+            const copyDotenv = async (text, button) => {
+              if (!text) return;
+              showProxySnippet(text);
+              await navigator.clipboard.writeText(text);
+              copyButtonFeedback(button);
+              setStatus("Copied");
+            };
+            copyProxySnippetButton.addEventListener("click", async () => {
+              await copyDotenv(proxyEnvSnippetNode.textContent, copyProxySnippetButton);
+            });
+            profilesNode.addEventListener("click", async (event) => {
+              const button = event.target.closest("button[data-dotenv]");
+              if (!button) return;
+              await copyDotenv(button.getAttribute("data-dotenv") || "", button);
+            });
     document.getElementById("refresh").addEventListener("click", () => refreshAll().catch(() => setStatus("Error")));
     refreshAll().catch(() => setStatus("Locked"));
   </script>

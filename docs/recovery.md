@@ -8,28 +8,29 @@ Symptoms:
 
 - `ENVVAULT_KEYRING_UNAVAILABLE`
 - `ENVVAULT_KEYRING_LOCKED`
-- `ENVVAULT_PARENT_KEY_MISSING`
+- Credential add or profile use fails while reading the OS credential store.
 
 Actions:
 
 1. Unlock the platform credential store.
 2. Re-run `envvault doctor`.
-3. If only a profile parent key is missing, recreate that profile rather than adding a plaintext fallback.
-4. Do not store parent keys in files.
+3. Re-add affected credentials if the platform credential store entry is missing.
+4. Do not store provider keys in repository files as a fallback.
 
-## Corrupt or Missing SQLite
+## Corrupt or Missing Local State
 
 Symptoms:
 
-- `envvault doctor` reports SQLite integrity or schema errors.
-- Local parent-key metadata is unavailable.
+- `envvault doctor` reports config, data, cache, or SQLite integrity errors.
+- Profiles cannot be loaded.
 
 Actions:
 
 1. Preserve the existing data directory for investigation.
 2. Restore from the migration backup if available.
-3. If recovery is not possible, run `envvault reset --dry-run`, then `envvault reset --yes`, and initialize again.
-4. Recreate profiles so parent keys and metadata match.
+3. If recovery is not possible, run `envvault reset --dry-run`, then
+   `envvault reset --yes`.
+4. Recreate credentials and profiles.
 
 ## Stale Runtime Lock or Crash
 
@@ -37,42 +38,29 @@ Symptoms:
 
 - `ENVVAULT_LOCK_TIMEOUT`
 - Doctor reports stale runtime state.
-- A previous EnvVault process was killed during Talos startup or shutdown.
+- A previous EnvVault process was killed while starting or stopping local
+  runtime state.
 
 Actions:
 
-1. Confirm no active `envvault` or managed Talos process is still running for the same user.
+1. Confirm no active `envvault` process is still running for the same user.
 2. Run `envvault doctor`.
-3. Run `envvault doctor --repair` to stop a recorded stale managed Talos process and remove stale EnvVault runtime locks and temporary files.
-4. Re-run `envvault doctor` and investigate any remaining errors before starting another credential operation.
-
-## JWKS Mismatch
-
-Symptoms:
-
-- Backends reject valid-looking tokens.
-- `envvault issuer show` does not match backend configuration.
-- Exported JWKS is missing or stale.
-
-Actions:
-
-1. Re-export JWKS:
-
-```bash
-envvault jwks export --output <backend-jwks-path>
-```
-
-2. Restart or reload the local backend.
-3. Confirm the backend requires the expected issuer and resource.
+3. Run `envvault doctor --repair` to remove stale EnvVault runtime locks and
+   temporary files.
+4. Re-run `envvault doctor` and investigate any remaining errors before starting
+   another credential operation.
 
 ## Suspected Secret Exposure
 
 Actions:
 
 1. Stop using affected profiles.
-2. Reset or rotate affected parent keys.
-3. Rotate downstream backend trust if signing material may be exposed.
-4. Scan config, data, cache, logs, audit files, shell history, and temporary directories for the exposure marker.
-5. Treat any valid leaked bearer token as usable until its expiry.
+2. Rotate affected provider credentials in the upstream provider.
+3. Re-add the rotated value to EnvVault.
+4. Scan config, data, cache, logs, audit files, shell history, and temporary
+   directories for the exposure marker.
+5. Treat any leaked local proxy token as usable until the child process exits or
+   the token expires.
 
-EnvVault cannot revoke application-side writes that already happened with a valid leased token.
+EnvVault cannot revoke application-side writes that already happened with a
+valid credential.

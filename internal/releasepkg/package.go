@@ -33,16 +33,17 @@ type Artifact struct {
 	SHA256 string
 }
 
-var packageDocs = []string{
+var packageFiles = []string{
 	"README.md",
 	"docs/quickstart.md",
 	"docs/threat-model.md",
 	"docs/uninstall.md",
 	"docs/recovery.md",
 	"docs/third-party-notices.md",
-	"site/index.html",
-	"site/styles.css",
-	"site/assets/envvault-flow.svg",
+}
+
+var packageDirs = []string{
+	"site",
 }
 
 func Package(options PackageOptions) (Artifact, error) {
@@ -64,7 +65,11 @@ func Package(options PackageOptions) (Artifact, error) {
 	if err := requireRegularFile(options.BinaryPath); err != nil {
 		return Artifact{}, fmt.Errorf("inspect envvault binary: %w", err)
 	}
-	for _, rel := range packageDocs {
+	packagePaths, err := packageDocPaths(options.RepoRoot)
+	if err != nil {
+		return Artifact{}, err
+	}
+	for _, rel := range packagePaths {
 		if err := requireRegularFile(filepath.Join(options.RepoRoot, rel)); err != nil {
 			return Artifact{}, fmt.Errorf("inspect package file %s: %w", rel, err)
 		}
@@ -221,7 +226,11 @@ func writeTarGzPackage(path string, options PackageOptions) error {
 	if err := addTarFile(tarWriter, options.BinaryPath, root+"/"+packageBinaryName(options.Platform), 0o755); err != nil {
 		return err
 	}
-	for _, rel := range packageDocs {
+	packagePaths, err := packageDocPaths(options.RepoRoot)
+	if err != nil {
+		return err
+	}
+	for _, rel := range packagePaths {
 		if err := addTarFile(tarWriter, filepath.Join(options.RepoRoot, rel), root+"/"+rel, 0o644); err != nil {
 			return err
 		}
@@ -259,12 +268,62 @@ func writeZipPackage(path string, options PackageOptions) error {
 	if err := addZipFile(writer, options.BinaryPath, root+"/"+packageBinaryName(options.Platform), 0o755); err != nil {
 		return err
 	}
-	for _, rel := range packageDocs {
+	packagePaths, err := packageDocPaths(options.RepoRoot)
+	if err != nil {
+		return err
+	}
+	for _, rel := range packagePaths {
 		if err := addZipFile(writer, filepath.Join(options.RepoRoot, rel), root+"/"+rel, 0o644); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func packageDocPaths(repoRoot string) ([]string, error) {
+	paths := append([]string(nil), packageFiles...)
+	for _, relDir := range packageDirs {
+		dirPaths, err := packageDirFiles(repoRoot, relDir)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, dirPaths...)
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func packageDirFiles(repoRoot, relDir string) ([]string, error) {
+	dirPath := filepath.Join(repoRoot, relDir)
+	info, err := os.Stat(dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("inspect package directory %s: %w", relDir, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("inspect package directory %s: not a directory", relDir)
+	}
+	var paths []string
+	if err := filepath.WalkDir(dirPath, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(repoRoot, path)
+		if err != nil {
+			return err
+		}
+		paths = append(paths, filepath.ToSlash(rel))
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("walk package directory %s: %w", relDir, err)
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("inspect package directory %s: no files", relDir)
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 func addZipFile(writer *zip.Writer, srcPath, archivePath string, mode os.FileMode) error {

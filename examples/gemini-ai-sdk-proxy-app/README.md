@@ -22,22 +22,24 @@ const { text } = await generateText({
 console.log(text);
 ```
 
-The application keeps only EnvVault proxy references in its `.env` file:
+The proxy profile command prints this `.env` snippet:
 
 ```dotenv
 ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url
 ENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token
-GEMINI_MODEL=gemini-3.5-flash
 ```
+
+Copy it into the app's `.env` file or pass the same references with
+`envvault exec --env`. The example also sets `GEMINI_MODEL=gemini-3.5-flash`.
 
 At runtime, `envvault exec` rewrites `ENVVAULT_PROXY_URL` to a dynamic
 localhost proxy URL and `ENVVAULT_PROXY_TOKEN` to a local-only bearer token. The
 real Gemini API key stays in the OS credential store and is attached only by the
 proxy when forwarding an allowed request.
 
-The EnvVault URI still ends with `/base-url` because OpenAI-compatible SDKs
-usually call this setting `baseURL`. In EnvVault terms, the resolved value is
-the local proxy URL for the `gemini-openai/dev` profile.
+The EnvVault URI ends with `/base-url` because the proxy profile automatically
+provides a local proxy URL output for the `gemini-openai/dev` profile. It is not
+a separate credential to register.
 
 Build EnvVault from the repository root:
 
@@ -70,7 +72,20 @@ Register a proxy profile for Gemini's OpenAI-compatible API:
   --project-binding none
 ```
 
+Copy the generated `ENVVAULT_PROXY_URL` and `ENVVAULT_PROXY_TOKEN` output into
+the example `.env` file.
+
 Run the app through EnvVault:
+
+```bash
+./bin/envvault exec \
+  --env ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url \
+  --env ENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token \
+  --env GEMINI_MODEL=gemini-3.5-flash \
+  -- npm --prefix examples/gemini-ai-sdk-proxy-app start
+```
+
+Or use the checked-in example `.env` file:
 
 ```bash
 ./bin/envvault exec --env-file examples/gemini-ai-sdk-proxy-app/.env -- \

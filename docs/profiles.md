@@ -1,37 +1,48 @@
 # Profiles
 
-Profiles are local trusted policy. Repository files may reference a profile with `envvault://<name>`, but they cannot widen the profile's scope, resource, TTL, purpose, redirect targets, or project binding.
+Profiles are local trusted policy. Repository files may reference a profile with
+`envvault://...`, but they cannot change the profile's target URL, allowlist,
+credential binding, token lifetime, or project binding.
 
 ## Kinds
 
-`process` profiles issue short-lived credentials for a child process launched by `envvault exec`.
+`provider-proxy` profiles start a localhost proxy during `envvault exec`. The
+child process receives a local base URL and local-only bearer token. EnvVault
+adds the real provider key only when forwarding allowed requests.
 
-`browser-session` profiles issue a bootstrap credential for `envvault open`. The target backend exchanges that credential for a one-time code and then creates its own web session cookie.
-
-`provider-proxy` profiles start a localhost proxy for a third-party API during `envvault exec`. The child process receives a local base URL and local-only bearer token; EnvVault adds the real provider key only when forwarding allowed requests.
-
-`inject` profiles resolve `envvault://<profile>/value` to a named credential value. This is the raw injection fallback for tools that cannot use a localhost proxy.
+`inject` profiles resolve `envvault://<profile>/value` to a named credential
+value. This is the raw injection fallback for tools that cannot use a localhost
+proxy.
 
 ## Policy Fields
 
-- `resource`: The audience or backend URL the leased credential is valid for.
-- `scope`: The maximum scopes EnvVault can request for this profile.
-- `ttl` and `max_ttl`: The requested and maximum lifetime. TTL is clamped by trusted profile policy, not by repository input.
-- `project binding`: The local approval tying profile use to a path hash or git remote plus root.
-- `claims`: Optional custom claims. EnvVault-owned claim names use the `envvault_` prefix, and standard JWT claim names are reserved.
-- `provider`: The third-party proxy provider type. The MVP supports `openai-compatible`.
-- `credential`: The named OS credential store entry used by a provider-proxy or inject profile.
-- `auth_mode`: The provider-proxy authentication mode. The MVP supports `bearer`.
+- `provider`: The proxy provider type. The MVP supports `generic` and
+  `openai-compatible`.
+- `credential`: The named OS credential store entry used by a provider-proxy or
+  inject profile.
+- `auth_mode`: The provider-proxy authentication mode. The MVP supports
+  `bearer`.
 - `target_url`: The fixed provider API base URL the local proxy forwards to.
-- `allowed_paths` and `allowed_methods`: The proxy allowlist enforced before the real provider key is added.
+- `allowed_paths` and `allowed_methods`: The proxy allowlist enforced before the
+  real provider key is added.
 - `local_token_ttl`: The local proxy bearer token lifetime for a child process.
+- `project binding`: The local approval tying profile use to a path hash or git
+  remote plus root.
 
 ## Secret Storage
 
-Each process or browser-session profile has a separate parent key stored in the OS credential store. Provider-proxy and inject profiles point at named credential values stored in the OS credential store. The config file stores non-secret policy and metadata only. EnvVault does not write raw parent keys, provider API keys, database URLs, signing keys, issued JWTs, login codes, local proxy tokens, or Authorization header values into profile files.
+Credentials are stored in the OS credential store. Provider-proxy and inject
+profiles point at named credential values. The config file stores non-secret
+policy and metadata only.
+
+EnvVault does not write provider API keys, database URLs, local proxy tokens, or
+Authorization header values into profile files.
 
 ## Project Binding
 
-The default binding mode is `git-remote-and-root`. First use requires a TTY confirmation that records the approved project identity in user config. Non-interactive use fails closed when the binding is unknown.
+The default binding mode is `git-remote-and-root`. First use requires a TTY
+confirmation that records the approved project identity in user config.
+Non-interactive use fails closed when the binding is unknown.
 
-Use `none` only for low-risk local workflows. Use `path-hash` when a project has no git remote but still needs local binding.
+Use `none` only for low-risk local workflows. Use `path-hash` when a project has
+no git remote but still needs local binding.

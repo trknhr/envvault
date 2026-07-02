@@ -28,6 +28,13 @@ printf 'postgres://user:pass@127.0.0.1:5432/app\n' | ./bin/envvault credential a
 Run the app through EnvVault:
 
 ```bash
+./bin/envvault exec --env DATABASE_URL=envvault://database/dev/value -- \
+  examples/inject-app/app.sh
+```
+
+Or use the checked-in example `.env` file:
+
+```bash
 ./bin/envvault exec --env-file examples/inject-app/.env -- \
   examples/inject-app/app.sh
 ```

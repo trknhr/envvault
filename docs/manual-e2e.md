@@ -1,7 +1,7 @@
 # Manual E2E Playbook
 
 This playbook installs EnvVault from a local release archive and exercises the
-v0.1.0 local flows by hand.
+v0.1.0 local credential flows by hand.
 
 ## Safety Notes
 
@@ -94,20 +94,7 @@ If `127.0.0.1:17890` is in use, start on another fixed port:
 envvault admin start --addr 127.0.0.1:17891
 ```
 
-## 4. Initialize EnvVault
-
-```bash
-envvault init
-envvault doctor
-```
-
-Expected result: both commands exit 0.
-
-If `envvault init` fails with a Talos runtime error, capture the output of
-`envvault doctor` and continue only with the admin-server smoke test above. The
-inject, proxy, and first-party JWT sections require a valid local config.
-
-## 5. Raw Inject Flow
+## 4. Raw Inject Flow
 
 This checks the fallback path for tools that require a raw environment value.
 
@@ -119,11 +106,7 @@ envvault inject add database/dev \
   --credential database-url/dev \
   --project-binding none
 
-cat > "$EV_WORK/inject.env" <<'EOF'
-DATABASE_URL=envvault://database/dev/value
-EOF
-
-envvault exec --env-file "$EV_WORK/inject.env" -- \
+envvault exec --env DATABASE_URL=envvault://database/dev/value -- \
   "$EV_ROOT/examples/inject-app/app.sh"
 ```
 
@@ -133,7 +116,7 @@ Expected result:
 DATABASE_URL loaded for app
 ```
 
-## 6. Third-Party Proxy Flow
+## 5. API Proxy Flow
 
 Start the mock OpenAI-compatible provider:
 
@@ -157,12 +140,10 @@ envvault proxy add openai/dev \
   --allow-method POST \
   --project-binding none
 
-cat > "$EV_WORK/openai.env" <<'EOF'
-OPENAI_BASE_URL=envvault://openai/dev/base-url
-OPENAI_API_KEY=envvault://openai/dev/token
-EOF
-
-envvault exec --env-file "$EV_WORK/openai.env" -- \
+envvault exec \
+  --env OPENAI_BASE_URL=envvault://openai/dev/base-url \
+  --env OPENAI_API_KEY=envvault://openai/dev/token \
+  -- \
   "$EV_ROOT/examples/openai-proxy-app/app.sh"
 ```
 
@@ -175,55 +156,7 @@ kill "$EV_MOCK_PROVIDER_PID"
 wait "$EV_MOCK_PROVIDER_PID" 2>/dev/null || true
 ```
 
-## 7. First-Party JWT Flow
-
-This section exercises the Talos-backed process JWT path.
-
-Create a process profile that matches the Go backend example:
-
-```bash
-envvault profile add process backend-a/dev \
-  --resource http://127.0.0.1:8080 \
-  --scope document:read \
-  --ttl 10m \
-  --max-ttl 30m \
-  --project-binding none
-```
-
-Start the backend:
-
-```bash
-mkdir -p "$EV_WORK/backend"
-envvault jwks export --output "$EV_WORK/backend/envvault-jwks.json"
-ISSUER="$(envvault issuer show)"
-
-go run ./examples/backend-go/cmd/backend \
-  --jwks "$EV_WORK/backend/envvault-jwks.json" \
-  --issuer "$ISSUER" \
-  --resource http://127.0.0.1:8080 \
-  --complete-url http://127.0.0.1:8080/auth/envvault/complete \
-  --post-login-url http://127.0.0.1:8080/ > "$EV_WORK/backend.log" 2>&1 &
-EV_BACKEND_PID=$!
-sleep 1
-```
-
-Run the app:
-
-```bash
-envvault exec --env-file "$EV_ROOT/examples/local-mvp-app/.env" -- \
-  "$EV_ROOT/examples/local-mvp-app/app.sh"
-```
-
-Expected result: the JSON response includes `"ok":true`.
-
-Stop the backend when finished:
-
-```bash
-kill "$EV_BACKEND_PID"
-wait "$EV_BACKEND_PID" 2>/dev/null || true
-```
-
-## 8. Inspect and Cleanup
+## 6. Inspect and Cleanup
 
 Preview local state deletion:
 

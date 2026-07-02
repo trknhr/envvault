@@ -37,6 +37,18 @@ func ParseValue(value string) (Reference, bool, error) {
 	return Reference{Raw: value, Profile: profile, Part: part}, true, nil
 }
 
+func Format(profile string, part Part) string {
+	if part == PartDefault {
+		return schemePrefix + profile
+	}
+	return schemePrefix + profile + "/" + string(part)
+}
+
+func ProxyDotenv(profile string) string {
+	return "ENVVAULT_PROXY_URL=" + Format(profile, PartBaseURL) + "\n" +
+		"ENVVAULT_PROXY_TOKEN=" + Format(profile, PartToken) + "\n"
+}
+
 func parseProfile(raw string) (string, Part, error) {
 	if raw == "" {
 		return "", "", invalid("profile is required")
