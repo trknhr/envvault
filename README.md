@@ -23,8 +23,7 @@ DATABASE_URL=envvault://database/dev/value
 
 ## Install
 
-After the v0.1.0 release assets are published, install EnvVault from the
-[Homebrew tap](https://github.com/trknhr/homebrew-tap):
+Install EnvVault from the [Homebrew tap](https://github.com/trknhr/homebrew-tap):
 
 ```bash
 brew install trknhr/tap/envvault
@@ -80,8 +79,8 @@ Local archive packaging is available through
 `go run ./cmd/envvault-release package`, and local Homebrew/Scoop metadata can
 be generated with `go run ./cmd/envvault-release package-manifests`.
 `.github/workflows/local-mvp.yml` defines the test, vet, race, release, and
-secret-scan gate for macOS and Ubuntu runners. Package-manager publication and
-green Tier 1 platform runs are still required before a v0.1 release.
+secret-scan gate for macOS and Ubuntu runners. `.github/workflows/release.yml`
+publishes tagged release archives and updates the Homebrew tap.
 
 ## Documentation
 

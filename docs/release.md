@@ -12,8 +12,8 @@ fine-grained token that can write contents to `trknhr/homebrew-tap`.
 Create or move the release tag to the commit being released, then push it:
 
 ```bash
-git tag -f v0.1.0
-git push -f origin v0.1.0
+git tag -f v0.1.1
+git push -f origin v0.1.1
 ```
 
 The release workflow:
@@ -40,13 +40,17 @@ only when you want to rebuild/upload release assets without changing the tap.
 Build the end-user binary for the target platform:
 
 ```bash
-GOOS=linux GOARCH=amd64 go build -trimpath -o build/envvault-linux-amd64 ./cmd/envvault
+VERSION=v0.1.1
+COMMIT=$(git rev-parse "$VERSION")
+LDFLAGS="-s -w -X github.com/trknhr/envvault/internal/cli.version=$VERSION -X github.com/trknhr/envvault/internal/cli.commit=$COMMIT"
+
+GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o build/envvault-linux-amd64 ./cmd/envvault
 ```
 
 For Windows, use an `.exe` output path:
 
 ```bash
-GOOS=windows GOARCH=amd64 go build -trimpath -o build/envvault-windows-amd64.exe ./cmd/envvault
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o build/envvault-windows-amd64.exe ./cmd/envvault
 ```
 
 ## Package an Archive
@@ -55,7 +59,7 @@ Package the binary with README, required docs, and third-party notices:
 
 ```bash
 go run ./cmd/envvault-release package \
-  --version v0.1.0 \
+  --version v0.1.1 \
   --platform linux/amd64 \
   --binary build/envvault-linux-amd64 \
   --dist dist
@@ -64,7 +68,7 @@ go run ./cmd/envvault-release package \
 The command creates:
 
 ```text
-dist/envvault_v0.1.0_linux_amd64.tar.gz
+dist/envvault_v0.1.1_linux_amd64.tar.gz
 dist/SHA256SUMS
 ```
 
@@ -90,8 +94,8 @@ After all release archives are present in `SHA256SUMS`, generate local Homebrew 
 
 ```bash
 go run ./cmd/envvault-release package-manifests \
-  --version v0.1.0 \
-  --base-url https://github.com/trknhr/envvault/releases/download/v0.1.0 \
+  --version v0.1.1 \
+  --base-url https://github.com/trknhr/envvault/releases/download/v0.1.1 \
   --dist dist
 ```
 

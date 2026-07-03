@@ -41,7 +41,7 @@ _envvault()
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  commands="init reset doctor profile secret credential proxy inject list admin token exec open jwks issuer completion"
+  commands="init reset doctor profile secret credential proxy inject list admin token exec open jwks issuer completion version"
 
   case "$prev" in
     envvault)
@@ -138,6 +138,7 @@ _envvault() {
     'jwks:show or export JWKS'
     'issuer:show local issuer'
     'completion:print shell completion'
+    'version:print CLI version'
   )
 
   _arguments -C \
@@ -173,7 +174,7 @@ _envvault "$@"
 `
 
 const fishCompletionScript = `# fish completion for envvault
-complete -c envvault -f -n '__fish_use_subcommand' -a 'init reset doctor profile secret credential proxy inject list admin token exec open jwks issuer completion'
+complete -c envvault -f -n '__fish_use_subcommand' -a 'init reset doctor profile secret credential proxy inject list admin token exec open jwks issuer completion version'
 complete -c envvault -f -n '__fish_seen_subcommand_from doctor' -l repair
 complete -c envvault -f -n '__fish_seen_subcommand_from reset' -l dry-run
 complete -c envvault -f -n '__fish_seen_subcommand_from reset' -l yes
@@ -200,7 +201,7 @@ const powershellCompletionScript = `# PowerShell completion for envvault
 Register-ArgumentCompleter -Native -CommandName envvault -ScriptBlock {
   param($wordToComplete, $commandAst, $cursorPosition)
   $words = $commandAst.CommandElements | ForEach-Object { $_.Extent.Text }
-  $commands = @('init','reset','doctor','profile','secret','credential','proxy','inject','list','admin','token','exec','open','jwks','issuer','completion')
+  $commands = @('init','reset','doctor','profile','secret','credential','proxy','inject','list','admin','token','exec','open','jwks','issuer','completion','version')
   $values = switch ($words[1]) {
     'doctor' { @('--repair') }
     'reset' { @('--dry-run','--yes') }

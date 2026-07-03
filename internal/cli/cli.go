@@ -207,6 +207,9 @@ func (a App) Run(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if target, ok := helpTarget(args); ok {
 		return writeHelp(target, stdout, stderr)
 	}
+	if len(args) == 1 && isVersionFlag(args[0]) {
+		return runVersion(nil, stdout, stderr)
+	}
 
 	switch args[0] {
 	case "init":
@@ -241,6 +244,8 @@ func (a App) Run(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return a.runIssuer(ctx, args[1:], stdout, stderr)
 	case "completion":
 		return a.runCompletion(args[1:], stdout, stderr)
+	case "version":
+		return runVersion(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "envvault: command %q is not implemented yet\n", args[0])
 		return 2

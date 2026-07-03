@@ -11,7 +11,7 @@ raw credential injection. The primary path is:
 
 ## 1. Install EnvVault
 
-After the v0.1.0 release assets are published, install from the Homebrew tap:
+Install from the Homebrew tap:
 
 ```bash
 brew install trknhr/tap/envvault

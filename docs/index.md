@@ -8,8 +8,7 @@ Store once. Resolve at launch.
 
 ## Quick Start
 
-Install EnvVault from the Homebrew tap after the v0.1.0 release assets are
-published:
+Install EnvVault from the Homebrew tap:
 
 ```bash
 brew install trknhr/tap/envvault

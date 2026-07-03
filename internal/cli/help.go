@@ -61,6 +61,8 @@ func helpText(target []string) (string, bool) {
 		return adminHelp, true
 	case "list":
 		return listHelp, true
+	case "version":
+		return versionHelp, true
 	}
 	return "", false
 }
@@ -90,6 +92,7 @@ Common commands:
   envvault inject add <name> --credential <credential>
   envvault profile list
   envvault exec --env KEY=envvault://profile/output -- <command>
+  envvault version
 
 Run "envvault <command> --help" for command help.
 `
@@ -172,4 +175,11 @@ const listHelp = `Usage:
 Aliases:
   envvault credential list
   envvault profile list
+`
+
+const versionHelp = `Usage:
+  envvault version
+  envvault --version
+
+Print the EnvVault CLI version.
 `

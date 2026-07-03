@@ -1,7 +1,7 @@
 # Manual E2E Playbook
 
 This playbook installs EnvVault from a local release archive and exercises the
-v0.1.0 local credential flows by hand.
+v0.1.1 local credential flows by hand.
 
 ## Safety Notes
 
@@ -19,7 +19,7 @@ Run from the repository root:
 
 ```bash
 export EV_ROOT="$(pwd)"
-export EV_VERSION="v0.1.0"
+export EV_VERSION="v0.1.1"
 export EV_GOOS="$(go env GOOS)"
 export EV_GOARCH="$(go env GOARCH)"
 export EV_WORK="$EV_ROOT/tmp/manual-e2e"

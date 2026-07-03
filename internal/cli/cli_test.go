@@ -53,6 +53,7 @@ func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Usage:",
+		"envvault version",
 		"envvault credential list",
 		"envvault profile list",
 		"envvault exec --env KEY=envvault://profile/output -- <command>",
@@ -63,6 +64,57 @@ func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunVersionWritesVersionWithoutServices(t *testing.T) {
+	app := cli.New(cli.Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"version"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "envvault dev" {
+		t.Fatalf("stdout = %q, want envvault dev", got)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunVersionFlagWritesVersionWithoutServices(t *testing.T) {
+	app := cli.New(cli.Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"--version"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "envvault dev" {
+		t.Fatalf("stdout = %q, want envvault dev", got)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunVersionRejectsExtraArgs(t *testing.T) {
+	app := cli.New(cli.Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"version", "extra"}, &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("Run() code = %d, want 2", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "usage: envvault version") {
+		t.Fatalf("stderr = %q, want usage", stderr.String())
 	}
 }
 
@@ -102,7 +154,7 @@ func TestRunCompletionBashWritesCommandsWithoutServices(t *testing.T) {
 	for _, want := range []string{
 		"# bash completion for envvault",
 		"complete -F _envvault envvault",
-		"init reset doctor profile secret credential proxy inject list admin token exec open jwks issuer completion",
+		"init reset doctor profile secret credential proxy inject list admin token exec open jwks issuer completion version",
 		"--repair",
 		"browser-session",
 		"secret",
@@ -132,7 +184,7 @@ func TestRunCompletionZshFishAndPowerShell(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 			}
-			for _, want := range []string{"envvault", "doctor", "profile", "secret", "credential", "proxy", "inject", "list", "admin", "completion"} {
+			for _, want := range []string{"envvault", "doctor", "profile", "secret", "credential", "proxy", "inject", "list", "admin", "completion", "version"} {
 				if !strings.Contains(stdout.String(), want) {
 					t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 				}

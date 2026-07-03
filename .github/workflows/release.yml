@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish, for example v0.1.0"
+        description: "Release tag to publish, for example v0.1.1"
         required: true
         type: string
       update_tap:
@@ -96,10 +96,12 @@ jobs:
       - name: Build and package release archives
         env:
           VERSION: ${{ steps.release.outputs.version }}
+          TARGET: ${{ steps.release.outputs.target }}
         run: |
           set -euo pipefail
 
           mkdir -p build dist
+          ldflags="-s -w -X github.com/trknhr/envvault/internal/cli.version=${VERSION} -X github.com/trknhr/envvault/internal/cli.commit=${TARGET}"
           for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64; do
             os="${target%/*}"
             arch="${target#*/}"
@@ -109,7 +111,7 @@ jobs:
             fi
 
             GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
-              go build -trimpath -o "$output" ./cmd/envvault
+              go build -trimpath -ldflags "$ldflags" -o "$output" ./cmd/envvault
 
             go run ./cmd/envvault-release package \
               --version "$VERSION" \

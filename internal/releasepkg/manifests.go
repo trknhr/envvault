@@ -172,7 +172,7 @@ func renderHomebrewFormula(version, baseURL string, artifacts map[Platform]relea
 	builder.WriteString("    bin.install \"envvault\"\n")
 	builder.WriteString("  end\n\n")
 	builder.WriteString("  test do\n")
-	builder.WriteString("    system \"#{bin}/envvault\", \"completion\", \"bash\"\n")
+	builder.WriteString("    system \"#{bin}/envvault\", \"version\"\n")
 	builder.WriteString("  end\n")
 	builder.WriteString("end\n")
 	return builder.String()

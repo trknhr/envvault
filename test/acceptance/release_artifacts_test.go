@@ -390,6 +390,8 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"HOMEBREW_TAP_TOKEN",
 			"trknhr/homebrew-tap",
 			"envvault-release package",
+			"github.com/trknhr/envvault/internal/cli.version",
+			"github.com/trknhr/envvault/internal/cli.commit",
 			"gh release create",
 		},
 		"docs/.vitepress/theme/custom.css": {
