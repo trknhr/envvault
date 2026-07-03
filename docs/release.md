@@ -1,6 +1,39 @@
 # Release Packaging
 
-EnvVault release packaging is local-only by default. The maintainer command builds an archive from an already-built `envvault` binary and writes `SHA256SUMS` in the chosen `dist` directory. It does not publish, deploy, upload, or push anything.
+EnvVault releases are published by `.github/workflows/release.yml`. A `v*` tag
+push builds the release archive matrix, uploads the GitHub Release assets, and
+commits the generated Homebrew formula to `trknhr/homebrew-tap`.
+
+The workflow needs a repository secret named `HOMEBREW_TAP_TOKEN`. Use a
+fine-grained token that can write contents to `trknhr/homebrew-tap`.
+
+## Publish From a Tag
+
+Create or move the release tag to the commit being released, then push it:
+
+```bash
+git tag -f v0.1.0
+git push -f origin v0.1.0
+```
+
+The release workflow:
+
+1. Runs Go tests, static analysis, release acceptance checks, and secret scan.
+2. Builds the VitePress documentation site.
+3. Cross-builds and packages:
+   - `darwin/amd64`
+   - `darwin/arm64`
+   - `linux/amd64`
+   - `linux/arm64`
+   - `windows/amd64`
+4. Generates `SHA256SUMS`, Homebrew formula metadata, and Scoop metadata.
+5. Creates or updates the GitHub Release for the tag.
+6. Commits `Formula/envvault.rb` to the Homebrew tap.
+
+Use the workflow dispatch form to rerun an existing tag. Disable `update_tap`
+only when you want to rebuild/upload release assets without changing the tap.
+
+## Local Packaging
 
 ## Build a Platform Binary
 
@@ -78,9 +111,8 @@ install -m 0644 dist/homebrew/envvault.rb \
   ../homebrew-tap/Formula/envvault.rb
 ```
 
-Commit the tap repository only after the matching GitHub release archives have
-been uploaded, otherwise `brew install trknhr/tap/envvault` cannot download the
-referenced artifacts.
+The workflow handles the tap commit automatically. Use the local tap copy only
+for manual recovery or formula review.
 
 ## Verification
 

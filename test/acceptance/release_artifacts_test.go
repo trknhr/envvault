@@ -383,6 +383,15 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"npm run docs:build",
 			"actions/deploy-pages",
 		},
+		".github/workflows/release.yml": {
+			"name: Release",
+			"tags:",
+			"v*",
+			"HOMEBREW_TAP_TOKEN",
+			"trknhr/homebrew-tap",
+			"envvault-release package",
+			"gh release create",
+		},
 		"docs/.vitepress/theme/custom.css": {
 			"--vp-c-brand-1",
 			"VPDoc",

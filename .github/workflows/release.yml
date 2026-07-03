@@ -1,0 +1,208 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.1.0"
+        required: true
+        type: string
+      update_tap:
+        description: "Commit the generated Homebrew formula to trknhr/homebrew-tap"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Resolve release inputs
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_TAG"
+          else
+            version="$GITHUB_REF_NAME"
+          fi
+
+          case "$version" in
+            v*) ;;
+            *)
+              echo "::error::release tag must start with v: $version"
+              exit 1
+              ;;
+          esac
+
+          target="$(git rev-list -n 1 "$version")"
+          base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${version}"
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "base_url=$base_url" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Run static analysis
+        run: go vet ./...
+
+      - name: Run release acceptance checks
+        run: go test ./test/acceptance -run TestRelease -count=1
+
+      - name: Run binary-safe secret canary scan
+        run: go run ./cmd/envvault-ci secret-scan .
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install documentation dependencies
+        run: npm ci
+
+      - name: Build documentation site
+        run: npm run docs:build
+
+      - name: Build and package release archives
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p build dist
+          for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            output="build/envvault-${os}-${arch}"
+            if [ "$os" = "windows" ]; then
+              output="${output}.exe"
+            fi
+
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
+              go build -trimpath -o "$output" ./cmd/envvault
+
+            go run ./cmd/envvault-release package \
+              --version "$VERSION" \
+              --platform "$target" \
+              --binary "$output" \
+              --dist dist
+          done
+
+      - name: Generate package manager manifests
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          BASE_URL: ${{ steps.release.outputs.base_url }}
+        run: |
+          set -euo pipefail
+
+          go run ./cmd/envvault-release package-manifests \
+            --version "$VERSION" \
+            --base-url "$BASE_URL" \
+            --dist dist
+
+      - name: Upload release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          TARGET: ${{ steps.release.outputs.target }}
+        run: |
+          set -euo pipefail
+
+          assets=(
+            dist/envvault_"$VERSION"_darwin_amd64.tar.gz
+            dist/envvault_"$VERSION"_darwin_arm64.tar.gz
+            dist/envvault_"$VERSION"_linux_amd64.tar.gz
+            dist/envvault_"$VERSION"_linux_arm64.tar.gz
+            dist/envvault_"$VERSION"_windows_amd64.zip
+            dist/SHA256SUMS
+          )
+
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" "${assets[@]}" --clobber
+          else
+            gh release create "$VERSION" "${assets[@]}" \
+              --target "$TARGET" \
+              --title "$VERSION" \
+              --notes "Initial local-first credential launcher and localhost credential proxy release."
+          fi
+
+      - name: Upload package-manager manifests as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-manager-manifests-${{ steps.release.outputs.version }}
+          path: |
+            dist/homebrew/envvault.rb
+            dist/scoop/envvault.json
+            dist/SHA256SUMS
+
+      - name: Validate Homebrew tap token
+        if: ${{ github.event_name == 'push' || inputs.update_tap }}
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is required to update trknhr/homebrew-tap"
+            exit 1
+          fi
+
+      - name: Check out Homebrew tap
+        if: ${{ github.event_name == 'push' || inputs.update_tap }}
+        uses: actions/checkout@v4
+        with:
+          repository: trknhr/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Commit generated Homebrew formula
+        if: ${{ github.event_name == 'push' || inputs.update_tap }}
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          install -m 0644 dist/homebrew/envvault.rb homebrew-tap/Formula/envvault.rb
+
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/envvault.rb
+
+          if git diff --cached --quiet; then
+            echo "Homebrew formula already up to date."
+            exit 0
+          fi
+
+          git commit -m "Brew formula update for envvault version ${VERSION}"
+          git push
