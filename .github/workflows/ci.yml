@@ -1,4 +1,4 @@
-name: Local MVP CI
+name: CI
 
 on:
   push:
@@ -45,3 +45,23 @@ jobs:
 
       - name: Run binary-safe secret canary scan
         run: go run ./cmd/envvault-ci secret-scan .
+
+  docs:
+    name: Build docs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build docs
+        run: npm run docs:build

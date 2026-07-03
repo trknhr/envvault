@@ -79,7 +79,7 @@ acceptance fixtures.
 Local archive packaging is available through
 `go run ./cmd/envvault-release package`, and local Homebrew/Scoop metadata can
 be generated with `go run ./cmd/envvault-release package-manifests`.
-`.github/workflows/local-mvp.yml` defines the test, vet, race, release, and
+`.github/workflows/ci.yml` defines the test, vet, race, release, and
 secret-scan gate for macOS and Ubuntu runners. `.github/workflows/release.yml`
 publishes tagged release archives and updates the Homebrew tap.
 

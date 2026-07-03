@@ -525,9 +525,9 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 	}
 }
 
-func TestLocalMVPCIWorkflowRunsReleaseGateAndSecretScan(t *testing.T) {
+func TestCIWorkflowRunsReleaseGateDocsAndSecretScan(t *testing.T) {
 	repoRoot := findRepoRoot(t)
-	workflowPath := filepath.Join(repoRoot, ".github", "workflows", "local-mvp.yml")
+	workflowPath := filepath.Join(repoRoot, ".github", "workflows", "ci.yml")
 	body, err := os.ReadFile(workflowPath)
 	if err != nil {
 		t.Fatalf("ReadFile(%s) error = %v", workflowPath, err)
@@ -553,6 +553,9 @@ func TestLocalMVPCIWorkflowRunsReleaseGateAndSecretScan(t *testing.T) {
 		"go test -race ./...",
 		"go test ./test/acceptance -run TestRelease -count=1",
 		"go run ./cmd/envvault-ci secret-scan .",
+		"actions/setup-node@v4",
+		"npm ci",
+		"npm run docs:build",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("workflow missing %q:\n%s", want, workflow)
