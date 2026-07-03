@@ -164,7 +164,7 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 		t.Fatalf("ReadFile(HomebrewFormula) error = %v", err)
 	}
 	homebrewText := string(homebrew)
-	if !strings.Contains(homebrewText, `desc "Local-first credential launcher and localhost credential proxy"`) {
+	if !strings.Contains(homebrewText, `desc "Lightweight local secret launcher for envvault references"`) {
 		t.Fatalf("homebrew formula missing current description:\n%s", homebrewText)
 	}
 	for _, artifact := range artifacts[:4] {
@@ -202,7 +202,7 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 	if scoopManifest["version"] != "0.1.0" {
 		t.Fatalf("scoop version = %#v, want 0.1.0", scoopManifest["version"])
 	}
-	if scoopManifest["description"] != "Local-first credential launcher and localhost credential proxy" {
+	if scoopManifest["description"] != "Lightweight local secret launcher for envvault references" {
 		t.Fatalf("scoop description = %#v", scoopManifest["description"])
 	}
 	architecture, ok := scoopManifest["architecture"].(map[string]any)
@@ -229,11 +229,12 @@ func TestReleaseDocsCoverProxyAndInjectFlows(t *testing.T) {
 	requiredDocs := map[string][]string{
 		"docs/quickstart.md": {
 			"# Quickstart",
-			"API proxy",
+			"Create an Inject Profile",
+			"envvault://openai/dev/value",
+			"Advanced: API Proxy Mode",
 			"envvault://openai/dev/base-url",
 			"envvault://openai/dev/token",
 			"npx skills add trknhr/envvault --skill envvault",
-			"Raw Injection",
 		},
 		"docs/profiles.md": {
 			"# Profiles",
@@ -394,15 +395,16 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"# EnvVault",
 			"Store once. Resolve at launch.",
 			"Admin UI",
-			"prints a `.env` snippet",
+			"default compatibility path",
 			"npx skills add trknhr/envvault --skill envvault",
 			"Credential flows",
-			"Gemini AI SDK proxy",
+			"Advanced API proxy",
 		},
 		"docs/examples.md": {
 			"# Examples",
-			"Proxy examples",
 			"Inject examples",
+			"Advanced proxy examples",
+			"Gemini SDK inject app",
 			"/examples/gemini-ai-sdk-proxy-app",
 			"/examples/openai-proxy-app",
 		},

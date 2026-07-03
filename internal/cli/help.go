@@ -141,7 +141,7 @@ Options:
   --credential <name>       Credential name stored by envvault credential add.
   --project-binding <mode>  none, path-hash, or git-remote-and-root.
 
-Use inject only when proxying is not possible. It passes the raw credential value to the child process.
+Inject is the default compatibility path. It passes the raw credential value to the child process.
 `
 
 const execHelp = `Usage:

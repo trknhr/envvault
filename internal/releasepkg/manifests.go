@@ -29,7 +29,7 @@ type releaseArtifact struct {
 
 var releaseSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-const packageManagerDescription = "Local-first credential launcher and localhost credential proxy"
+const packageManagerDescription = "Lightweight local secret launcher for envvault references"
 
 func WritePackageManagerManifests(options PackageManagerManifestOptions) (PackageManagerManifestPaths, error) {
 	if strings.TrimSpace(options.DistDir) == "" {

@@ -1,24 +1,27 @@
 # EnvVault
 
-EnvVault is a local-first credential launcher and localhost credential proxy for
-replacing long-lived values with runtime-only local references in project
-`.env` files or `envvault exec --env` flags.
+EnvVault is a lightweight local secret launcher for replacing long-lived values
+with runtime-only `envvault://` references in project `.env` files or
+`envvault exec --env` flags.
 
 Links: [Documentation](https://trknhr.github.io/envvault/) |
 [Homebrew tap](https://github.com/trknhr/homebrew-tap)
 
-API proxy references split the SDK base URL from the local bearer token:
+The default flow stores the real credential in the OS credential store and keeps
+only a repository-safe reference in `.env`:
+
+```dotenv
+OPENAI_API_KEY=envvault://openai/dev/value
+DATABASE_URL=envvault://database/dev/value
+```
+
+For APIs and SDKs that accept a custom endpoint, EnvVault also has an optional
+localhost proxy mode. The child process receives a local proxy URL and local
+token instead of the real provider key:
 
 ```dotenv
 OPENAI_BASE_URL=envvault://openai/dev/base-url
 OPENAI_API_KEY=envvault://openai/dev/token
-```
-
-Raw credential injection is available for tools that cannot use a localhost
-proxy:
-
-```dotenv
-DATABASE_URL=envvault://database/dev/value
 ```
 
 ## Install
@@ -35,7 +38,7 @@ Common commands:
 envvault admin start
 envvault credential list
 envvault profile list
-envvault exec --env OPENAI_API_KEY=envvault://openai/dev/token -- npm run dev
+envvault exec --env OPENAI_API_KEY=envvault://openai/dev/value -- npm run dev
 envvault exec --env-file .env -- npm start
 ```
 
@@ -43,10 +46,10 @@ envvault exec --env-file .env -- npm start
 creating proxy or inject profiles. The printed URL includes a per-run local
 admin token. The UI does not display stored credential values.
 
-For API proxy profiles, `envvault exec` starts a localhost proxy, rewrites the
-base URL to that proxy, and gives the child process a local-only token. The real
-provider key stays in the OS credential store and is added only to outbound
-requests that match the proxy profile's method and path allowlist.
+The simple inject flow intentionally passes the resolved credential to the child
+process environment at launch. Use proxy profiles when an API client accepts a
+custom base URL and you want to avoid passing the real provider key to the child
+process.
 
 ## Security Limitations
 
@@ -65,7 +68,9 @@ EnvVault Local MVP reduces credential exposure; it does not create a sandbox.
   provider key directly, EnvVault cannot keep that key out of the child process
   environment.
 - `envvault://<profile>/value` intentionally injects the raw credential into the
-  child process environment. Use it only when proxying is not possible.
+  child process environment. This is the default compatibility path.
+- Proxy mode reduces provider-key exposure, but it requires the app or SDK to
+  accept a custom base URL and bearer token.
 
 ## Status
 
@@ -119,10 +124,10 @@ Restart your agent after installing or updating skills.
 
 ## Examples
 
-- [OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)
 - [Gemini SDK app example](examples/gemini-sdk-app/README.md)
-- [Gemini AI SDK proxy app example](examples/gemini-ai-sdk-proxy-app/README.md)
 - [Raw inject app example](examples/inject-app/README.md)
+- [OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)
+- [Gemini AI SDK proxy app example](examples/gemini-ai-sdk-proxy-app/README.md)
 
 ## Development
 

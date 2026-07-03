@@ -1,13 +1,14 @@
 # Quickstart
 
-This page describes the EnvVault local workflow for API proxy references and
-raw credential injection. The primary path is:
+This page describes the default EnvVault local workflow:
 
 1. Store a real credential in the OS credential store.
-2. Create a trusted local profile.
-3. Paste the EnvVault-generated `.env` snippet into the app or pass the same
-   references with `envvault exec --env`.
+2. Create a trusted local inject profile.
+3. Keep only an `envvault://.../value` reference in `.env`.
 4. Launch the app through `envvault exec`.
+
+Use API proxy profiles as an advanced option when an SDK accepts a custom base
+URL and bearer token.
 
 ## 1. Install EnvVault
 
@@ -26,7 +27,7 @@ envvault admin start
 Open the printed localhost URL. The URL contains a local admin token used by the
 browser UI when it calls EnvVault APIs for that server run.
 
-The UI can add credentials and create proxy or inject profiles. It does not
+The UI can add credentials and create inject or proxy profiles. It does not
 display stored credential values.
 
 Use `envvault admin status` to check the background process and
@@ -47,7 +48,50 @@ printf 'sk-live-or-dev-key\n' | envvault credential add openai-key/dev \
 
 You can also add the credential from the Admin UI.
 
-## 4. Create an API Proxy Profile
+## 4. Create an Inject Profile
+
+Add an inject profile that maps a local profile name to the stored credential:
+
+```bash
+envvault inject add openai/dev \
+  --credential openai-key/dev \
+  --project-binding none
+```
+
+Use a repository-safe reference with the variable name expected by the app:
+
+```dotenv
+OPENAI_API_KEY=envvault://openai/dev/value
+```
+
+You can keep that line in `.env`, or skip creating a file and pass it directly
+at launch:
+
+```bash
+envvault exec \
+  --env OPENAI_API_KEY=envvault://openai/dev/value \
+  -- npm run dev
+```
+
+## 5. Run the App
+
+```bash
+envvault exec --env-file .env -- npm run dev
+envvault exec --env-file .env -- npm start
+```
+
+`envvault exec` reads the `.env` file, resolves `envvault://openai/dev/value`
+from the OS credential store through the local profile policy, and launches the
+child process with `OPENAI_API_KEY` populated.
+
+This mode intentionally passes the raw credential to the child process
+environment. It is the most compatible path and works with SDKs that expect a
+normal API key environment variable.
+
+## 6. Advanced: API Proxy Mode
+
+Use a proxy profile when the app or SDK accepts a custom base URL and bearer
+token, and you do not want to pass the real provider key to the child process.
 
 Add a localhost proxy profile:
 
@@ -58,7 +102,8 @@ envvault proxy add openai/dev \
   --target https://api.openai.com/v1 \
   --allow-path /chat/completions \
   --allow-path /responses \
-  --allow-path /embeddings
+  --allow-path /embeddings \
+  --allow-method POST
 ```
 
 The command prints a generic `.env` snippet:
@@ -69,8 +114,6 @@ ENVVAULT_PROXY_TOKEN=envvault://openai/dev/token
 ```
 
 The Admin UI shows the same snippet with a copy button for proxy profiles.
-
-## 5. Use the Snippet
 
 Use the generated right-hand references with the variable names expected by the
 app:
@@ -83,52 +126,16 @@ OPENAI_API_KEY=envvault://openai/dev/token
 `base-url` and `token` are EnvVault-generated proxy outputs. They are not
 separate credentials to register.
 
-You can keep those lines in `.env`, or skip creating a file and pass them
-directly at launch:
+At runtime, `envvault exec` starts a localhost proxy, rewrites
+`OPENAI_BASE_URL` to that proxy, and rewrites `OPENAI_API_KEY` to a local-only
+bearer token. The proxy adds the real provider key only for requests matching
+the profile allowlist.
 
-```bash
-envvault exec \
-  --env OPENAI_BASE_URL=envvault://openai/dev/base-url \
-  --env OPENAI_API_KEY=envvault://openai/dev/token \
-  -- npm run dev
-```
+Proxy mode reduces provider-key exposure, but it also requires separate local
+environment variables for the provider base URL. Use inject mode when you want
+the simplest local/prod environment shape.
 
-## 6. Run the App
-
-```bash
-envvault exec --env-file .env -- npm run dev
-envvault exec --env-file .env -- npm start
-```
-
-`envvault exec` starts a localhost proxy, rewrites `OPENAI_BASE_URL` to that
-proxy, and rewrites `OPENAI_API_KEY` to a local-only bearer token. The proxy
-injects the real provider key only for requests matching the profile allowlist.
-
-## 7. Use Raw Injection When Proxying Is Not Possible
-
-Some SDKs and tools require a raw credential value and cannot be pointed at a
-localhost proxy. For those cases, store the credential and create an inject
-profile:
-
-```bash
-printf 'postgres://user:pass@127.0.0.1:5432/app\n' | envvault credential add database-url/dev \
-  --value-stdin
-
-envvault inject add database/dev \
-  --credential database-url/dev \
-  --project-binding none
-```
-
-Use a repository-safe reference:
-
-```dotenv
-DATABASE_URL=envvault://database/dev/value
-```
-
-This mode intentionally passes the raw credential to the child process
-environment. Prefer a proxy profile when the target API or SDK supports it.
-
-## 8. Inspect Health
+## 7. Inspect Health
 
 ```bash
 envvault doctor
@@ -142,7 +149,7 @@ envvault reset --dry-run
 runtime locks and temporary files before re-checking health. `reset --dry-run`
 shows EnvVault-owned files and keyring entries that would be removed.
 
-## 9. Generate Shell Completion
+## 8. Generate Shell Completion
 
 ```bash
 envvault completion bash
@@ -153,10 +160,10 @@ envvault completion powershell
 
 Write the generated script to the completion location used by your shell.
 
-## 10. Install The Agent Skill
+## 9. Install The Agent Skill
 
 EnvVault includes an agent skill for tools that need to launch commands with
-EnvVault, configure proxy profiles, or debug `envvault://` references.
+EnvVault, configure profiles, or debug `envvault://` references.
 
 Install it from the public repository:
 

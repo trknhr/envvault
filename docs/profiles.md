@@ -6,20 +6,21 @@ credential binding, token lifetime, or project binding.
 
 ## Kinds
 
+`inject` profiles resolve `envvault://<profile>/value` to a named credential
+value. This is the default compatibility path for SDKs and tools that expect a
+normal environment variable.
+
 `provider-proxy` profiles start a localhost proxy during `envvault exec`. The
 child process receives a local base URL and local-only bearer token. EnvVault
-adds the real provider key only when forwarding allowed requests.
-
-`inject` profiles resolve `envvault://<profile>/value` to a named credential
-value. This is the raw injection fallback for tools that cannot use a localhost
-proxy.
+adds the real provider key only when forwarding allowed requests. Use this as an
+advanced option when an app accepts a custom endpoint and bearer token.
 
 ## Policy Fields
 
-- `provider`: The proxy provider type. The MVP supports `generic` and
-  `openai-compatible`.
 - `credential`: The named OS credential store entry used by a provider-proxy or
   inject profile.
+- `provider`: The proxy provider type. The MVP supports `generic` and
+  `openai-compatible`.
 - `auth_mode`: The provider-proxy authentication mode. The MVP supports
   `bearer`.
 - `target_url`: The fixed provider API base URL the local proxy forwards to.
@@ -31,7 +32,7 @@ proxy.
 
 ## Secret Storage
 
-Credentials are stored in the OS credential store. Provider-proxy and inject
+Credentials are stored in the OS credential store. Inject and provider-proxy
 profiles point at named credential values. The config file stores non-secret
 policy and metadata only.
 
