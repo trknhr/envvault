@@ -7,11 +7,6 @@ export default defineConfig({
   description: 'Local-first credential launcher and localhost credential proxy.',
   base: '/envvault/',
   outDir: '../site',
-  srcExclude: [
-    'manual-e2e.md',
-    'release.md',
-    'release-gate.md'
-  ],
   lastUpdated: true,
   ignoreDeadLinks: [/^https:\/\/github\.com\/trknhr\/envvault/],
   themeConfig: {

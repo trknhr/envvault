@@ -244,19 +244,6 @@ func TestReleaseDocsCoverProxyAndInjectFlows(t *testing.T) {
 			"allowed_paths",
 			"OS credential store",
 		},
-		"docs/manual-e2e.md": {
-			"# Manual E2E Playbook",
-			"Raw Inject Flow",
-			"API Proxy Flow",
-			"envvault://openai/dev/base-url",
-		},
-		"docs/release-gate.md": {
-			"# Release Gate",
-			"Coverage Focus",
-			"Admin UI credential/profile creation",
-			"raw inject references",
-			"go test -race ./...",
-		},
 	}
 	for rel, wants := range requiredDocs {
 		path := filepath.Join(repoRoot, rel)
@@ -367,8 +354,12 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"base: '/envvault/'",
 			"sidebar",
 			"outDir: '../site'",
-			"manual-e2e.md",
-			"release-gate.md",
+		},
+		"test/manual-e2e.md": {
+			"# Manual E2E Playbook",
+			"Raw Inject Flow",
+			"API Proxy Flow",
+			"envvault://openai/dev/base-url",
 		},
 		"skills/envvault/SKILL.md": {
 			"name: envvault",
@@ -462,6 +453,9 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		"docs/browser-session.md",
 		"docs/remote-sts.md",
 		"docs/implementation-spec.md",
+		"docs/manual-e2e.md",
+		"docs/release-gate.md",
+		"docs/release.md",
 		"docs/superpowers/plans/2026-06-22-core-foundation.md",
 		"examples/backend-go/backend.go",
 		"examples/local-mvp-app/README.md",
