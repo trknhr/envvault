@@ -86,11 +86,13 @@ func TestServerIndexContainsAdminFormsAndBearerAPIClient(t *testing.T) {
 		"id=\"credential-form\"",
 		"id=\"credentials\"",
 		"id=\"credential-options\"",
-		"id=\"inject-profile-form\"",
 		"id=\"proxy-profile-form\"",
+		"id=\"proxies\"",
 		"id=\"proxy-env-snippet\"",
 		"id=\"copy-proxy-snippet\"",
+		"Copy ref",
 		"Copy .env",
+		"data-credential-ref",
 		"data-dotenv",
 		"copyButtonFeedback",
 		"button.textContent = \"Copied\"",
@@ -99,11 +101,22 @@ func TestServerIndexContainsAdminFormsAndBearerAPIClient(t *testing.T) {
 		"Authorization",
 		"Bearer",
 		"/api/credentials",
-		"/api/inject-profiles",
-		"/api/proxy-profiles",
+		"/api/proxies",
 	} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("body missing %q: %s", want, rec.Body.String())
+		}
+	}
+	for _, notWant := range []string{
+		"id=\"inject-profile-form\"",
+		"Add Inject Profile",
+		"/api/inject-profiles",
+		"/api/proxy-profiles",
+		"id=\"profiles\"",
+		"<h2>Profiles</h2>",
+	} {
+		if strings.Contains(rec.Body.String(), notWant) {
+			t.Fatalf("body contains %q: %s", notWant, rec.Body.String())
 		}
 	}
 }
@@ -213,7 +226,7 @@ func TestServerListsEmptyProfilesWithoutConfig(t *testing.T) {
 	}
 }
 
-func TestServerListsProxyProfilesWithDotenvSnippet(t *testing.T) {
+func TestServerListsProxiesWithDotenvSnippet(t *testing.T) {
 	paths := testPaths(t)
 	writeAdminConfig(t, paths)
 	cfg, err := config.Load(paths.ConfigFile)
@@ -241,7 +254,7 @@ func TestServerListsProxyProfilesWithDotenvSnippet(t *testing.T) {
 	}
 	server := admin.Server{ConfigPath: paths.ConfigFile, Secrets: keyring.NewMemoryStore(), Token: "admin-token"}
 
-	req := authorizedRequest(http.MethodGet, "/api/profiles", "")
+	req := authorizedRequest(http.MethodGet, "/api/proxies", "")
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
 
@@ -249,23 +262,23 @@ func TestServerListsProxyProfilesWithDotenvSnippet(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body=%q", rec.Code, http.StatusOK, rec.Body.String())
 	}
 	var response struct {
-		Profiles []struct {
+		Proxies []struct {
 			Name   string `json:"name"`
 			Kind   string `json:"kind"`
 			Dotenv string `json:"dotenv"`
-		} `json:"profiles"`
+		} `json:"proxies"`
 	}
 	decodeJSON(t, rec.Body.String(), &response)
 	byName := map[string]string{}
-	for _, got := range response.Profiles {
+	for _, got := range response.Proxies {
 		byName[got.Name] = got.Dotenv
 	}
 	wantSnippet := "ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url\nENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token\n"
 	if byName["gemini-openai/dev"] != wantSnippet {
 		t.Fatalf("proxy dotenv = %q, want %q; body=%q", byName["gemini-openai/dev"], wantSnippet, rec.Body.String())
 	}
-	if byName["database/dev"] != "" {
-		t.Fatalf("inject dotenv = %q, want empty", byName["database/dev"])
+	if _, ok := byName["database/dev"]; ok {
+		t.Fatalf("proxy list included non-proxy profile: %q", rec.Body.String())
 	}
 }
 
@@ -273,7 +286,7 @@ func TestServerAddsProxyProfileWithoutExistingConfig(t *testing.T) {
 	paths := testPaths(t)
 	server := admin.Server{ConfigPath: paths.ConfigFile, Secrets: keyring.NewMemoryStore(), Token: "admin-token"}
 
-	req := authorizedRequest(http.MethodPost, "/api/proxy-profiles", `{
+	req := authorizedRequest(http.MethodPost, "/api/proxies", `{
 		"name":"openai/dev",
 		"credential":"openai-key/dev",
 		"provider":"generic",

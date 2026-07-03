@@ -1,6 +1,7 @@
 package envref_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/trknhr/envvault/internal/clerr"
@@ -34,7 +35,6 @@ func TestParseValueReturnsProxyReferenceParts(t *testing.T) {
 	}{
 		{value: "envvault://openai/dev/base-url", profile: "openai/dev", part: envref.PartBaseURL},
 		{value: "envvault://openai/dev/token", profile: "openai/dev", part: envref.PartToken},
-		{value: "envvault://database/dev/value", profile: "database/dev", part: envref.PartValue},
 	}
 
 	for _, tt := range tests {
@@ -53,6 +53,22 @@ func TestParseValueReturnsProxyReferenceParts(t *testing.T) {
 				t.Fatalf("Part = %q, want %q", ref.Part, tt.part)
 			}
 		})
+	}
+}
+
+func TestParseValueRejectsValueSuffix(t *testing.T) {
+	_, ok, err := envref.ParseValue("envvault://database/dev/value")
+	if err == nil {
+		t.Fatal("ParseValue() error = nil, want error")
+	}
+	if !ok {
+		t.Fatal("ParseValue() ok = false, want true for malformed references")
+	}
+	if code, _ := clerr.CodeOf(err); code != clerr.ReferenceInvalid {
+		t.Fatalf("CodeOf(error) = %q, want %q", code, clerr.ReferenceInvalid)
+	}
+	if !strings.Contains(err.Error(), "envvault://<credential>") {
+		t.Fatalf("error = %q, want direct credential guidance", err.Error())
 	}
 }
 

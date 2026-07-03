@@ -94,20 +94,16 @@ If `127.0.0.1:17890` is in use, start on another fixed port:
 envvault admin start --addr 127.0.0.1:17891
 ```
 
-## 4. Raw Inject Flow
+## 4. Direct Credential Flow
 
-This checks the fallback path for tools that require a raw environment value.
+This checks the default path for tools that require a normal environment value.
 
 ```bash
-printf 'postgres://user:pass@127.0.0.1:5432/app\n' | envvault credential add database-url/dev \
+printf 'postgres://user:pass@127.0.0.1:5432/app\n' | envvault credential add database/dev \
   --value-stdin
 
-envvault inject add database/dev \
-  --credential database-url/dev \
-  --project-binding none
-
-envvault exec --env DATABASE_URL=envvault://database/dev/value -- \
-  "$EV_ROOT/examples/inject-app/app.sh"
+envvault exec --env DATABASE_URL=envvault://database/dev -- \
+  "$EV_ROOT/examples/env-app/app.sh"
 ```
 
 Expected result:
@@ -126,7 +122,7 @@ EV_MOCK_PROVIDER_PID=$!
 sleep 1
 ```
 
-Register a credential and proxy profile:
+Register a credential and proxy:
 
 ```bash
 printf 'sk-local-demo\n' | envvault credential add openai-key/dev \

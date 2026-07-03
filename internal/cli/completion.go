@@ -41,7 +41,7 @@ _envvault()
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  commands="init reset doctor profile secret credential proxy inject list admin token exec open jwks issuer completion version"
+  commands="init reset doctor secret credential proxy list admin token exec open jwks issuer completion version"
 
   case "$prev" in
     envvault)
@@ -64,14 +64,6 @@ _envvault()
       COMPREPLY=( $(compgen -W "show" -- "$cur") )
       return 0
       ;;
-    profile)
-      COMPREPLY=( $(compgen -W "add list" -- "$cur") )
-      return 0
-      ;;
-    add)
-      COMPREPLY=( $(compgen -W "process browser-session" -- "$cur") )
-      return 0
-      ;;
     secret)
       COMPREPLY=( $(compgen -W "add" -- "$cur") )
       return 0
@@ -81,15 +73,11 @@ _envvault()
       return 0
       ;;
     proxy)
-      COMPREPLY=( $(compgen -W "add" -- "$cur") )
-      return 0
-      ;;
-    inject)
-      COMPREPLY=( $(compgen -W "add" -- "$cur") )
+      COMPREPLY=( $(compgen -W "add list" -- "$cur") )
       return 0
       ;;
     list)
-      COMPREPLY=( $(compgen -W "credentials profiles" -- "$cur") )
+      COMPREPLY=( $(compgen -W "credentials proxies" -- "$cur") )
       return 0
       ;;
     admin)
@@ -125,12 +113,10 @@ _envvault() {
     'init:initialize local EnvVault state'
     'reset:remove EnvVault-owned local state'
     'doctor:inspect local EnvVault state'
-    'profile:manage profiles'
     'secret:manage provider API keys'
     'credential:manage raw credentials'
-    'proxy:manage provider API proxy profiles'
-    'inject:manage raw injection profiles'
-    'list:list credentials or profiles'
+    'proxy:manage provider API proxies'
+    'list:list credentials or proxies'
     'admin:run the local admin server'
     'token:issue a process token'
     'exec:run a child process with leased credentials'
@@ -155,12 +141,10 @@ _envvault() {
         reset) _values 'reset options' '--dry-run' '--yes' ;;
         jwks) _values 'jwks subcommands' 'show' 'export' ;;
         issuer) _values 'issuer subcommands' 'show' ;;
-        profile) _values 'profile subcommands' 'add' 'list' 'process' 'browser-session' ;;
         secret) _values 'secret subcommands' 'add' ;;
         credential) _values 'credential subcommands' 'add' 'list' ;;
-        proxy) _values 'proxy subcommands' 'add' ;;
-        inject) _values 'inject subcommands' 'add' ;;
-        list) _values 'list targets' 'credentials' 'profiles' ;;
+        proxy) _values 'proxy subcommands' 'add' 'list' ;;
+        list) _values 'list targets' 'credentials' 'proxies' ;;
         admin) _values 'admin subcommands' 'start' 'status' 'stop' 'serve' ;;
         token) _values 'token options' '--format' '--allow-tty' '--quiet' ;;
         exec) _values 'exec options' '--env-file' '--env' '--' ;;
@@ -174,18 +158,16 @@ _envvault "$@"
 `
 
 const fishCompletionScript = `# fish completion for envvault
-complete -c envvault -f -n '__fish_use_subcommand' -a 'init reset doctor profile secret credential proxy inject list admin token exec open jwks issuer completion version'
+complete -c envvault -f -n '__fish_use_subcommand' -a 'init reset doctor secret credential proxy list admin token exec open jwks issuer completion version'
 complete -c envvault -f -n '__fish_seen_subcommand_from doctor' -l repair
 complete -c envvault -f -n '__fish_seen_subcommand_from reset' -l dry-run
 complete -c envvault -f -n '__fish_seen_subcommand_from reset' -l yes
 complete -c envvault -f -n '__fish_seen_subcommand_from jwks' -a 'show export'
 complete -c envvault -f -n '__fish_seen_subcommand_from issuer' -a 'show'
-complete -c envvault -f -n '__fish_seen_subcommand_from profile' -a 'add list process browser-session'
 complete -c envvault -f -n '__fish_seen_subcommand_from secret' -a 'add'
 complete -c envvault -f -n '__fish_seen_subcommand_from credential' -a 'add list'
-complete -c envvault -f -n '__fish_seen_subcommand_from proxy' -a 'add'
-complete -c envvault -f -n '__fish_seen_subcommand_from inject' -a 'add'
-complete -c envvault -f -n '__fish_seen_subcommand_from list' -a 'credentials profiles'
+complete -c envvault -f -n '__fish_seen_subcommand_from proxy' -a 'add list'
+complete -c envvault -f -n '__fish_seen_subcommand_from list' -a 'credentials proxies'
 complete -c envvault -f -n '__fish_seen_subcommand_from admin' -a 'start status stop serve'
 complete -c envvault -f -n '__fish_seen_subcommand_from token' -l format
 complete -c envvault -f -n '__fish_seen_subcommand_from token' -l allow-tty
@@ -201,18 +183,16 @@ const powershellCompletionScript = `# PowerShell completion for envvault
 Register-ArgumentCompleter -Native -CommandName envvault -ScriptBlock {
   param($wordToComplete, $commandAst, $cursorPosition)
   $words = $commandAst.CommandElements | ForEach-Object { $_.Extent.Text }
-  $commands = @('init','reset','doctor','profile','secret','credential','proxy','inject','list','admin','token','exec','open','jwks','issuer','completion','version')
+  $commands = @('init','reset','doctor','secret','credential','proxy','list','admin','token','exec','open','jwks','issuer','completion','version')
   $values = switch ($words[1]) {
     'doctor' { @('--repair') }
     'reset' { @('--dry-run','--yes') }
     'jwks' { @('show','export') }
     'issuer' { @('show') }
-    'profile' { @('add','list','process','browser-session') }
     'secret' { @('add') }
     'credential' { @('add','list') }
-    'proxy' { @('add') }
-    'inject' { @('add') }
-    'list' { @('credentials','profiles') }
+    'proxy' { @('add','list') }
+    'list' { @('credentials','proxies') }
     'admin' { @('start','status','stop','serve') }
     'token' { @('--format','--allow-tty','--quiet') }
     'exec' { @('--env-file','--env','--') }

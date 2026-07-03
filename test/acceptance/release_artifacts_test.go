@@ -224,22 +224,21 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 	}
 }
 
-func TestReleaseDocsCoverProxyAndInjectFlows(t *testing.T) {
+func TestReleaseDocsCoverCredentialAndProxyFlows(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	requiredDocs := map[string][]string{
 		"docs/quickstart.md": {
 			"# Quickstart",
-			"Create an Inject Profile",
-			"envvault://openai/dev/value",
+			"Add a Credential",
+			"envvault://openai/dev",
 			"Advanced: API Proxy Mode",
 			"envvault://openai/dev/base-url",
 			"envvault://openai/dev/token",
 			"npx skills add trknhr/envvault --skill envvault",
 		},
-		"docs/profiles.md": {
-			"# Profiles",
-			"provider-proxy",
-			"inject",
+		"docs/proxies.md": {
+			"# Proxies",
+			"proxy add",
 			"project binding",
 			"target_url",
 			"allowed_paths",
@@ -272,7 +271,7 @@ func TestReleaseDocsCoverProxyAndInjectFlows(t *testing.T) {
 	for _, want := range []string{
 		"https://trknhr.github.io/envvault/",
 		"[Quickstart](docs/quickstart.md)",
-		"[Profiles](docs/profiles.md)",
+		"[Proxies](docs/proxies.md)",
 		"[Threat model](docs/threat-model.md)",
 	} {
 		if !strings.Contains(string(readme), want) {
@@ -284,12 +283,12 @@ func TestReleaseDocsCoverProxyAndInjectFlows(t *testing.T) {
 func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	requiredFiles := map[string][]string{
-		"examples/inject-app/README.md": {
-			"# Raw Inject App Example",
-			"envvault inject add",
-			"envvault://database/dev/value",
+		"examples/env-app/README.md": {
+			"# Env App Example",
+			"envvault credential add database/dev",
+			"envvault://database/dev",
 		},
-		"examples/inject-app/app.sh": {
+		"examples/env-app/app.sh": {
 			"DATABASE_URL",
 			"postgres://",
 		},
@@ -309,7 +308,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		},
 		"examples/gemini-sdk-app/README.md": {
 			"# Gemini SDK App Example",
-			"envvault inject add gemini/dev",
+			"envvault credential add gemini/dev",
 			"@google/genai",
 		},
 		"examples/gemini-sdk-app/app.mjs": {
@@ -322,7 +321,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"start",
 		},
 		"examples/gemini-sdk-app/.env": {
-			"GEMINI_API_KEY=envvault://gemini/dev/value",
+			"GEMINI_API_KEY=envvault://gemini/dev",
 			"GEMINI_MODEL",
 		},
 		"examples/gemini-ai-sdk-proxy-app/README.md": {
@@ -358,16 +357,16 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		},
 		"test/manual-e2e.md": {
 			"# Manual E2E Playbook",
-			"Raw Inject Flow",
+			"Direct Credential Flow",
 			"API Proxy Flow",
 			"envvault://openai/dev/base-url",
 		},
 		"skills/envvault/SKILL.md": {
 			"name: envvault",
 			"envvault exec --env-file .env -- <command>",
-			"envvault://openai/dev/base-url",
-			"envvault://database/dev/value",
-			"stay within the admin, credential, proxy, inject",
+			"envvault://openai-proxy/dev/base-url",
+			"envvault://database/dev",
+			"stay within the admin, credential, proxy, exec",
 		},
 		".github/workflows/pages.yml": {
 			"name: Deploy Docs",
@@ -395,16 +394,16 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"# EnvVault",
 			"Store once. Resolve at launch.",
 			"Admin UI",
-			"default compatibility path",
+			"Direct credential",
 			"npx skills add trknhr/envvault --skill envvault",
-			"Credential flows",
-			"Advanced API proxy",
+			"Credential Flows",
+			"Advanced API Proxy",
 		},
 		"docs/examples.md": {
 			"# Examples",
-			"Inject examples",
-			"Advanced proxy examples",
-			"Gemini SDK inject app",
+			"Direct Credential Examples",
+			"Advanced Proxy Examples",
+			"Gemini SDK app",
 			"/examples/gemini-ai-sdk-proxy-app",
 			"/examples/openai-proxy-app",
 		},
@@ -456,10 +455,13 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		"docs/remote-sts.md",
 		"docs/implementation-spec.md",
 		"docs/manual-e2e.md",
+		"docs/profiles.md",
 		"docs/release-gate.md",
 		"docs/release.md",
 		"docs/superpowers/plans/2026-06-22-core-foundation.md",
 		"examples/backend-go/backend.go",
+		"examples/inject-app/README.md",
+		"examples/inject-app/app.sh",
 		"examples/local-mvp-app/README.md",
 	}
 	for _, rel := range removedFiles {
@@ -515,7 +517,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		"[OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)",
 		"[Gemini SDK app example](examples/gemini-sdk-app/README.md)",
 		"[Gemini AI SDK proxy app example](examples/gemini-ai-sdk-proxy-app/README.md)",
-		"[Raw inject app example](examples/inject-app/README.md)",
+		"[Env app example](examples/env-app/README.md)",
 	} {
 		if !strings.Contains(string(readme), want) {
 			t.Fatalf("README.md missing example link %q", want)

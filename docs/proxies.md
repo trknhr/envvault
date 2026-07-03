@@ -1,0 +1,75 @@
+# Proxies
+
+Proxy mode is optional. Use it when an app or SDK accepts both a custom base URL
+and bearer token, and you want EnvVault to keep the real provider key out of the
+child process environment.
+
+The default workflow does not need a proxy. A normal credential reference like
+`envvault://openai/dev` resolves directly to the stored credential value.
+
+## Create a Proxy
+
+Store the real credential:
+
+```bash
+printf 'sk-live-or-dev-key\n' | envvault credential add openai/dev \
+  --value-stdin
+```
+
+Create a localhost proxy:
+
+```bash
+envvault proxy add openai-proxy/dev \
+  --credential openai/dev \
+  --provider generic \
+  --target https://api.openai.com/v1 \
+  --allow-path /chat/completions \
+  --allow-method POST \
+  --project-binding none
+```
+
+The command prints the references to paste into `.env`:
+
+```dotenv
+ENVVAULT_PROXY_URL=envvault://openai-proxy/dev/base-url
+ENVVAULT_PROXY_TOKEN=envvault://openai-proxy/dev/token
+```
+
+Rename the left-hand environment variables to match the app or SDK:
+
+```dotenv
+OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url
+OPENAI_API_KEY=envvault://openai-proxy/dev/token
+```
+
+The Admin UI shows the same snippet with a copy button after creating a proxy.
+
+## Policy Fields
+
+- `credential`: The named OS credential store entry used by the proxy.
+- `provider`: The proxy provider type. The MVP supports `generic` and
+  `openai-compatible`.
+- `auth_mode`: The upstream authentication mode. The MVP supports `bearer`.
+- `target_url`: The fixed provider API base URL the local proxy forwards to.
+- `allowed_paths` and `allowed_methods`: The proxy allowlist enforced before the
+  real provider key is added.
+- `local_token_ttl`: The local proxy bearer token lifetime for a child process.
+- `project binding`: The local approval tying proxy use to a path hash or git
+  remote plus root.
+
+## Secret Storage
+
+Credentials are stored in the OS credential store. Proxies point at named
+credential values. The config file stores non-secret policy and metadata only.
+
+EnvVault does not write provider API keys, database URLs, local proxy tokens, or
+Authorization header values into proxy config.
+
+## Project Binding
+
+The default binding mode is `git-remote-and-root`. First use requires a TTY
+confirmation that records the approved project identity in user config.
+Non-interactive use fails closed when the binding is unknown.
+
+Use `none` only for low-risk local workflows. Use `path-hash` when a project has
+no git remote but still needs local binding.

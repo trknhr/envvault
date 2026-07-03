@@ -8,7 +8,8 @@ Symptoms:
 
 - `ENVVAULT_KEYRING_UNAVAILABLE`
 - `ENVVAULT_KEYRING_LOCKED`
-- Credential add or profile use fails while reading the OS credential store.
+- Credential add, credential resolution, or proxy use fails while reading the OS
+  credential store.
 
 Actions:
 
@@ -22,7 +23,7 @@ Actions:
 Symptoms:
 
 - `envvault doctor` reports config, data, cache, or SQLite integrity errors.
-- Profiles cannot be loaded.
+- Optional proxies cannot be loaded.
 
 Actions:
 
@@ -30,7 +31,7 @@ Actions:
 2. Restore from the migration backup if available.
 3. If recovery is not possible, run `envvault reset --dry-run`, then
    `envvault reset --yes`.
-4. Recreate credentials and profiles.
+4. Recreate credentials and optional proxies.
 
 ## Stale Runtime Lock or Crash
 
@@ -54,7 +55,7 @@ Actions:
 
 Actions:
 
-1. Stop using affected profiles.
+1. Stop using affected credentials or proxies.
 2. Rotate affected provider credentials in the upstream provider.
 3. Re-add the rotated value to EnvVault.
 4. Scan config, data, cache, logs, audit files, shell history, and temporary

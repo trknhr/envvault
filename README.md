@@ -11,13 +11,13 @@ The default flow stores the real credential in the OS credential store and keeps
 only a repository-safe reference in `.env`:
 
 ```dotenv
-OPENAI_API_KEY=envvault://openai/dev/value
-DATABASE_URL=envvault://database/dev/value
+OPENAI_API_KEY=envvault://openai/dev
+DATABASE_URL=envvault://database/dev
 ```
 
-For APIs and SDKs that accept a custom endpoint, EnvVault also has an optional
-localhost proxy mode. The child process receives a local proxy URL and local
-token instead of the real provider key:
+For APIs and SDKs that accept a custom endpoint, EnvVault also has an
+experimental localhost proxy mode. The child process receives a local proxy URL
+and local token instead of the real provider key:
 
 ```dotenv
 OPENAI_BASE_URL=envvault://openai/dev/base-url
@@ -37,17 +37,17 @@ Common commands:
 ```bash
 envvault admin start
 envvault credential list
-envvault profile list
-envvault exec --env OPENAI_API_KEY=envvault://openai/dev/value -- npm run dev
+envvault proxy list
+envvault exec --env OPENAI_API_KEY=envvault://openai/dev -- npm run dev
 envvault exec --env-file .env -- npm start
 ```
 
 `envvault admin start` starts the local browser UI for adding credentials and
-creating proxy or inject profiles. The printed URL includes a per-run local
-admin token. The UI does not display stored credential values.
+creating optional proxies. The printed URL includes a per-run local admin token.
+The UI does not display stored credential values.
 
-The simple inject flow intentionally passes the resolved credential to the child
-process environment at launch. Use proxy profiles when an API client accepts a
+The default flow intentionally passes the resolved credential to the child
+process environment at launch. Use proxy mode only when an API client accepts a
 custom base URL and you want to avoid passing the real provider key to the child
 process.
 
@@ -55,7 +55,7 @@ process.
 
 EnvVault Local MVP reduces credential exposure; it does not create a sandbox.
 
-- A child process can read any local proxy token or raw injected value placed in
+- A child process can read any credential value or local proxy token placed in
   its environment until it exits.
 - A process running as the same OS user can use the same OS credential store
   permissions as the user.
@@ -63,20 +63,16 @@ EnvVault Local MVP reduces credential exposure; it does not create a sandbox.
   compromised.
 - EnvVault does not redact prompts, stdout, stderr, HTTP bodies, shell history,
   or application logs outside its own outputs.
-- External API credentials are protected only when the app can be pointed at the
-  EnvVault localhost proxy. If an SDK or tool insists on receiving the raw
-  provider key directly, EnvVault cannot keep that key out of the child process
-  environment.
-- `envvault://<profile>/value` intentionally injects the raw credential into the
-  child process environment. This is the default compatibility path.
-- Proxy mode reduces provider-key exposure, but it requires the app or SDK to
+- Direct `envvault://<credential>` references resolve to raw credential values.
+  This is the default compatibility path for local development.
+- Proxy mode can reduce provider-key exposure, but it requires the app or SDK to
   accept a custom base URL and bearer token.
 
 ## Status
 
 This repository contains the local-first implementation path: strict reference
-parsing, profile policy, OS keyring abstraction, browser admin server, raw
-inject profiles, provider proxy profiles, process environment construction,
+parsing, OS keyring abstraction, browser admin server, direct credential
+resolution, optional provider proxies, process environment construction,
 metadata-only audit records, reset/doctor support, runnable examples, and
 acceptance fixtures.
 
@@ -91,7 +87,7 @@ publishes tagged release archives and updates the Homebrew tap.
 
 - [Documentation site](https://trknhr.github.io/envvault/)
 - [Quickstart](docs/quickstart.md)
-- [Profiles](docs/profiles.md)
+- [Proxies](docs/proxies.md)
 - [Threat model](docs/threat-model.md)
 - [Uninstall](docs/uninstall.md)
 - [Recovery](docs/recovery.md)
@@ -125,7 +121,7 @@ Restart your agent after installing or updating skills.
 ## Examples
 
 - [Gemini SDK app example](examples/gemini-sdk-app/README.md)
-- [Raw inject app example](examples/inject-app/README.md)
+- [Env app example](examples/env-app/README.md)
 - [OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)
 - [Gemini AI SDK proxy app example](examples/gemini-ai-sdk-proxy-app/README.md)
 
@@ -139,5 +135,5 @@ go vet ./...
 go test -race ./...
 ```
 
-No command should print raw provider keys, raw injected credentials,
-Authorization headers, or local proxy bearer tokens.
+No command should print raw provider keys, resolved credentials, Authorization
+headers, or local proxy bearer tokens.

@@ -4,7 +4,7 @@ const githubBase = 'https://github.com/trknhr/envvault/blob/main'
 
 export default defineConfig({
   title: 'EnvVault',
-  description: 'Local-first credential launcher and localhost credential proxy.',
+  description: 'Local-first credential launcher with optional localhost proxy.',
   base: '/envvault/',
   outDir: '../site',
   lastUpdated: true,
@@ -25,7 +25,7 @@ export default defineConfig({
         items: [
           { text: 'Overview', link: '/' },
           { text: 'Quickstart', link: '/quickstart' },
-          { text: 'Profiles', link: '/profiles' }
+          { text: 'Proxies', link: '/proxies' }
         ]
       },
       {

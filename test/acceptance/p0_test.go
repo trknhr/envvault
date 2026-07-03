@@ -579,7 +579,7 @@ func TestATSEC001LocalFlowDoesNotPersistRawLongLivedSecretMarkers(t *testing.T) 
 	}
 }
 
-func TestATLOG001SecretRedactionAcrossIssueFailuresAndCrashOutput(t *testing.T) {
+func TestATLOG001SecretRedactionAcrossExecSuccessAndMissingCredential(t *testing.T) {
 	root := t.TempDir()
 	projectRoot := filepath.Join(root, "project")
 	if err := os.MkdirAll(projectRoot, 0o700); err != nil {
@@ -590,173 +590,47 @@ func TestATLOG001SecretRedactionAcrossIssueFailuresAndCrashOutput(t *testing.T) 
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
 	quietChild := buildFixture(t, findRepoRoot(t), "exit-code")
-	auditPath := filepath.Join(root, "data", "audit.jsonl")
 	forbidden := []string{
-		"jwt-canary-success",
-		"jwt-canary-failure",
+		"stored-credential-canary",
 		"parent-secret-canary",
 		"hmac-secret-canary",
 		"signing-secret-canary",
 		"Authorization: Bearer",
-		"crash-output-canary",
 	}
 
-	successRuntime := newAcceptanceDeriveRuntime(t, http.StatusOK, `{"token":{"token":"jwt-canary-success"}}`)
-	success := runAcceptanceLogExec(t, projectRoot, envFile, quietChild, successRuntime, successRuntime.Client(), auditPath)
+	successSecrets := keyring.NewMemoryStore()
+	putAcceptanceSecret(t, successSecrets, keyring.CredentialValue("backend-a/dev"), "stored-credential-canary")
+	successApp := cli.New(cli.Options{
+		ParentEnv:       credentialExecParentEnv(),
+		ProjectStartDir: projectRoot,
+		Secrets:         successSecrets,
+		Runner:          process.Runner{},
+	})
+	success := runAcceptanceCommand(t, successApp, []string{"exec", "--env-file", envFile, "--", quietChild, "--code", "0"})
 	if success.code != 0 {
 		t.Fatalf("success exec code = %d, want 0; stdout=%q stderr=%q", success.code, success.stdout, success.stderr)
 	}
 	assertStringDoesNotContainAny(t, "successful exec output", success.stdout+success.stderr, forbidden)
-	assertAuditFileDoesNotContainAny(t, auditPath, forbidden)
 
-	failureRuntime := newAcceptanceDeriveRuntime(t, http.StatusInternalServerError, "jwt-canary-failure parent-secret-canary Authorization: Bearer hmac-secret-canary")
-	failure := runAcceptanceLogExec(t, projectRoot, envFile, quietChild, failureRuntime, failureRuntime.Client(), auditPath)
-	if failure.code != 1 {
-		t.Fatalf("HTTP 500 exec code = %d, want 1; stdout=%q stderr=%q", failure.code, failure.stdout, failure.stderr)
-	}
-	if failure.stdout != "" {
-		t.Fatalf("HTTP 500 stdout = %q, want empty", failure.stdout)
-	}
-	if !strings.Contains(failure.stderr, string(clerr.IssueFailed)) || !strings.Contains(failure.stderr, "HTTP 500") {
-		t.Fatalf("HTTP 500 stderr = %q, want redacted issue failure", failure.stderr)
-	}
-	assertStringDoesNotContainAny(t, "HTTP 500 exec output", failure.stdout+failure.stderr, forbidden)
-	assertAuditFileDoesNotContainAny(t, auditPath, forbidden)
-
-	crashRuntime := runtimetalos.NewRuntime(runtimetalos.RuntimeOptions{
-		BinaryPath:    os.Args[0],
-		Args:          []string{"-test.run=TestAcceptanceLeakyTalosRuntimeHelperProcess", "--", "leak-and-sleep", "{address}"},
-		HealthPath:    "/healthz",
-		StartTimeout:  50 * time.Millisecond,
-		StopTimeout:   time.Second,
-		PollInterval:  5 * time.Millisecond,
-		ExtraEnv:      []string{"ENVVAULT_ACCEPTANCE_TALOS_RUNTIME_HELPER=1"},
-		StopSignal:    os.Interrupt,
-		DialTimeout:   10 * time.Millisecond,
-		PortCloseWait: time.Second,
-	})
-	crash := runAcceptanceLogExec(t, projectRoot, envFile, quietChild, crashRuntime, nil, auditPath)
-	if crash.code != 1 {
-		t.Fatalf("runtime crash exec code = %d, want 1; stdout=%q stderr=%q", crash.code, crash.stdout, crash.stderr)
-	}
-	if crash.stdout != "" {
-		t.Fatalf("runtime crash stdout = %q, want empty", crash.stdout)
-	}
-	if !strings.Contains(crash.stderr, string(clerr.RuntimeUnavailable)) {
-		t.Fatalf("runtime crash stderr = %q, want runtime unavailable", crash.stderr)
-	}
-	assertStringDoesNotContainAny(t, "runtime crash exec output", crash.stdout+crash.stderr, forbidden)
-	assertAuditFileDoesNotContainAny(t, auditPath, forbidden)
-}
-
-func TestAcceptanceLeakyTalosRuntimeHelperProcess(t *testing.T) {
-	if os.Getenv("ENVVAULT_ACCEPTANCE_TALOS_RUNTIME_HELPER") != "1" {
-		return
-	}
-	args := os.Args
-	separator := -1
-	for index, arg := range args {
-		if arg == "--" {
-			separator = index
-			break
-		}
-	}
-	if separator == -1 || separator+1 >= len(args) || args[separator+1] != "leak-and-sleep" {
-		_, _ = os.Stderr.WriteString("missing acceptance helper mode\n")
-		os.Exit(2)
-	}
-	_, _ = os.Stderr.WriteString("crash-output-canary jwt-canary-failure parent-secret-canary Authorization: Bearer hmac-secret-canary\n")
-	time.Sleep(5 * time.Second)
-	os.Exit(0)
-}
-
-type acceptanceDeriveRuntime struct {
-	server *httptest.Server
-	status int
-	body   string
-}
-
-func newAcceptanceDeriveRuntime(t *testing.T, status int, body string) *acceptanceDeriveRuntime {
-	t.Helper()
-	runtime := &acceptanceDeriveRuntime{
-		status: status,
-		body:   body,
-	}
-	server := httptest.NewUnstartedServer(http.HandlerFunc(runtime.handle))
-	runtime.server = server
-	t.Cleanup(server.Close)
-	return runtime
-}
-
-func (r *acceptanceDeriveRuntime) Client() *http.Client {
-	return r.server.Client()
-}
-
-func (r *acceptanceDeriveRuntime) Start(context.Context) (runtimetalos.Endpoint, error) {
-	r.server.Start()
-	return runtimetalos.Endpoint{URL: r.server.URL, Address: r.server.Listener.Addr().String()}, nil
-}
-
-func (r *acceptanceDeriveRuntime) Stop(context.Context) error {
-	r.server.Close()
-	return nil
-}
-
-func (r *acceptanceDeriveRuntime) handle(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost || req.URL.Path != "/v2alpha1/admin/apiKeys:derive" {
-		http.NotFound(w, req)
-		return
-	}
-	if r.status < 200 || r.status >= 300 {
-		http.Error(w, r.body, r.status)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(r.status)
-	_, _ = w.Write([]byte(r.body))
-}
-
-func runAcceptanceLogExec(t *testing.T, projectRoot, envFile, child string, runtime talosruntime.Runtime, httpClient *http.Client, auditPath string) tokenRunResult {
-	t.Helper()
-	secrets := keyring.NewMemoryStore()
-	putAcceptanceSecret(t, secrets, keyring.TalosHMACKey(), "hmac-secret-canary")
-	putAcceptanceSecret(t, secrets, keyring.TalosSigningKey("current"), "signing-secret-canary")
-	putAcceptanceSecret(t, secrets, keyring.ProfileParentKey("backend-a/dev"), "parent-secret-canary")
-	profiles := fakeProfiles()
-	issuer := local.NewIssuerWithAudit(profiles, secrets, talosruntime.Client{
-		Runtime: runtime,
-		HTTP:    httpClient,
-	}, &audit.FileRecorder{Path: auditPath})
-	parent := append([]string{}, os.Environ()...)
-	parent = append(parent,
-		"ENVVAULT_TALOS_HMAC_SECRET=hmac-secret-canary",
-		"ENVVAULT_TALOS_SIGNING_KEY=signing-secret-canary",
-		"ENVVAULT_PROFILE_PARENT_KEY=parent-secret-canary",
-	)
-	app := cli.New(cli.Options{
-		ParentEnv:       parent,
+	failureApp := cli.New(cli.Options{
+		ParentEnv:       credentialExecParentEnv(),
 		ProjectStartDir: projectRoot,
-		Profiles:        profiles,
-		Issuer:          issuer,
+		Secrets:         keyring.NewMemoryStore(),
 		Runner:          process.Runner{},
 	})
-
-	var stdout, stderr bytes.Buffer
-	code := app.Run(context.Background(), []string{
-		"exec",
-		"--env-file", envFile,
-		"--", child, "--code", "0",
-	}, &stdout, &stderr)
-	return tokenRunResult{code: code, stdout: stdout.String(), stderr: stderr.String()}
-}
-
-func assertAuditFileDoesNotContainAny(t *testing.T, path string, forbidden []string) {
-	t.Helper()
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile(audit) error = %v", err)
+	var failureStdout, failureStderr bytes.Buffer
+	failureCode := failureApp.Run(context.Background(), []string{"exec", "--env-file", envFile, "--", quietChild, "--code", "0"}, &failureStdout, &failureStderr)
+	failure := tokenRunResult{code: failureCode, stdout: failureStdout.String(), stderr: failureStderr.String()}
+	if failure.code != 1 {
+		t.Fatalf("missing credential exec code = %d, want 1; stdout=%q stderr=%q", failure.code, failure.stdout, failure.stderr)
 	}
-	assertStringDoesNotContainAny(t, "audit file", string(body), forbidden)
+	if failure.stdout != "" {
+		t.Fatalf("missing credential stdout = %q, want empty", failure.stdout)
+	}
+	if !strings.Contains(failure.stderr, string(clerr.KeyringUnavailable)) {
+		t.Fatalf("missing credential stderr = %q, want keyring failure", failure.stderr)
+	}
+	assertStringDoesNotContainAny(t, "missing credential exec output", failure.stdout+failure.stderr, forbidden)
 }
 
 func assertStringDoesNotContainAny(t *testing.T, label string, body string, forbidden []string) {
@@ -766,6 +640,16 @@ func assertStringDoesNotContainAny(t *testing.T, label string, body string, forb
 			t.Fatalf("%s leaked forbidden marker %q: %q", label, marker, body)
 		}
 	}
+}
+
+func credentialExecParentEnv() []string {
+	parent := append([]string{}, os.Environ()...)
+	return append(parent,
+		"TOKEN=raw-parent-secret",
+		"ENVVAULT_TALOS_HMAC_SECRET=hmac-secret-canary",
+		"ENVVAULT_TALOS_SIGNING_KEY=signing-secret-canary",
+		"ENVVAULT_PROFILE_PARENT_KEY=parent-secret-canary",
+	)
 }
 
 type acceptanceInstaller struct{}

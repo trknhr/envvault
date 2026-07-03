@@ -49,12 +49,8 @@ func helpText(target []string) (string, bool) {
 		return rootHelp, true
 	case "credential", "credential add", "credential list":
 		return credentialHelp, true
-	case "profile", "profile list":
-		return profileHelp, true
-	case "proxy", "proxy add":
+	case "proxy", "proxy add", "proxy list":
 		return proxyHelp, true
-	case "inject", "inject add":
-		return injectHelp, true
 	case "exec":
 		return execHelp, true
 	case "admin":
@@ -88,10 +84,9 @@ Common commands:
   envvault admin start
   envvault credential add <name> --value-stdin
   envvault credential list
+  envvault exec --env KEY=envvault://<credential> -- <command>
   envvault proxy add <name> --credential <credential> --target <url> --allow-path <path> --allow-method <method>
-  envvault inject add <name> --credential <credential>
-  envvault profile list
-  envvault exec --env KEY=envvault://profile/output -- <command>
+  envvault proxy list
   envvault version
 
 Run "envvault <command> --help" for command help.
@@ -109,19 +104,9 @@ Example:
   printf 'secret\n' | envvault credential add openai-key/dev --value-stdin
 `
 
-const profileHelp = `Usage:
-  envvault profile list
-
-Commands:
-  list    Print profile metadata without credential values.
-
-Profile creation:
-  envvault proxy add <name> --credential <credential> [options]
-  envvault inject add <name> --credential <credential> [options]
-`
-
 const proxyHelp = `Usage:
   envvault proxy add <name> --credential <credential> --target <url> --allow-path <path> --allow-method <method> [options]
+  envvault proxy list
 
 Options:
   --credential <name>       Credential name stored by envvault credential add.
@@ -131,17 +116,8 @@ Options:
   --allow-method <method>   Allowed request method. Repeatable.
   --project-binding <mode>  none, path-hash, or git-remote-and-root.
 
-The command prints envvault://.../base-url and envvault://.../token references.
-`
-
-const injectHelp = `Usage:
-  envvault inject add <name> --credential <credential> [options]
-
-Options:
-  --credential <name>       Credential name stored by envvault credential add.
-  --project-binding <mode>  none, path-hash, or git-remote-and-root.
-
-Inject is the default compatibility path. It passes the raw credential value to the child process.
+Proxy is an advanced mode for apps that accept a custom base URL and bearer token.
+The add command prints envvault://.../base-url and envvault://.../token references.
 `
 
 const execHelp = `Usage:
@@ -154,6 +130,7 @@ Options:
 
 Examples:
   envvault exec --env-file .env -- npm run dev
+  envvault exec --env OPENAI_API_KEY=envvault://openai/dev -- npm run dev
   envvault exec --env OPENAI_BASE_URL=envvault://openai/dev/base-url --env OPENAI_API_KEY=envvault://openai/dev/token -- npm run dev
 `
 
@@ -170,11 +147,11 @@ Commands:
 
 const listHelp = `Usage:
   envvault list credentials
-  envvault list profiles
+  envvault list proxies
 
 Aliases:
   envvault credential list
-  envvault profile list
+  envvault proxy list
 `
 
 const versionHelp = `Usage:

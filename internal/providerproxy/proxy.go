@@ -17,9 +17,7 @@ import (
 
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/envref"
-	"github.com/trknhr/envvault/internal/issuer"
 	"github.com/trknhr/envvault/internal/keyring"
-	"github.com/trknhr/envvault/internal/process"
 	"github.com/trknhr/envvault/internal/profile"
 	"github.com/trknhr/envvault/internal/projectbinding"
 )
@@ -31,7 +29,6 @@ type ProfileResolver interface {
 type EnvResolver struct {
 	Profiles ProfileResolver
 	Secrets  keyring.Store
-	Issuer   issuer.Issuer
 	HTTP     *http.Client
 	Now      func() time.Time
 
@@ -51,10 +48,13 @@ func (r *EnvResolver) ResolveReference(ctx context.Context, ref envref.Reference
 			return lease.BaseURL, nil
 		}
 		return lease.Token, nil
-	case envref.PartValue:
-		return r.injectValue(ctx, ref.Profile, identity)
 	case envref.PartDefault:
-		return r.issueProcessToken(ctx, ref.Profile, identity)
+		secret, err := r.secret(ctx, ref.Profile)
+		if err != nil {
+			return "", err
+		}
+		defer zero(secret)
+		return string(secret), nil
 	default:
 		return "", clerr.New(clerr.ReferenceInvalid, "unknown reference part")
 	}
@@ -136,56 +136,6 @@ func (r *EnvResolver) ensureLease(ctx context.Context, name string, identity pro
 	r.servers = append(r.servers, server)
 	r.mu.Unlock()
 	return lease, nil
-}
-
-func (r *EnvResolver) issueProcessToken(ctx context.Context, name string, identity projectbinding.Identity) (string, error) {
-	p, err := r.profile(name)
-	if err != nil {
-		return "", err
-	}
-	if p.Kind != profile.KindProcess {
-		return "", clerr.New(clerr.ProfileKindMismatch, name)
-	}
-	if r.Issuer == nil {
-		return "", clerr.New(clerr.IssueFailed, "process token issuer is unavailable")
-	}
-	if err := projectbinding.Check(p.ProjectBinding, identity); err != nil {
-		return "", err
-	}
-	claims, err := process.ProcessClaims(p, identity)
-	if err != nil {
-		return "", err
-	}
-	credential, err := r.Issuer.Issue(ctx, issuer.Grant{
-		Profile:  p.Name,
-		Resource: p.Resource,
-		Scopes:   append([]string(nil), p.Scopes...),
-		TTL:      p.TokenTTL,
-		Claims:   claims,
-	})
-	if err != nil {
-		return "", err
-	}
-	return credential.AccessToken, nil
-}
-
-func (r *EnvResolver) injectValue(ctx context.Context, name string, identity projectbinding.Identity) (string, error) {
-	p, err := r.profile(name)
-	if err != nil {
-		return "", err
-	}
-	if p.Kind != profile.KindInject {
-		return "", clerr.New(clerr.ProfileKindMismatch, name)
-	}
-	if err := projectbinding.Check(p.ProjectBinding, identity); err != nil {
-		return "", err
-	}
-	secret, err := r.secret(ctx, p.CredentialName)
-	if err != nil {
-		return "", err
-	}
-	defer zero(secret)
-	return string(secret), nil
 }
 
 func (r *EnvResolver) profile(name string) (profile.Profile, error) {

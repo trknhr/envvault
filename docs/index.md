@@ -20,46 +20,43 @@ Register a provider key once. Use the Admin UI for interactive setup:
 envvault admin start
 ```
 
-The printed localhost URL opens forms for adding credentials and creating proxy
-or inject profiles. Stored credential values are not displayed by the UI.
+The printed localhost URL opens forms for adding credentials and creating
+optional proxies. Stored credential values are not displayed by the UI.
 
 For scripts or repeatable tests, use the equivalent CLI path:
 
 ```bash
-printf 'YOUR_GEMINI_API_KEY\n' | envvault credential add gemini-api-key \
+printf 'YOUR_GEMINI_API_KEY\n' | envvault credential add gemini/dev \
   --value-stdin
-```
-
-Create an inject profile:
-
-```bash
-envvault inject add gemini/dev \
-  --credential gemini-api-key \
-  --project-binding none
 ```
 
 Use a repository-safe reference in the app's `.env` file or pass the same
 reference with `envvault exec --env`:
 
 ```dotenv
-GEMINI_API_KEY=envvault://gemini/dev/value
+GEMINI_API_KEY=envvault://gemini/dev
 ```
 
 Launch the app through EnvVault:
 
 ```bash
 envvault exec \
-  --env GEMINI_API_KEY=envvault://gemini/dev/value \
+  --env GEMINI_API_KEY=envvault://gemini/dev \
   -- npm start
 
 envvault exec --env-file .env -- npm start
 ```
 
-## Credential flows
+## Credential Flows
 
-- **Inject**: use `envvault://profile/value` for the default compatibility path.
-- **Proxy**: use the generated `envvault://profile/base-url` and `envvault://profile/token` references when an app accepts a custom endpoint and bearer token and you do not want to pass the real provider key to the child process.
-- **Local policy**: store non-secret profile policy locally and keep provider credentials in the OS credential store.
+- **Direct credential**: use `envvault://<credential>` for the default local
+  development path. The child process receives the real value in its
+  environment.
+- **Proxy**: use generated `envvault://<proxy>/base-url` and
+  `envvault://<proxy>/token` references when an app accepts a custom endpoint
+  and bearer token.
+- **Local state**: store only credential names and proxy policy in config; store
+  real credential values in the OS credential store.
 
 ## Agent Skill
 
@@ -79,7 +76,7 @@ Use the `skills` CLI options to choose global/project scope or a specific
 agent, for example `-g` for global installation or `-a <agent>`.
 Restart your agent after installing or updating skills.
 
-## Advanced API proxy
+## Advanced API Proxy
 
 The [Gemini AI SDK proxy example](/examples/gemini-ai-sdk-proxy-app) shows the
 optional proxy workflow: a provider key stays in the OS credential store while

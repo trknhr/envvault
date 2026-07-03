@@ -22,7 +22,7 @@ const { text } = await generateText({
 console.log(text);
 ```
 
-The proxy profile command prints this `.env` snippet:
+The proxy command prints this `.env` snippet:
 
 ```dotenv
 ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url
@@ -37,7 +37,7 @@ localhost proxy URL and `ENVVAULT_PROXY_TOKEN` to a local-only bearer token. The
 real Gemini API key stays in the OS credential store and is attached only by the
 proxy when forwarding an allowed request.
 
-The EnvVault URI ends with `/base-url` because the proxy profile automatically
+The EnvVault URI ends with `/base-url` because the proxy automatically
 provides a local proxy URL output for the `gemini-openai/dev` profile. It is not
 a separate credential to register.
 
@@ -60,7 +60,7 @@ printf 'YOUR_GEMINI_API_KEY\n' | ./bin/envvault credential add gemini-api-key \
   --value-stdin
 ```
 
-Register a proxy profile for Gemini's OpenAI-compatible API:
+Register a proxy for Gemini's OpenAI-compatible API:
 
 ```bash
 ./bin/envvault proxy add gemini-openai/dev \
@@ -92,6 +92,6 @@ Or use the checked-in example `.env` file:
   npm --prefix examples/gemini-ai-sdk-proxy-app start
 ```
 
-This version is different from `examples/gemini-sdk-app`: that example injects
-the raw provider key for the official Gemini SDK, while this example gives the
+This version is different from `examples/gemini-sdk-app`: that example passes
+the raw provider key to the official Gemini SDK, while this example gives the
 child process only a local proxy token.

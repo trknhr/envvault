@@ -31,6 +31,7 @@ func (s Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/profiles", s.handleProfiles)
+	mux.HandleFunc("/api/proxies", s.handleProxies)
 	mux.HandleFunc("/api/credentials", s.handleCredentials)
 	mux.HandleFunc("/api/inject-profiles", s.handleInjectProfiles)
 	mux.HandleFunc("/api/proxy-profiles", s.handleProxyProfiles)
@@ -119,6 +120,47 @@ func (s Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 		return profiles[i].Name < profiles[j].Name
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"profiles": profiles})
+}
+
+func (s Server) handleProxies(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleProxyList(w, r)
+	case http.MethodPost:
+		s.handleProxyCreate(w, r)
+	default:
+		w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPost}, ", "))
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s Server) handleProxyList(w http.ResponseWriter, _ *http.Request) {
+	cfg, err := config.LoadOrDefault(s.ConfigPath)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	proxies := make([]profileSummary, 0, len(cfg.Profiles))
+	for name, stored := range cfg.Profiles {
+		if stored.Kind != profile.KindProviderProxy {
+			continue
+		}
+		proxies = append(proxies, profileSummary{
+			Name:           name,
+			Kind:           string(stored.Kind),
+			CredentialName: stored.CredentialName,
+			Provider:       stored.Provider,
+			TargetURL:      stored.TargetURL,
+			AllowedPaths:   append([]string(nil), stored.AllowedPaths...),
+			AllowedMethods: append([]string(nil), stored.AllowedMethods...),
+			ProjectBinding: string(stored.ProjectBinding.Mode),
+			Dotenv:         profileDotenv(name, stored),
+		})
+	}
+	sort.Slice(proxies, func(i, j int) bool {
+		return proxies[i].Name < proxies[j].Name
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"proxies": proxies})
 }
 
 func (s Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
@@ -215,6 +257,10 @@ func (s Server) handleProxyProfiles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	s.handleProxyCreate(w, r)
+}
+
+func (s Server) handleProxyCreate(w http.ResponseWriter, r *http.Request) {
 	var request proxyProfileRequest
 	if err := readJSON(r, &request); err != nil {
 		writeError(w, err)
@@ -551,20 +597,7 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
         </form>
       </section>
       <section>
-        <h2>Inject Profile</h2>
-        <form id="inject-profile-form">
-          <label>Name<input name="name" autocomplete="off" placeholder="database/dev"></label>
-          <label>Credential<input name="credential" autocomplete="off" list="credential-options" placeholder="database-url/dev"></label>
-          <label>Project Binding
-            <select name="project_binding">
-              <option value="none">none</option>
-            </select>
-          </label>
-          <button type="submit">Add Inject Profile</button>
-        </form>
-      </section>
-      <section>
-        <h2>Proxy Profile</h2>
+        <h2>Proxy</h2>
         <form id="proxy-profile-form">
           <label>Name<input name="name" autocomplete="off" placeholder="openai/dev"></label>
           <label>Credential<input name="credential" autocomplete="off" list="credential-options" placeholder="openai-key/dev"></label>
@@ -582,7 +615,7 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
               <option value="none">none</option>
             </select>
           </label>
-          <button type="submit">Add Proxy Profile</button>
+          <button type="submit">Add Proxy</button>
         </form>
         <div id="proxy-env-output" class="snippet-output" hidden>
           <div class="snippet-header">
@@ -600,18 +633,18 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
         <div class="toolbar"><button id="refresh" class="secondary" type="button">Refresh</button></div>
         <table>
           <thead>
-            <tr><th>Name</th></tr>
+            <tr><th>Name</th><th>Reference</th></tr>
           </thead>
           <tbody id="credentials"></tbody>
         </table>
       </section>
       <section>
-        <h2>Profiles</h2>
+        <h2>Proxies</h2>
         <table>
           <thead>
-            <tr><th>Name</th><th>Kind</th><th>Credential</th><th>Target</th><th>.env</th></tr>
+            <tr><th>Name</th><th>Credential</th><th>Target</th><th>.env</th></tr>
           </thead>
-          <tbody id="profiles"></tbody>
+          <tbody id="proxies"></tbody>
         </table>
       </section>
     </div>
@@ -622,7 +655,7 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
     const statusNode = document.getElementById("status");
     const credentialsNode = document.getElementById("credentials");
     const credentialOptionsNode = document.getElementById("credential-options");
-    const profilesNode = document.getElementById("profiles");
+    const proxiesNode = document.getElementById("proxies");
     const proxyEnvOutputNode = document.getElementById("proxy-env-output");
     const proxyEnvSnippetNode = document.getElementById("proxy-env-snippet");
     const copyProxySnippetButton = document.getElementById("copy-proxy-snippet");
@@ -631,6 +664,7 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
       "Authorization": "Bearer " + envvaultToken
     });
     const splitList = (value) => value.split(",").map((item) => item.trim()).filter(Boolean);
+    const formatCredentialRef = (credential) => "envvault://" + credential;
     const setStatus = (message) => { statusNode.textContent = message; };
     const request = async (path, options) => {
       const response = await fetch(path, {...options, headers: headers()});
@@ -644,9 +678,17 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
       const data = await request("/api/credentials", {method: "GET"});
       credentialsNode.replaceChildren(...data.credentials.map((credential) => {
         const row = document.createElement("tr");
-        const cell = document.createElement("td");
-        cell.textContent = credential;
-        row.appendChild(cell);
+        const nameCell = document.createElement("td");
+        nameCell.textContent = credential;
+        row.appendChild(nameCell);
+        const refCell = document.createElement("td");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "secondary";
+        button.textContent = "Copy ref";
+        button.setAttribute("data-credential-ref", formatCredentialRef(credential));
+        refCell.appendChild(button);
+        row.appendChild(refCell);
         return row;
       }));
       credentialOptionsNode.replaceChildren(...data.credentials.map((credential) => {
@@ -655,11 +697,11 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
         return option;
       }));
     };
-    const refreshProfiles = async () => {
-      const data = await request("/api/profiles", {method: "GET"});
-      profilesNode.replaceChildren(...data.profiles.map((profile) => {
+    const refreshProxies = async () => {
+      const data = await request("/api/proxies", {method: "GET"});
+      proxiesNode.replaceChildren(...data.proxies.map((profile) => {
         const row = document.createElement("tr");
-        [profile.name, profile.kind, profile.credential || "", profile.target_url || ""].forEach((value) => {
+        [profile.name, profile.credential || "", profile.target_url || ""].forEach((value) => {
           const cell = document.createElement("td");
           cell.textContent = value;
           row.appendChild(cell);
@@ -678,7 +720,7 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
       }));
     };
     const refreshAll = async () => {
-      await Promise.all([refreshCredentials(), refreshProfiles()]);
+      await Promise.all([refreshCredentials(), refreshProxies()]);
     };
             const showProxySnippet = (dotenv) => {
               proxyEnvSnippetNode.textContent = dotenv || "";
@@ -713,12 +755,7 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
       name: form.get("name"),
       value: form.get("value")
     }));
-    bindForm("inject-profile-form", "/api/inject-profiles", (form) => ({
-      name: form.get("name"),
-      credential: form.get("credential"),
-      project_binding: form.get("project_binding")
-    }));
-    bindForm("proxy-profile-form", "/api/proxy-profiles", (form) => ({
+    bindForm("proxy-profile-form", "/api/proxies", (form) => ({
       name: form.get("name"),
       credential: form.get("credential"),
       provider: form.get("provider"),
@@ -737,10 +774,17 @@ var adminHTML = template.Must(template.New("admin").Parse(`<!doctype html>
             copyProxySnippetButton.addEventListener("click", async () => {
               await copyDotenv(proxyEnvSnippetNode.textContent, copyProxySnippetButton);
             });
-            profilesNode.addEventListener("click", async (event) => {
+            proxiesNode.addEventListener("click", async (event) => {
               const button = event.target.closest("button[data-dotenv]");
               if (!button) return;
               await copyDotenv(button.getAttribute("data-dotenv") || "", button);
+            });
+            credentialsNode.addEventListener("click", async (event) => {
+              const button = event.target.closest("button[data-credential-ref]");
+              if (!button) return;
+              await navigator.clipboard.writeText(button.getAttribute("data-credential-ref") || "");
+              copyButtonFeedback(button);
+              setStatus("Copied");
             });
     document.getElementById("refresh").addEventListener("click", () => refreshAll().catch(() => setStatus("Error")));
     refreshAll().catch(() => setStatus("Locked"));

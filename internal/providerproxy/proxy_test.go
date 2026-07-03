@@ -180,6 +180,23 @@ func TestEnvResolverRewritesReferencesToLocalProxy(t *testing.T) {
 	}
 }
 
+func TestEnvResolverResolvesDefaultReferenceToCredentialValue(t *testing.T) {
+	ctx := context.Background()
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(ctx, keyring.CredentialValue("openai/dev"), []byte("sk-real")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	resolver := &providerproxy.EnvResolver{Secrets: secrets}
+
+	value, err := resolver.ResolveReference(ctx, envref.Reference{Profile: "openai/dev", Part: envref.PartDefault}, projectbinding.Identity{})
+	if err != nil {
+		t.Fatalf("ResolveReference() error = %v", err)
+	}
+	if value != "sk-real" {
+		t.Fatalf("value = %q, want credential value", value)
+	}
+}
+
 type testProfiles map[string]profile.Profile
 
 func (p testProfiles) Profile(name string) (profile.Profile, error) {

@@ -3,7 +3,7 @@
 This example calls Gemini through EnvVault's localhost proxy using the AI SDK
 OpenAI-compatible provider.
 
-The proxy profile command prints this `.env` snippet:
+The proxy command prints this `.env` snippet:
 
 ```dotenv
 ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url
@@ -40,7 +40,7 @@ console.log(text);
 ## Register The Credential And Proxy
 
 For interactive setup, start the Admin UI and add a credential named
-`gemini-api-key`, then create a proxy profile named `gemini-openai/dev` with the
+`gemini-api-key`, then create a proxy named `gemini-openai/dev` with the
 settings below.
 
 ```bash
@@ -92,6 +92,6 @@ Or use the checked-in example `.env` file:
   npm --prefix examples/gemini-ai-sdk-proxy-app start
 ```
 
-This differs from the Gemini SDK inject example: that flow passes the raw
-provider key to the child process, while this flow gives the child process only
-a localhost proxy URL and local token.
+This differs from the Gemini SDK example: that flow passes the raw provider key
+to the child process, while this flow gives the child process only a localhost
+proxy URL and local token.

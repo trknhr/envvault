@@ -21,7 +21,6 @@ const (
 	PartDefault Part = ""
 	PartBaseURL Part = "base-url"
 	PartToken   Part = "token"
-	PartValue   Part = "value"
 )
 
 func ParseValue(value string) (Reference, bool, error) {
@@ -83,12 +82,16 @@ func parseProfile(raw string) (string, Part, error) {
 	part := PartDefault
 	last := segments[len(segments)-1]
 	switch Part(last) {
-	case PartBaseURL, PartToken, PartValue:
+	case PartBaseURL, PartToken:
 		if len(segments) == 1 {
 			return "", "", invalid("profile is required")
 		}
 		part = Part(last)
 		segments = segments[:len(segments)-1]
+	case "value":
+		if len(segments) > 1 {
+			return "", "", invalid("/value references are no longer supported; use envvault://<credential>")
+		}
 	}
 
 	return strings.Join(segments, "/"), part, nil

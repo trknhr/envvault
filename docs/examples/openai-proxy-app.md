@@ -9,12 +9,12 @@ OPENAI_API_KEY=envvault://openai/dev/token
 
 At runtime, `envvault exec` rewrites those values to a localhost proxy URL and a
 local-only bearer token. The real provider API key stays in the OS credential
-store and is injected only by the proxy when it forwards an allowed request.
+store and is added only by the proxy when it forwards an allowed request.
 
 ## Register The Credential And Proxy
 
 For interactive setup, start the Admin UI and add a credential named
-`openai-key/dev`, then create a proxy profile named `openai/dev` with the
+`openai-key/dev`, then create a proxy named `openai/dev` with the
 settings below.
 
 ```bash

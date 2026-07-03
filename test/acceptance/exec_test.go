@@ -4,27 +4,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/cli"
 	"github.com/trknhr/envvault/internal/issuer"
-	"github.com/trknhr/envvault/internal/issuer/talosruntime"
+	"github.com/trknhr/envvault/internal/keyring"
 	"github.com/trknhr/envvault/internal/process"
 	"github.com/trknhr/envvault/internal/profile"
-	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
-	verifierpkg "github.com/trknhr/envvault/pkg/verifier"
 )
 
-func TestExecResolvesReferenceAndDoesNotPassParentAuthority(t *testing.T) {
+func TestExecResolvesCredentialReferenceAndDoesNotPassParentAuthority(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	inspectChild := buildFixture(t, repoRoot, "inspect-child")
 	projectRoot := t.TempDir()
@@ -34,14 +29,7 @@ func TestExecResolvesReferenceAndDoesNotPassParentAuthority(t *testing.T) {
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
 
-	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
-	key := newAcceptanceRSAKey(t)
-	tokenIssuer := &signingAcceptanceIssuer{
-		key:    key,
-		issuer: "envvault-local:test-install",
-		now:    now,
-	}
-	app := newExecApp(projectRoot, fakeProfiles(), tokenIssuer)
+	app := newCredentialExecApp(t, projectRoot, map[string]string{"backend-a/dev": "stored-backend-token"})
 	var stdout, stderr bytes.Buffer
 
 	code := app.Run(context.Background(), []string{
@@ -57,25 +45,8 @@ func TestExecResolvesReferenceAndDoesNotPassParentAuthority(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &child); err != nil {
 		t.Fatalf("Unmarshal(inspect-child) error = %v; stdout=%q", err, stdout.String())
 	}
-	if got := child.Env["TOKEN"]; got == "" || got != tokenIssuer.token {
-		t.Fatalf("child TOKEN = %q, want issued JWT", got)
-	}
-	tokenVerifier, err := verifierpkg.New(verifierpkg.Options{
-		JWKS:          acceptanceJWKSForRSA(t, &key.PublicKey),
-		Issuer:        "envvault-local:test-install",
-		Resource:      "https://api.dev.example.com",
-		RequireIssuer: true,
-		Now:           func() time.Time { return now },
-		ClockSkew:     time.Second,
-	})
-	if err != nil {
-		t.Fatalf("verifier.New() error = %v", err)
-	}
-	if _, err := tokenVerifier.Verify(context.Background(), child.Env["TOKEN"], verifierpkg.Requirements{
-		Scopes:  []string{"repository:read"},
-		Purpose: "process",
-	}); err != nil {
-		t.Fatalf("child TOKEN is not a verifiable process JWT: %v", err)
+	if got := child.Env["TOKEN"]; got != "stored-backend-token" {
+		t.Fatalf("child TOKEN = %q, want credential value", got)
 	}
 	if got := child.Env["PLAIN"]; got != "file-value" {
 		t.Fatalf("child PLAIN = %q, want file value", got)
@@ -92,21 +63,17 @@ func TestExecResolvesReferenceAndDoesNotPassParentAuthority(t *testing.T) {
 	if strings.Contains(stdout.String(), "raw-parent-secret") || strings.Contains(stderr.String(), "raw-parent-secret") {
 		t.Fatalf("raw parent secret leaked; stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
-	if len(tokenIssuer.grants) != 1 {
-		t.Fatalf("issuer grants = %d, want 1", len(tokenIssuer.grants))
-	}
 	assertFileContent(t, envFile, originalEnv)
 }
 
-func TestExecUnknownProfileFailsClosedWithoutParentFallback(t *testing.T) {
+func TestExecUnknownCredentialFailsClosedWithoutParentFallback(t *testing.T) {
 	projectRoot := t.TempDir()
 	envFile := filepath.Join(projectRoot, ".env")
 	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://unknown/dev\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
 
-	tokenIssuer := &fakeIssuer{token: "leased-jwt"}
-	app := newExecApp(projectRoot, fakeProfiles(), tokenIssuer)
+	app := newCredentialExecApp(t, projectRoot, nil)
 	var stdout, stderr bytes.Buffer
 
 	code := app.Run(context.Background(), []string{
@@ -118,79 +85,14 @@ func TestExecUnknownProfileFailsClosedWithoutParentFallback(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("Run() code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), string(clerr.ProfileNotFound)) {
-		t.Fatalf("stderr = %q, want profile not found", stderr.String())
+	if !strings.Contains(stderr.String(), string(clerr.KeyringUnavailable)) {
+		t.Fatalf("stderr = %q, want keyring failure", stderr.String())
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want child not started", stdout.String())
 	}
-	if len(tokenIssuer.grants) != 0 {
-		t.Fatalf("issuer grants = %d, want 0", len(tokenIssuer.grants))
-	}
 	if strings.Contains(stderr.String(), "raw-parent-secret") {
 		t.Fatalf("stderr leaked parent fallback secret: %q", stderr.String())
-	}
-}
-
-func TestExecStartsChildAfterOnDemandRuntimeStops(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-	inspectChild := buildFixture(t, repoRoot, "inspect-child")
-	projectRoot := t.TempDir()
-	envFile := filepath.Join(projectRoot, ".env")
-	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://backend-a/dev\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile(.env) error = %v", err)
-	}
-
-	runtime := newAcceptanceTalosRuntime(t)
-	tokenIssuer := talosRuntimeIssuer{
-		parentKey: "parent-secret",
-		client: talosruntime.Client{
-			Runtime: runtime,
-			HTTP:    runtime.Client(),
-		},
-	}
-	app := newExecAppWithParentEnv(projectRoot, fakeProfiles(), tokenIssuer,
-		"ENVVAULT_INSPECT_PORTS="+runtime.Address(),
-	)
-	var stdout, stderr bytes.Buffer
-
-	code := app.Run(context.Background(), []string{
-		"exec",
-		"--env-file", envFile,
-		"--", inspectChild,
-	}, &stdout, &stderr)
-
-	if code != 0 {
-		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
-	}
-	var child inspectSnapshot
-	if err := json.Unmarshal(stdout.Bytes(), &child); err != nil {
-		t.Fatalf("Unmarshal(inspect-child) error = %v; stdout=%q", err, stdout.String())
-	}
-	if child.Env["TOKEN"] != "leased-jwt" {
-		t.Fatalf("child TOKEN = %q, want leased-jwt", child.Env["TOKEN"])
-	}
-	starts, stops := runtime.Counts()
-	if starts != 1 || stops != 1 {
-		t.Fatalf("runtime starts/stops = %d/%d, want 1/1", starts, stops)
-	}
-	childStartedAt, err := time.Parse(time.RFC3339Nano, child.StartedAt)
-	if err != nil {
-		t.Fatalf("parse child started_at %q: %v", child.StartedAt, err)
-	}
-	stoppedAt := runtime.StoppedAt()
-	if stoppedAt.IsZero() {
-		t.Fatal("runtime stopped_at was not recorded")
-	}
-	if childStartedAt.Before(stoppedAt) {
-		t.Fatalf("child started at %s before runtime stopped at %s", childStartedAt, stoppedAt)
-	}
-	status, ok := child.Ports[runtime.Address()]
-	if !ok {
-		t.Fatalf("child port checks = %#v, want %q", child.Ports, runtime.Address())
-	}
-	if status.Reachable {
-		t.Fatalf("runtime address %s was reachable from child", runtime.Address())
 	}
 }
 
@@ -201,7 +103,7 @@ func TestExecRejectsQueryReferenceBeforeStartingChild(t *testing.T) {
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
 
-	app := newExecApp(projectRoot, fakeProfiles(), &fakeIssuer{token: "leased-jwt"})
+	app := newCredentialExecApp(t, projectRoot, map[string]string{"backend-a/dev": "stored-backend-token"})
 	var stdout, stderr bytes.Buffer
 
 	code := app.Run(context.Background(), []string{
@@ -228,7 +130,7 @@ func TestExecPropagatesChildExitCode(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	exitCode := buildFixture(t, repoRoot, "exit-code")
 	projectRoot := t.TempDir()
-	app := newExecApp(projectRoot, fakeProfiles(), &fakeIssuer{token: "leased-jwt"})
+	app := newCredentialExecApp(t, projectRoot, nil)
 	var stdout, stderr bytes.Buffer
 
 	code := app.Run(context.Background(), []string{
@@ -280,82 +182,22 @@ func (f *fakeIssuer) Issue(_ context.Context, grant issuer.Grant) (issuer.Creden
 	}, nil
 }
 
-type talosRuntimeIssuer struct {
-	client    talosruntime.Client
-	parentKey string
-}
-
-func (i talosRuntimeIssuer) Issue(ctx context.Context, grant issuer.Grant) (issuer.Credential, error) {
-	return i.client.DeriveJWT(ctx, i.parentKey, grant)
-}
-
-type acceptanceTalosRuntime struct {
-	server    *httptest.Server
-	address   string
-	mu        sync.Mutex
-	starts    int
-	stops     int
-	stoppedAt time.Time
-}
-
-func newAcceptanceTalosRuntime(t *testing.T) *acceptanceTalosRuntime {
+func newCredentialExecApp(t *testing.T, projectRoot string, credentials map[string]string, extraParentEnv ...string) cli.App {
 	t.Helper()
-
-	runtime := &acceptanceTalosRuntime{}
-	server := httptest.NewUnstartedServer(http.HandlerFunc(runtime.handle))
-	runtime.server = server
-	runtime.address = server.Listener.Addr().String()
-	t.Cleanup(server.Close)
-
-	return runtime
-}
-
-func (r *acceptanceTalosRuntime) Client() *http.Client {
-	return r.server.Client()
-}
-
-func (r *acceptanceTalosRuntime) Address() string {
-	return r.address
-}
-
-func (r *acceptanceTalosRuntime) Counts() (int, int) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.starts, r.stops
-}
-
-func (r *acceptanceTalosRuntime) StoppedAt() time.Time {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.stoppedAt
-}
-
-func (r *acceptanceTalosRuntime) Start(context.Context) (runtimetalos.Endpoint, error) {
-	r.mu.Lock()
-	r.starts++
-	r.mu.Unlock()
-
-	r.server.Start()
-	return runtimetalos.Endpoint{URL: r.server.URL, Address: r.address}, nil
-}
-
-func (r *acceptanceTalosRuntime) Stop(context.Context) error {
-	r.server.Close()
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.stops++
-	r.stoppedAt = time.Now().UTC()
-	return nil
-}
-
-func (r *acceptanceTalosRuntime) handle(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost || req.URL.Path != "/v2alpha1/admin/apiKeys:derive" {
-		http.NotFound(w, req)
-		return
+	secrets := keyring.NewMemoryStore()
+	for name, value := range credentials {
+		if err := secrets.Put(context.Background(), keyring.CredentialValue(name), []byte(value)); err != nil {
+			t.Fatalf("Put(%q) error = %v", name, err)
+		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"token":{"token":"leased-jwt"}}`))
+	parent := credentialExecParentEnv()
+	parent = append(parent, extraParentEnv...)
+	return cli.New(cli.Options{
+		ParentEnv:       parent,
+		ProjectStartDir: projectRoot,
+		Secrets:         secrets,
+		Runner:          process.Runner{},
+	})
 }
 
 func newExecApp(projectRoot string, profiles fakeProfileResolver, tokenIssuer issuer.Issuer) cli.App {

@@ -55,8 +55,8 @@ func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
 		"Usage:",
 		"envvault version",
 		"envvault credential list",
-		"envvault profile list",
-		"envvault exec --env KEY=envvault://profile/output -- <command>",
+		"envvault proxy list",
+		"envvault exec --env KEY=envvault://<credential> -- <command>",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
@@ -130,6 +130,7 @@ func TestRunExecHelpShowsInlineEnvWithoutServices(t *testing.T) {
 	for _, want := range []string{
 		"Usage:",
 		"envvault exec --env-file .env -- <command>",
+		"envvault exec --env OPENAI_API_KEY=envvault://openai/dev",
 		"envvault exec --env OPENAI_BASE_URL=envvault://openai/dev/base-url",
 		"--env KEY=VALUE",
 	} {
@@ -154,13 +155,12 @@ func TestRunCompletionBashWritesCommandsWithoutServices(t *testing.T) {
 	for _, want := range []string{
 		"# bash completion for envvault",
 		"complete -F _envvault envvault",
-		"init reset doctor profile secret credential proxy inject list admin token exec open jwks issuer completion version",
+		"init reset doctor secret credential proxy list admin token exec open jwks issuer completion version",
 		"--repair",
-		"browser-session",
 		"secret",
 		"credential",
 		"proxy",
-		"inject",
+		"proxies",
 		"list",
 		"admin",
 	} {
@@ -184,10 +184,13 @@ func TestRunCompletionZshFishAndPowerShell(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 			}
-			for _, want := range []string{"envvault", "doctor", "profile", "secret", "credential", "proxy", "inject", "list", "admin", "completion", "version"} {
+			for _, want := range []string{"envvault", "doctor", "secret", "credential", "proxy", "list", "admin", "completion", "version"} {
 				if !strings.Contains(stdout.String(), want) {
 					t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 				}
+			}
+			if strings.Contains(stdout.String(), "inject") || strings.Contains(stdout.String(), "profile:") {
+				t.Fatalf("stdout = %q, did not expect inject/profile completion", stdout.String())
 			}
 			if stderr.Len() != 0 {
 				t.Fatalf("stderr = %q, want empty", stderr.String())
@@ -427,13 +430,15 @@ func TestRunExecResolvesEnvAndRunsChild(t *testing.T) {
 	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://backend-a/dev\nPLAIN=file-value\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	issuer := &fakeTokenIssuer{}
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(context.Background(), keyring.CredentialValue("backend-a/dev"), []byte("stored-backend-token")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
 	runner := &fakeChildRunner{code: 42}
 	app := cli.New(cli.Options{
 		Paths:     testPaths(t),
 		ParentEnv: []string{"TOKEN=raw-parent-secret", "HOME=/tmp/home"},
-		Profiles:  fakeCLIProfiles(),
-		Issuer:    issuer,
+		Secrets:   secrets,
 		Runner:    runner,
 	})
 	var stdout, stderr bytes.Buffer
@@ -451,8 +456,8 @@ func TestRunExecResolvesEnvAndRunsChild(t *testing.T) {
 	if got, want := runner.input.Command, []string{"inspect-child", "arg"}; strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("command = %#v, want %#v", got, want)
 	}
-	if got := runner.input.Env["TOKEN"]; got != "jwt-for-backend-a/dev" {
-		t.Fatalf("TOKEN = %q, want issued token", got)
+	if got := runner.input.Env["TOKEN"]; got != "stored-backend-token" {
+		t.Fatalf("TOKEN = %q, want credential value", got)
 	}
 	if got := runner.input.Env["PLAIN"]; got != "file-value" {
 		t.Fatalf("PLAIN = %q, want file value", got)
@@ -463,34 +468,25 @@ func TestRunExecResolvesEnvAndRunsChild(t *testing.T) {
 	if got := runner.input.Env["HOME"]; got != "/tmp/home" {
 		t.Fatalf("HOME = %q, want parent env value", got)
 	}
-	if len(issuer.grants) != 1 {
-		t.Fatalf("issuer grants = %d, want 1", len(issuer.grants))
-	}
 	if strings.Contains(stderr.String(), "raw-parent-secret") {
 		t.Fatalf("stderr leaked parent secret: %q", stderr.String())
 	}
 }
 
-func TestRunExecUsesProjectIdentityForApprovedBinding(t *testing.T) {
+func TestRunExecResolvesCredentialReferenceFromEnvFile(t *testing.T) {
 	root := t.TempDir()
 	envFile := filepath.Join(root, ".env")
 	if err := os.WriteFile(envFile, []byte("TOKEN=envvault://backend-a/dev\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	profiles := fakeCLIProfiles()
-	p := profiles["backend-a/dev"]
-	binding, err := projectbinding.Approve(profile.ProjectBindingPathHash, projectbinding.Identity{Root: root})
-	if err != nil {
-		t.Fatalf("Approve() error = %v", err)
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(context.Background(), keyring.CredentialValue("backend-a/dev"), []byte("stored-backend-token")); err != nil {
+		t.Fatalf("Put() error = %v", err)
 	}
-	p.ProjectBinding = binding
-	profiles["backend-a/dev"] = p
-	issuer := &fakeTokenIssuer{}
 	runner := &fakeChildRunner{}
 	app := cli.New(cli.Options{
 		ProjectStartDir: root,
-		Profiles:        profiles,
-		Issuer:          issuer,
+		Secrets:         secrets,
 		Runner:          runner,
 	})
 	var stdout, stderr bytes.Buffer
@@ -500,11 +496,8 @@ func TestRunExecUsesProjectIdentityForApprovedBinding(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 	}
-	if runner.input.Env["TOKEN"] != "jwt-for-backend-a/dev" {
-		t.Fatalf("TOKEN = %q, want issued token", runner.input.Env["TOKEN"])
-	}
-	if len(issuer.grants) != 1 {
-		t.Fatalf("issuer grants = %d, want 1", len(issuer.grants))
+	if runner.input.Env["TOKEN"] != "stored-backend-token" {
+		t.Fatalf("TOKEN = %q, want credential value", runner.input.Env["TOKEN"])
 	}
 }
 
@@ -514,10 +507,13 @@ func TestRunExecProvidesSignalChannelToRunner(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	runner := &fakeChildRunner{}
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(context.Background(), keyring.CredentialValue("backend-a/dev"), []byte("stored-backend-token")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
 	app := cli.New(cli.Options{
-		Profiles: fakeCLIProfiles(),
-		Issuer:   &fakeTokenIssuer{},
-		Runner:   runner,
+		Secrets: secrets,
+		Runner:  runner,
 	})
 	var stdout, stderr bytes.Buffer
 
@@ -856,22 +852,10 @@ func TestRunExecRewritesProviderProxyEnvAndForwardsThroughProxy(t *testing.T) {
 	}
 }
 
-func TestRunExecResolvesInjectValueReference(t *testing.T) {
+func TestRunExecResolvesCredentialReference(t *testing.T) {
 	ctx := context.Background()
 	paths := testPaths(t)
 	writeBaseConfig(t, paths)
-	cfg, err := config.Load(paths.ConfigFile)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	cfg.Profiles["database/dev"] = config.Profile{
-		Kind:           profile.KindInject,
-		CredentialName: "database/dev",
-		ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
-	}
-	if err := config.Save(paths.ConfigFile, cfg); err != nil {
-		t.Fatalf("Save() error = %v", err)
-	}
 	secrets := keyring.NewMemoryStore()
 	if err := secrets.Put(ctx, keyring.CredentialValue("database/dev"), []byte("postgres://user:pass@localhost/db")); err != nil {
 		t.Fatalf("Put() error = %v", err)
@@ -889,7 +873,7 @@ func TestRunExecResolvesInjectValueReference(t *testing.T) {
 
 	code := app.Run(ctx, []string{
 		"exec",
-		"--env", "DATABASE_URL=envvault://database/dev/value",
+		"--env", "DATABASE_URL=envvault://database/dev",
 		"--", "demo-client",
 	}, &stdout, &stderr)
 
@@ -904,7 +888,7 @@ func TestRunExecResolvesInjectValueReference(t *testing.T) {
 	}
 }
 
-func TestRunProfileListPrintsMetadataWithoutCredentialValues(t *testing.T) {
+func TestRunProxyListPrintsProxyMetadataWithoutCredentialValues(t *testing.T) {
 	paths := testPaths(t)
 	writeBaseConfig(t, paths)
 	cfg, err := config.Load(paths.ConfigFile)
@@ -935,25 +919,25 @@ func TestRunProfileListPrintsMetadataWithoutCredentialValues(t *testing.T) {
 	})
 	var stdout, stderr bytes.Buffer
 
-	code := app.Run(context.Background(), []string{"profile", "list"}, &stdout, &stderr)
+	code := app.Run(context.Background(), []string{"proxy", "list"}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 	}
 	for _, want := range []string{
 		"NAME",
-		"KIND",
 		"CREDENTIAL",
 		"TARGET",
-		"database/dev",
-		"inject",
-		"database-url/dev",
 		"openai/dev",
-		"provider-proxy",
 		"https://api.openai.com/v1",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+	for _, notWant := range []string{"database/dev", "inject", "database-url/dev", "provider-proxy"} {
+		if strings.Contains(stdout.String(), notWant) {
+			t.Fatalf("stdout = %q, did not expect %q", stdout.String(), notWant)
 		}
 	}
 	if strings.Contains(stdout.String(), "sk-secret") || stderr.Len() != 0 {

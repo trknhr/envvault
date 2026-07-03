@@ -467,16 +467,18 @@ func (a App) runCredential(ctx context.Context, args []string, stdout, stderr io
 
 func (a App) runList(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "envvault: usage: envvault list <credentials|profiles>")
+		fmt.Fprintln(stderr, "envvault: usage: envvault list <credentials|proxies>")
 		return 2
 	}
 	switch args[0] {
 	case "credential", "credentials":
 		return a.runCredentialList(stdout, stderr)
+	case "proxy", "proxies":
+		return a.runProxyList(stdout, stderr)
 	case "profile", "profiles":
 		return a.runProfileList(stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "envvault: usage: envvault list <credentials|profiles>")
+		fmt.Fprintln(stderr, "envvault: usage: envvault list <credentials|proxies>")
 		return 2
 	}
 }
@@ -499,6 +501,16 @@ func (a App) runCredentialList(stdout, stderr io.Writer) int {
 }
 
 func (a App) runProfileList(stdout, stderr io.Writer) int {
+	return a.writeProfileList(stdout, stderr, nil, []string{"NAME", "KIND", "CREDENTIAL", "TARGET", "BINDING"})
+}
+
+func (a App) runProxyList(stdout, stderr io.Writer) int {
+	return a.writeProfileList(stdout, stderr, func(stored config.Profile) bool {
+		return stored.Kind == profile.KindProviderProxy
+	}, []string{"NAME", "CREDENTIAL", "TARGET", "BINDING"})
+}
+
+func (a App) writeProfileList(stdout, stderr io.Writer, include func(config.Profile) bool, header []string) int {
 	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -513,6 +525,18 @@ func (a App) runProfileList(stdout, stderr io.Writer) int {
 	rows := make([][]string, 0, len(names))
 	for _, name := range names {
 		stored := cfg.Profiles[name]
+		if include != nil && !include(stored) {
+			continue
+		}
+		if len(header) == 4 {
+			rows = append(rows, []string{
+				name,
+				stored.CredentialName,
+				listTarget(stored),
+				listProjectBinding(stored.ProjectBinding.Mode),
+			})
+			continue
+		}
 		rows = append(rows, []string{
 			name,
 			string(stored.Kind),
@@ -521,7 +545,7 @@ func (a App) runProfileList(stdout, stderr io.Writer) int {
 			listProjectBinding(stored.ProjectBinding.Mode),
 		})
 	}
-	if err := writeTable(stdout, []string{"NAME", "KIND", "CREDENTIAL", "TARGET", "BINDING"}, rows); err != nil {
+	if err := writeTable(stdout, header, rows); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
@@ -552,6 +576,17 @@ func listProjectBinding(mode profile.ProjectBindingMode) string {
 }
 
 func (a App) runProxy(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "envvault: usage: envvault proxy <add|list> [options]")
+		return 2
+	}
+	if args[0] == "list" {
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, "envvault: usage: envvault proxy list")
+			return 2
+		}
+		return a.runProxyList(stdout, stderr)
+	}
 	if len(args) < 2 || args[0] != "add" {
 		fmt.Fprintln(stderr, "envvault: usage: envvault proxy add <name> [options]")
 		return 2
@@ -904,7 +939,6 @@ func (a App) runExec(ctx context.Context, args []string, stdout, stderr io.Write
 	refResolver := &providerproxy.EnvResolver{
 		Profiles: a.profiles,
 		Secrets:  a.secrets,
-		Issuer:   a.issuer,
 	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1003,7 +1037,7 @@ func (a App) openConfigured() bool {
 }
 
 func (a App) execConfigured() bool {
-	return a.profiles != nil && a.issuer != nil && a.runner != nil
+	return a.runner != nil
 }
 
 func (a App) parentEnvironment() []string {

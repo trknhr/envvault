@@ -1,6 +1,6 @@
 ---
 name: envvault
-description: Use when launching local development tools with EnvVault, resolving envvault:// references, configuring API proxy or raw inject profiles, or debugging EnvVault CLI/env-file setup. Assumes envvault is installed.
+description: Use when launching local development tools with EnvVault, resolving envvault:// references, configuring optional API proxies, or debugging EnvVault CLI/env-file setup. Assumes envvault is installed.
 ---
 
 # EnvVault
@@ -12,28 +12,28 @@ repository-safe `envvault://` references only when launching a child process.
 
 - Start UI: `envvault admin start`
 - Add credential: `printf 'secret\n' | envvault credential add <credential-name> --value-stdin`
-- Add proxy profile: `envvault proxy add <profile> --credential <credential-name> --provider generic --target <url> --allow-path <path> --allow-method <method>`
-- Add raw inject profile: `envvault inject add <profile> --credential <credential-name>`
-- List state: `envvault credential list`, `envvault profile list`
-- Launch app: `envvault exec --env KEY=envvault://profile/output -- <command>` or `envvault exec --env-file .env -- <command>`
+- Add proxy: `envvault proxy add <proxy-name> --credential <credential-name> --provider generic --target <url> --allow-path <path> --allow-method <method>`
+- List state: `envvault credential list`, `envvault proxy list`
+- Launch app: `envvault exec --env KEY=envvault://<credential> -- <command>` or `envvault exec --env-file .env -- <command>`
 - Inspect state: `envvault doctor`, `envvault admin status`, `envvault reset --dry-run`
 
-For credential workflows, stay within the admin, credential, proxy, inject,
-exec, doctor, and reset commands.
+For local credential workflows, stay within the admin, credential, proxy, exec,
+doctor, and reset commands.
 
 ## Reference Forms
 
-Proxy profiles output values like this:
+Default direct credential:
 
 ```dotenv
-OPENAI_BASE_URL=envvault://openai/dev/base-url
-OPENAI_API_KEY=envvault://openai/dev/token
+OPENAI_API_KEY=envvault://openai/dev
+DATABASE_URL=envvault://database/dev
 ```
 
-Raw inject fallback:
+Optional proxy outputs:
 
 ```dotenv
-DATABASE_URL=envvault://database/dev/value
+OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url
+OPENAI_API_KEY=envvault://openai-proxy/dev/token
 ```
 
 Use the variable names the app expects; the right-hand side is the EnvVault
@@ -42,18 +42,19 @@ to register.
 
 ## Workflow
 
-Prefer proxy mode when an SDK accepts a custom base URL and bearer token. The
+Prefer direct credential references for SDKs that expect normal API key or
+database URL environment variables. This gives the child process the real
+credential at launch.
+
+Use proxy mode only when an SDK accepts a custom base URL and bearer token. The
 child process receives a localhost URL and local token; EnvVault adds the real
 provider key only for allowlisted requests.
-
-Use raw inject only when proxying is impossible. Raw inject intentionally gives
-the credential value to the child process.
 
 When using the shell for checks, put the child command after `--` and use
 `sh -lc` for shell expansion:
 
 ```bash
-envvault exec --env OPENAI_API_KEY=envvault://openai/dev/token -- sh -lc 'test -n "$OPENAI_API_KEY" && echo OK'
+envvault exec --env OPENAI_API_KEY=envvault://openai/dev -- sh -lc 'test -n "$OPENAI_API_KEY" && echo OK'
 ```
 
 Avoid printing actual credential values. Check presence, length, or make a
@@ -67,3 +68,4 @@ provider request through the app instead.
 - `sh 'echo $VAR'` is wrong; use `sh -lc 'echo "$VAR"'`.
 - A value is resolved only when the whole env value is an `envvault://...`
   reference.
+- `/value` references are no longer supported; use `envvault://<credential>`.
