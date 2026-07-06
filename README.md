@@ -31,7 +31,6 @@ Public reference forms are intentionally small:
 - `envvault://<credential>` resolves a direct credential.
 - `envvault://<proxy>/base-url` and `envvault://<proxy>/token` resolve generated
   proxy outputs.
-- `envvault://<credential>` with `/value` is not supported.
 
 ## Install
 
