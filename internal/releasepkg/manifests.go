@@ -29,7 +29,7 @@ type releaseArtifact struct {
 
 var releaseSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-const packageManagerDescription = "Lightweight local secret launcher for envvault references"
+const packageManagerDescription = "Run local AI apps without plaintext .env secrets"
 
 func WritePackageManagerManifests(options PackageManagerManifestOptions) (PackageManagerManifestPaths, error) {
 	if strings.TrimSpace(options.DistDir) == "" {

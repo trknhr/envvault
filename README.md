@@ -1,14 +1,17 @@
-# EnvVault
+# EnvVault Local
 
-EnvVault is a lightweight local secret launcher for replacing long-lived values
-with runtime-only `envvault://` references in project `.env` files or
-`envvault exec --env` flags.
+Run AI apps locally while keeping real OpenAI, Gemini, and Anthropic keys out
+of project `.env` files and coding-agent prompts.
+
+EnvVault replaces plaintext `.env` secrets with `envvault://` references. At
+runtime, it either injects credentials from the OS credential store or starts a
+localhost proxy so your app receives only a local URL and short-lived token.
 
 Links: [Documentation](https://trknhr.github.io/envvault/) |
 [Homebrew tap](https://github.com/trknhr/homebrew-tap)
 
-The default flow stores the real credential in the OS credential store and keeps
-only a repository-safe reference in `.env`:
+The default compatibility path stores the real credential in the OS credential
+store and keeps only a repository-safe direct reference in `.env`:
 
 ```dotenv
 OPENAI_API_KEY=envvault://openai/dev
@@ -20,9 +23,16 @@ experimental localhost proxy mode. The child process receives a local proxy URL
 and local token instead of the real provider key:
 
 ```dotenv
-OPENAI_BASE_URL=envvault://openai/dev/base-url
-OPENAI_API_KEY=envvault://openai/dev/token
+OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url
+OPENAI_API_KEY=envvault://openai-proxy/dev/token
 ```
+
+Public reference forms are intentionally small:
+
+- `envvault://<credential>` resolves a direct credential.
+- `envvault://<proxy>/base-url` and `envvault://<proxy>/token` resolve generated
+  proxy outputs.
+- `envvault://<credential>` with `/value` is not supported.
 
 ## Install
 
@@ -53,7 +63,7 @@ process.
 
 ## Security Limitations
 
-EnvVault Local MVP reduces credential exposure; it does not create a sandbox.
+EnvVault Local reduces credential exposure; it does not create a sandbox.
 
 - A child process can read any credential value or local proxy token placed in
   its environment until it exits.

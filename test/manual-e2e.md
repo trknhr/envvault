@@ -128,7 +128,7 @@ Register a credential and proxy:
 printf 'sk-local-demo\n' | envvault credential add openai-key/dev \
   --value-stdin
 
-envvault proxy add openai/dev \
+envvault proxy add openai-proxy/dev \
   --credential openai-key/dev \
   --provider generic \
   --target http://127.0.0.1:18080/v1 \
@@ -137,8 +137,8 @@ envvault proxy add openai/dev \
   --project-binding none
 
 envvault exec \
-  --env OPENAI_BASE_URL=envvault://openai/dev/base-url \
-  --env OPENAI_API_KEY=envvault://openai/dev/token \
+  --env OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url \
+  --env OPENAI_API_KEY=envvault://openai-proxy/dev/token \
   -- \
   "$EV_ROOT/examples/openai-proxy-app/app.sh"
 ```

@@ -57,7 +57,9 @@ When using the shell for checks, put the child command after `--` and use
 envvault exec --env OPENAI_API_KEY=envvault://openai/dev -- sh -lc 'test -n "$OPENAI_API_KEY" && echo OK'
 ```
 
-Avoid printing actual credential values. Check presence, length, or make a
+Do not print credential-bearing environment values. Avoid `echo "$API_KEY"`,
+`printenv`, `env`, `set`, or similar commands in a child process that may
+contain secrets. Check presence only, print fixed strings like `OK`, or make a
 provider request through the app instead.
 
 ## Common Mistakes
@@ -65,7 +67,8 @@ provider request through the app instead.
 - `--exec-file` is wrong; use `--env-file`.
 - `envvalut://` is a typo; the scheme is `envvault://`.
 - `envvault exec` requires `--` before the child command.
-- `sh 'echo $VAR'` is wrong; use `sh -lc 'echo "$VAR"'`.
+- `sh -lc 'echo "$VAR"'` can leak secrets; use
+  `sh -lc 'test -n "$VAR" && echo OK'` for presence checks.
 - A value is resolved only when the whole env value is an `envvault://...`
   reference.
-- `/value` references are no longer supported; use `envvault://<credential>`.
+- Public `.env` references use `envvault://<credential>`.

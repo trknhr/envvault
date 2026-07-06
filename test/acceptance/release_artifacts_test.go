@@ -164,7 +164,7 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 		t.Fatalf("ReadFile(HomebrewFormula) error = %v", err)
 	}
 	homebrewText := string(homebrew)
-	if !strings.Contains(homebrewText, `desc "Lightweight local secret launcher for envvault references"`) {
+	if !strings.Contains(homebrewText, `desc "Run local AI apps without plaintext .env secrets"`) {
 		t.Fatalf("homebrew formula missing current description:\n%s", homebrewText)
 	}
 	for _, artifact := range artifacts[:4] {
@@ -202,7 +202,7 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 	if scoopManifest["version"] != "0.1.0" {
 		t.Fatalf("scoop version = %#v, want 0.1.0", scoopManifest["version"])
 	}
-	if scoopManifest["description"] != "Lightweight local secret launcher for envvault references" {
+	if scoopManifest["description"] != "Run local AI apps without plaintext .env secrets" {
 		t.Fatalf("scoop description = %#v", scoopManifest["description"])
 	}
 	architecture, ok := scoopManifest["architecture"].(map[string]any)
@@ -232,8 +232,8 @@ func TestReleaseDocsCoverCredentialAndProxyFlows(t *testing.T) {
 			"Add a Credential",
 			"envvault://openai/dev",
 			"Advanced: API Proxy Mode",
-			"envvault://openai/dev/base-url",
-			"envvault://openai/dev/token",
+			"envvault://openai-proxy/dev/base-url",
+			"envvault://openai-proxy/dev/token",
 			"npx skills add trknhr/envvault --skill envvault",
 		},
 		"docs/proxies.md": {
@@ -294,7 +294,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		},
 		"examples/openai-proxy-app/README.md": {
 			"# OpenAI-Compatible Proxy App Example",
-			"envvault proxy add openai/dev",
+			"envvault proxy add openai-proxy/dev",
 			"mock-provider",
 		},
 		"examples/openai-proxy-app/app.sh": {
@@ -359,7 +359,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"# Manual E2E Playbook",
 			"Direct Credential Flow",
 			"API Proxy Flow",
-			"envvault://openai/dev/base-url",
+			"envvault://openai-proxy/dev/base-url",
 		},
 		"skills/envvault/SKILL.md": {
 			"name: envvault",
@@ -391,8 +391,9 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"VPHero",
 		},
 		"docs/index.md": {
-			"# EnvVault",
-			"Store once. Resolve at launch.",
+			"# EnvVault Local",
+			"Run AI apps locally while keeping real OpenAI, Gemini, and Anthropic keys out",
+			"of project `.env` files and coding-agent prompts.",
 			"Admin UI",
 			"Direct credential",
 			"npx skills add trknhr/envvault --skill envvault",
@@ -416,15 +417,15 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		},
 		"docs/examples/openai-proxy-app.md": {
 			"# OpenAI-Compatible Proxy App Example",
-			"envvault proxy add openai/dev",
+			"envvault proxy add openai-proxy/dev",
 			"same generated references",
 			"mock-provider",
-			"OPENAI_BASE_URL=envvault://openai/dev/base-url",
+			"OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url",
 		},
 		"site/index.html": {
 			"EnvVault",
 			"VitePress",
-			"Store once. Resolve at launch.",
+			"Run AI apps locally while keeping real OpenAI, Gemini, and Anthropic keys out",
 			"Admin UI",
 		},
 		"test/fake-keyring/store.go": {

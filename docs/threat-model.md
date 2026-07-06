@@ -1,7 +1,8 @@
 # Threat Model
 
-EnvVault protects long-lived local credential material from routine project and
-`.env` exposure. It does not defend against a fully compromised OS user account.
+EnvVault Local protects long-lived local credential material from routine
+project and `.env` exposure. It does not defend against a fully compromised OS
+user account.
 
 ## Assets
 

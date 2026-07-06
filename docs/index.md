@@ -1,10 +1,11 @@
-# EnvVault
+# EnvVault Local
 
-EnvVault is a lightweight local secret launcher. Store provider keys in the OS
-credential store, commit safe `envvault://` references, and resolve credentials
-only when starting an app.
+Run AI apps locally while keeping real OpenAI, Gemini, and Anthropic keys out
+of project `.env` files and coding-agent prompts.
 
-Store once. Resolve at launch.
+EnvVault replaces plaintext `.env` secrets with `envvault://` references. At
+runtime, it either injects credentials from the OS credential store or starts a
+localhost proxy so your app receives only a local URL and short-lived token.
 
 ## Quick Start
 

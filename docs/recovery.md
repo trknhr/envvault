@@ -1,6 +1,6 @@
 # Recovery
 
-This guide covers local recovery for EnvVault Local MVP.
+This guide covers local recovery for EnvVault Local.
 
 ## OS Credential Store Unavailable
 

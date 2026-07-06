@@ -6,6 +6,15 @@ This page describes the default EnvVault local workflow:
 2. Keep only an `envvault://<credential>` reference in `.env`.
 3. Launch the app through `envvault exec`.
 
+Canonical public references are:
+
+- Direct credential: `envvault://<credential>`
+- Proxy base URL: `envvault://<proxy>/base-url`
+- Proxy token: `envvault://<proxy>/token`
+
+Do not add `/value` to `.env` references. `/value` is only part of internal OS
+credential store account names used by cleanup tooling and diagnostics.
+
 Use proxy mode as an advanced option when an SDK accepts a custom base URL and
 bearer token.
 
@@ -88,7 +97,7 @@ and you do not want to pass the real provider key to the child process.
 Add a localhost proxy:
 
 ```bash
-envvault proxy add openai/dev \
+envvault proxy add openai-proxy/dev \
   --credential openai/dev \
   --provider generic \
   --target https://api.openai.com/v1 \
@@ -101,8 +110,8 @@ envvault proxy add openai/dev \
 The command prints a generic `.env` snippet:
 
 ```dotenv
-ENVVAULT_PROXY_URL=envvault://openai/dev/base-url
-ENVVAULT_PROXY_TOKEN=envvault://openai/dev/token
+ENVVAULT_PROXY_URL=envvault://openai-proxy/dev/base-url
+ENVVAULT_PROXY_TOKEN=envvault://openai-proxy/dev/token
 ```
 
 The Admin UI shows the same snippet with a copy button for proxies.
@@ -111,8 +120,8 @@ Use the generated right-hand references with the variable names expected by the
 app:
 
 ```dotenv
-OPENAI_BASE_URL=envvault://openai/dev/base-url
-OPENAI_API_KEY=envvault://openai/dev/token
+OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url
+OPENAI_API_KEY=envvault://openai-proxy/dev/token
 ```
 
 `base-url` and `token` are EnvVault-generated proxy outputs. They are not

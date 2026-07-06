@@ -131,7 +131,7 @@ func TestRunExecHelpShowsInlineEnvWithoutServices(t *testing.T) {
 		"Usage:",
 		"envvault exec --env-file .env -- <command>",
 		"envvault exec --env OPENAI_API_KEY=envvault://openai/dev",
-		"envvault exec --env OPENAI_BASE_URL=envvault://openai/dev/base-url",
+		"envvault exec --env OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url",
 		"--env KEY=VALUE",
 	} {
 		if !strings.Contains(stdout.String(), want) {

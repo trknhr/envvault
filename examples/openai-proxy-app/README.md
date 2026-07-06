@@ -3,8 +3,8 @@
 This example shows the API proxy flow:
 
 ```dotenv
-OPENAI_BASE_URL=envvault://openai/dev/base-url
-OPENAI_API_KEY=envvault://openai/dev/token
+OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url
+OPENAI_API_KEY=envvault://openai-proxy/dev/token
 ```
 
 At runtime, `envvault exec` rewrites those values to a localhost proxy URL and
@@ -24,7 +24,7 @@ Register a demo provider secret and proxy:
 printf 'sk-local-demo\n' | ./bin/envvault credential add openai-key/dev \
   --value-stdin
 
-./bin/envvault proxy add openai/dev \
+./bin/envvault proxy add openai-proxy/dev \
   --credential openai-key/dev \
   --provider generic \
   --target http://127.0.0.1:18080/v1 \
@@ -38,8 +38,8 @@ snippet. This example uses the same generated references with the variable names
 expected by `app.sh`:
 
 ```dotenv
-OPENAI_BASE_URL=envvault://openai/dev/base-url
-OPENAI_API_KEY=envvault://openai/dev/token
+OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url
+OPENAI_API_KEY=envvault://openai-proxy/dev/token
 ```
 
 `base-url` is an EnvVault-generated proxy output, not a separate credential to
@@ -55,8 +55,8 @@ Run the app through EnvVault in another terminal:
 
 ```bash
 ./bin/envvault exec \
-  --env OPENAI_BASE_URL=envvault://openai/dev/base-url \
-  --env OPENAI_API_KEY=envvault://openai/dev/token \
+  --env OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url \
+  --env OPENAI_API_KEY=envvault://openai-proxy/dev/token \
   -- examples/openai-proxy-app/app.sh
 ```
 

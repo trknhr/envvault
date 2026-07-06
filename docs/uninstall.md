@@ -22,7 +22,8 @@ envvault reset --yes
 Use this only if `envvault reset` is unavailable.
 
 1. Remove EnvVault config, data, and cache directories for the current OS user.
-2. Delete OS credential store entries with these account names:
+2. Delete OS credential store entries with these account names. This is not the
+   public `.env` reference syntax:
 
 ```text
 envvault/credential/<credential-name>/value

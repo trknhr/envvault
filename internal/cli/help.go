@@ -131,7 +131,7 @@ Options:
 Examples:
   envvault exec --env-file .env -- npm run dev
   envvault exec --env OPENAI_API_KEY=envvault://openai/dev -- npm run dev
-  envvault exec --env OPENAI_BASE_URL=envvault://openai/dev/base-url --env OPENAI_API_KEY=envvault://openai/dev/token -- npm run dev
+  envvault exec --env OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url --env OPENAI_API_KEY=envvault://openai-proxy/dev/token -- npm run dev
 `
 
 const adminHelp = `Usage:

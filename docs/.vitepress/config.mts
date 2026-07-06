@@ -3,8 +3,8 @@ import { defineConfig } from 'vitepress'
 const githubBase = 'https://github.com/trknhr/envvault/blob/main'
 
 export default defineConfig({
-  title: 'EnvVault',
-  description: 'Local-first credential launcher with optional localhost proxy.',
+  title: 'EnvVault Local',
+  description: 'Run local AI apps without plaintext .env secrets.',
   base: '/envvault/',
   outDir: '../site',
   lastUpdated: true,
@@ -62,7 +62,7 @@ export default defineConfig({
       text: 'Edit this page on GitHub'
     },
     footer: {
-      message: 'Local-first credentials for development workflows.'
+      message: 'Local AI credentials without plaintext .env secrets.'
     }
   },
   head: [
