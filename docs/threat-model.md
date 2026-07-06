@@ -1,8 +1,7 @@
 # Threat Model
 
-EnvVault Local protects long-lived local credential material from routine
-project and `.env` exposure. It does not defend against a fully compromised OS
-user account.
+EnvVault protects long-lived local credential material from routine project and
+`.env` exposure. It does not defend against a fully compromised OS user account.
 
 ## Assets
 
@@ -41,8 +40,8 @@ user account.
 - Application-level data written using a valid credential.
 - DLP for prompts, stdout, stderr, HTTP request bodies, or third-party
   application logs.
-- Keeping a provider key out of the child process when an SDK or tool requires
-  the raw provider key directly and cannot be pointed at the EnvVault localhost
+- Keeping a credential out of the child process when an SDK or tool requires
+  the raw credential directly and cannot be pointed at the EnvVault localhost
   proxy.
 
 ## Security Controls

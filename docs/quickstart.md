@@ -47,10 +47,10 @@ testing.
 
 ## 3. Add a Credential
 
-Store the real provider key in the OS credential store:
+Store the real credential in the OS credential store:
 
 ```bash
-printf 'sk-live-or-dev-key\n' | envvault credential add openai/dev \
+printf 'secret-value\n' | envvault credential add app/dev \
   --value-stdin
 ```
 
@@ -62,7 +62,7 @@ Use the environment variable name expected by the app, and make the value an
 EnvVault reference:
 
 ```dotenv
-OPENAI_API_KEY=envvault://openai/dev
+APP_SECRET=envvault://app/dev
 ```
 
 You can keep that line in `.env`, or skip creating a file and pass it directly
@@ -70,7 +70,7 @@ at launch:
 
 ```bash
 envvault exec \
-  --env OPENAI_API_KEY=envvault://openai/dev \
+  --env APP_SECRET=envvault://app/dev \
   -- npm run dev
 ```
 
@@ -81,9 +81,8 @@ envvault exec --env-file .env -- npm run dev
 envvault exec --env-file .env -- npm start
 ```
 
-`envvault exec` reads the `.env` file, resolves `envvault://openai/dev` from the
-OS credential store, and launches the child process with `OPENAI_API_KEY`
-populated.
+`envvault exec` reads the `.env` file, resolves `envvault://app/dev` from the OS
+credential store, and launches the child process with `APP_SECRET` populated.
 
 This mode intentionally passes the raw credential to the child process
 environment. It is the most compatible path and works with SDKs that expect a
@@ -92,26 +91,24 @@ normal API key environment variable.
 ## 6. Advanced: API Proxy Mode
 
 Use proxy mode when the app or SDK accepts a custom base URL and bearer token,
-and you do not want to pass the real provider key to the child process.
+and you do not want to pass the real upstream credential to the child process.
 
 Add a localhost proxy:
 
 ```bash
-envvault proxy add openai-proxy/dev \
-  --credential openai/dev \
+envvault proxy add api-proxy/dev \
+  --credential app/dev \
   --provider generic \
-  --target https://api.openai.com/v1 \
-  --allow-path /chat/completions \
-  --allow-path /responses \
-  --allow-path /embeddings \
+  --target https://api.example.com \
+  --allow-path /v1/messages \
   --allow-method POST
 ```
 
 The command prints a generic `.env` snippet:
 
 ```dotenv
-ENVVAULT_PROXY_URL=envvault://openai-proxy/dev/base-url
-ENVVAULT_PROXY_TOKEN=envvault://openai-proxy/dev/token
+ENVVAULT_PROXY_URL=envvault://api-proxy/dev/base-url
+ENVVAULT_PROXY_TOKEN=envvault://api-proxy/dev/token
 ```
 
 The Admin UI shows the same snippet with a copy button for proxies.
@@ -120,19 +117,19 @@ Use the generated right-hand references with the variable names expected by the
 app:
 
 ```dotenv
-OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url
-OPENAI_API_KEY=envvault://openai-proxy/dev/token
+APP_BASE_URL=envvault://api-proxy/dev/base-url
+APP_API_TOKEN=envvault://api-proxy/dev/token
 ```
 
 `base-url` and `token` are EnvVault-generated proxy outputs. They are not
 separate credentials to register.
 
 At runtime, `envvault exec` starts a localhost proxy, rewrites
-`OPENAI_BASE_URL` to that proxy, and rewrites `OPENAI_API_KEY` to a local-only
-bearer token. The proxy adds the real provider key only for requests matching
-the allowlist.
+`APP_BASE_URL` to that proxy, and rewrites `APP_API_TOKEN` to a local-only
+bearer token. The proxy adds the real upstream credential only for requests
+matching the allowlist.
 
-Proxy mode reduces provider-key exposure, but it also requires separate local
+Proxy mode reduces raw-secret exposure, but it also requires separate local
 environment variables for the provider base URL.
 
 ## 7. Inspect Health

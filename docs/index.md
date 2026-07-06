@@ -1,11 +1,10 @@
-# EnvVault Local
+# EnvVault
 
-Run AI apps locally while keeping real OpenAI, Gemini, and Anthropic keys out
-of project `.env` files and coding-agent prompts.
+Keep real secrets out of project `.env` files and coding-agent prompts.
 
-EnvVault replaces plaintext `.env` secrets with `envvault://` references. At
-runtime, it either injects credentials from the OS credential store or starts a
-localhost proxy so your app receives only a local URL and short-lived token.
+EnvVault replaces plaintext `.env` secrets with repository-safe `envvault://`
+references. At runtime, it resolves credentials from the OS credential store or
+starts a localhost proxy that gives the app a local URL and local proxy token.
 
 ## Quick Start
 
@@ -15,7 +14,7 @@ Install EnvVault from the Homebrew tap:
 brew install trknhr/tap/envvault
 ```
 
-Register a provider key once. Use the Admin UI for interactive setup:
+Register a credential once. Use the Admin UI for interactive setup:
 
 ```bash
 envvault admin start
@@ -27,7 +26,7 @@ optional proxies. Stored credential values are not displayed by the UI.
 For scripts or repeatable tests, use the equivalent CLI path:
 
 ```bash
-printf 'YOUR_GEMINI_API_KEY\n' | envvault credential add gemini/dev \
+printf 'secret-value\n' | envvault credential add app/dev \
   --value-stdin
 ```
 
@@ -35,14 +34,14 @@ Use a repository-safe reference in the app's `.env` file or pass the same
 reference with `envvault exec --env`:
 
 ```dotenv
-GEMINI_API_KEY=envvault://gemini/dev
+APP_SECRET=envvault://app/dev
 ```
 
 Launch the app through EnvVault:
 
 ```bash
 envvault exec \
-  --env GEMINI_API_KEY=envvault://gemini/dev \
+  --env APP_SECRET=envvault://app/dev \
   -- npm start
 
 envvault exec --env-file .env -- npm start
@@ -79,6 +78,6 @@ Restart your agent after installing or updating skills.
 
 ## Advanced API Proxy
 
-The [Gemini AI SDK proxy example](/examples/gemini-ai-sdk-proxy-app) shows the
-optional proxy workflow: a provider key stays in the OS credential store while
-the app receives only a localhost proxy URL and local token.
+The [proxy examples](/examples) show the optional proxy workflow: a credential
+stays in the OS credential store while the app receives only a localhost proxy
+URL and local token.

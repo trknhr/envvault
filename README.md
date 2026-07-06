@@ -1,11 +1,10 @@
-# EnvVault Local
+# EnvVault
 
-Run AI apps locally while keeping real OpenAI, Gemini, and Anthropic keys out
-of project `.env` files and coding-agent prompts.
+Keep real secrets out of project `.env` files and coding-agent prompts.
 
-EnvVault replaces plaintext `.env` secrets with `envvault://` references. At
-runtime, it either injects credentials from the OS credential store or starts a
-localhost proxy so your app receives only a local URL and short-lived token.
+EnvVault replaces plaintext `.env` secrets with repository-safe `envvault://`
+references. At runtime, it resolves credentials from the OS credential store or
+starts a localhost proxy that gives the app a local URL and local proxy token.
 
 Links: [Documentation](https://trknhr.github.io/envvault/) |
 [Homebrew tap](https://github.com/trknhr/homebrew-tap)
@@ -14,17 +13,17 @@ The default compatibility path stores the real credential in the OS credential
 store and keeps only a repository-safe direct reference in `.env`:
 
 ```dotenv
-OPENAI_API_KEY=envvault://openai/dev
+APP_SECRET=envvault://app/dev
 DATABASE_URL=envvault://database/dev
 ```
 
 For APIs and SDKs that accept a custom endpoint, EnvVault also has an
 experimental localhost proxy mode. The child process receives a local proxy URL
-and local token instead of the real provider key:
+and local token instead of the real upstream credential:
 
 ```dotenv
-OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url
-OPENAI_API_KEY=envvault://openai-proxy/dev/token
+APP_BASE_URL=envvault://api-proxy/dev/base-url
+APP_API_TOKEN=envvault://api-proxy/dev/token
 ```
 
 Public reference forms are intentionally small:
@@ -48,7 +47,7 @@ Common commands:
 envvault admin start
 envvault credential list
 envvault proxy list
-envvault exec --env OPENAI_API_KEY=envvault://openai/dev -- npm run dev
+envvault exec --env APP_SECRET=envvault://app/dev -- npm run dev
 envvault exec --env-file .env -- npm start
 ```
 
@@ -58,24 +57,23 @@ The UI does not display stored credential values.
 
 The default flow intentionally passes the resolved credential to the child
 process environment at launch. Use proxy mode only when an API client accepts a
-custom base URL and you want to avoid passing the real provider key to the child
-process.
+custom base URL and you want to avoid passing the real upstream credential to
+the child process.
 
 ## Security Limitations
 
-EnvVault Local reduces credential exposure; it does not create a sandbox.
+EnvVault reduces credential exposure; it does not create a sandbox.
 
 - A child process can read any credential value or local proxy token placed in
   its environment until it exits.
 - A process running as the same OS user can use the same OS credential store
   permissions as the user.
-- If the OS credential store is compromised, stored provider credentials are
-  compromised.
+- If the OS credential store is compromised, stored credentials are compromised.
 - EnvVault does not redact prompts, stdout, stderr, HTTP bodies, shell history,
   or application logs outside its own outputs.
 - Direct `envvault://<credential>` references resolve to raw credential values.
   This is the default compatibility path for local development.
-- Proxy mode can reduce provider-key exposure, but it requires the app or SDK to
+- Proxy mode can reduce raw-secret exposure, but it requires the app or SDK to
   accept a custom base URL and bearer token.
 
 ## Status
@@ -145,5 +143,5 @@ go vet ./...
 go test -race ./...
 ```
 
-No command should print raw provider keys, resolved credentials, Authorization
+No command should print raw secrets, resolved credentials, Authorization
 headers, or local proxy bearer tokens.

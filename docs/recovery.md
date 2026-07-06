@@ -1,6 +1,6 @@
 # Recovery
 
-This guide covers local recovery for EnvVault Local.
+This guide covers local recovery for EnvVault.
 
 ## OS Credential Store Unavailable
 
@@ -16,7 +16,7 @@ Actions:
 1. Unlock the platform credential store.
 2. Re-run `envvault doctor`.
 3. Re-add affected credentials if the platform credential store entry is missing.
-4. Do not store provider keys in repository files as a fallback.
+4. Do not store credentials in repository files as a fallback.
 
 ## Corrupt or Missing Local State
 
@@ -56,7 +56,7 @@ Actions:
 Actions:
 
 1. Stop using affected credentials or proxies.
-2. Rotate affected provider credentials in the upstream provider.
+2. Rotate affected credentials in the upstream service.
 3. Re-add the rotated value to EnvVault.
 4. Scan config, data, cache, logs, audit files, shell history, and temporary
    directories for the exposure marker.

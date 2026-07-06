@@ -164,7 +164,7 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 		t.Fatalf("ReadFile(HomebrewFormula) error = %v", err)
 	}
 	homebrewText := string(homebrew)
-	if !strings.Contains(homebrewText, `desc "Run local AI apps without plaintext .env secrets"`) {
+	if !strings.Contains(homebrewText, `desc "Run local apps without plaintext .env secrets"`) {
 		t.Fatalf("homebrew formula missing current description:\n%s", homebrewText)
 	}
 	for _, artifact := range artifacts[:4] {
@@ -202,7 +202,7 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 	if scoopManifest["version"] != "0.1.0" {
 		t.Fatalf("scoop version = %#v, want 0.1.0", scoopManifest["version"])
 	}
-	if scoopManifest["description"] != "Run local AI apps without plaintext .env secrets" {
+	if scoopManifest["description"] != "Run local apps without plaintext .env secrets" {
 		t.Fatalf("scoop description = %#v", scoopManifest["description"])
 	}
 	architecture, ok := scoopManifest["architecture"].(map[string]any)
@@ -230,10 +230,10 @@ func TestReleaseDocsCoverCredentialAndProxyFlows(t *testing.T) {
 		"docs/quickstart.md": {
 			"# Quickstart",
 			"Add a Credential",
-			"envvault://openai/dev",
+			"envvault://app/dev",
 			"Advanced: API Proxy Mode",
-			"envvault://openai-proxy/dev/base-url",
-			"envvault://openai-proxy/dev/token",
+			"envvault://api-proxy/dev/base-url",
+			"envvault://api-proxy/dev/token",
 			"npx skills add trknhr/envvault --skill envvault",
 		},
 		"docs/proxies.md": {
@@ -364,7 +364,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		"skills/envvault/SKILL.md": {
 			"name: envvault",
 			"envvault exec --env-file .env -- <command>",
-			"envvault://openai-proxy/dev/base-url",
+			"envvault://api-proxy/dev/base-url",
 			"envvault://database/dev",
 			"stay within the admin, credential, proxy, exec",
 		},
@@ -391,9 +391,9 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"VPHero",
 		},
 		"docs/index.md": {
-			"# EnvVault Local",
-			"Run AI apps locally while keeping real OpenAI, Gemini, and Anthropic keys out",
-			"of project `.env` files and coding-agent prompts.",
+			"# EnvVault",
+			"Keep real secrets out of project `.env` files and coding-agent prompts.",
+			"repository-safe `envvault://`",
 			"Admin UI",
 			"Direct credential",
 			"npx skills add trknhr/envvault --skill envvault",
@@ -425,7 +425,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		"site/index.html": {
 			"EnvVault",
 			"VitePress",
-			"Run AI apps locally while keeping real OpenAI, Gemini, and Anthropic keys out",
+			"Keep real secrets out of project",
 			"Admin UI",
 		},
 		"test/fake-keyring/store.go": {

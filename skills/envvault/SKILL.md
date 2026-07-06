@@ -25,15 +25,15 @@ doctor, and reset commands.
 Default direct credential:
 
 ```dotenv
-OPENAI_API_KEY=envvault://openai/dev
+APP_SECRET=envvault://app/dev
 DATABASE_URL=envvault://database/dev
 ```
 
 Optional proxy outputs:
 
 ```dotenv
-OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url
-OPENAI_API_KEY=envvault://openai-proxy/dev/token
+APP_BASE_URL=envvault://api-proxy/dev/base-url
+APP_API_TOKEN=envvault://api-proxy/dev/token
 ```
 
 Use the variable names the app expects; the right-hand side is the EnvVault
@@ -48,13 +48,13 @@ credential at launch.
 
 Use proxy mode only when an SDK accepts a custom base URL and bearer token. The
 child process receives a localhost URL and local token; EnvVault adds the real
-provider key only for allowlisted requests.
+upstream credential only for allowlisted requests.
 
 When using the shell for checks, put the child command after `--` and use
 `sh -lc` for shell expansion:
 
 ```bash
-envvault exec --env OPENAI_API_KEY=envvault://openai/dev -- sh -lc 'test -n "$OPENAI_API_KEY" && echo OK'
+envvault exec --env APP_SECRET=envvault://app/dev -- sh -lc 'test -n "$APP_SECRET" && echo OK'
 ```
 
 Do not print credential-bearing environment values. Avoid `echo "$API_KEY"`,

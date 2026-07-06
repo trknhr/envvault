@@ -3,10 +3,11 @@ import { defineConfig } from 'vitepress'
 const githubBase = 'https://github.com/trknhr/envvault/blob/main'
 
 export default defineConfig({
-  title: 'EnvVault Local',
-  description: 'Run local AI apps without plaintext .env secrets.',
+  title: 'EnvVault',
+  description: 'Run local apps without plaintext .env secrets.',
   base: '/envvault/',
   outDir: '../site',
+  srcExclude: ['superpowers/**'],
   lastUpdated: true,
   ignoreDeadLinks: [/^https:\/\/github\.com\/trknhr\/envvault/],
   themeConfig: {
@@ -62,7 +63,7 @@ export default defineConfig({
       text: 'Edit this page on GitHub'
     },
     footer: {
-      message: 'Local AI credentials without plaintext .env secrets.'
+      message: 'Local credentials without plaintext .env secrets.'
     }
   },
   head: [
