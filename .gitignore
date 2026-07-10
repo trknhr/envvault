@@ -4,4 +4,5 @@ dist/
 tmp/
 node_modules/
 docs/.vitepress/cache/
+docs/superpowers/
 examples/*/node_modules/

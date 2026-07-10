@@ -153,16 +153,9 @@ func TestRunCompletionBashWritesCommandsWithoutServices(t *testing.T) {
 		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 	}
 	for _, want := range []string{
-		"# bash completion for envvault",
-		"complete -F _envvault envvault",
-		"init reset doctor secret credential proxy list admin token exec open jwks issuer completion version",
-		"--repair",
-		"secret",
-		"credential",
-		"proxy",
-		"proxies",
-		"list",
-		"admin",
+		"# bash completion V2 for envvault",
+		"__complete",
+		"complete -o default -F __start_envvault envvault",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
@@ -174,7 +167,12 @@ func TestRunCompletionBashWritesCommandsWithoutServices(t *testing.T) {
 }
 
 func TestRunCompletionZshFishAndPowerShell(t *testing.T) {
-	for _, shell := range []string{"zsh", "fish", "powershell"} {
+	tests := map[string][]string{
+		"zsh":        {"#compdef envvault", "__complete"},
+		"fish":       {"# fish completion for envvault", "__complete"},
+		"powershell": {"# powershell completion for envvault", "__completeNoDesc", "Register-ArgumentCompleter"},
+	}
+	for shell, expected := range tests {
 		t.Run(shell, func(t *testing.T) {
 			app := cli.New(cli.Options{})
 			var stdout, stderr bytes.Buffer
@@ -184,18 +182,36 @@ func TestRunCompletionZshFishAndPowerShell(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 			}
-			for _, want := range []string{"envvault", "doctor", "secret", "credential", "proxy", "list", "admin", "completion", "version"} {
+			for _, want := range expected {
 				if !strings.Contains(stdout.String(), want) {
 					t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 				}
-			}
-			if strings.Contains(stdout.String(), "inject") || strings.Contains(stdout.String(), "profile:") {
-				t.Fatalf("stdout = %q, did not expect inject/profile completion", stdout.String())
 			}
 			if stderr.Len() != 0 {
 				t.Fatalf("stderr = %q, want empty", stderr.String())
 			}
 		})
+	}
+}
+
+func TestRunCompletionListsVisibleCommands(t *testing.T) {
+	app := cli.New(cli.Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"__complete", ""}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{"admin", "completion", "credential", "doctor", "exec", "proxy", "version"} {
+		if !strings.Contains(stdout.String(), want+"\t") {
+			t.Fatalf("stdout = %q, want command %q", stdout.String(), want)
+		}
+	}
+	for _, hidden := range []string{"inject\t", "profile\t"} {
+		if strings.Contains(stdout.String(), hidden) {
+			t.Fatalf("stdout = %q, did not expect hidden command %q", stdout.String(), hidden)
+		}
 	}
 }
 

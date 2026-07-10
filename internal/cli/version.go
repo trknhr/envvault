@@ -22,10 +22,6 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func isVersionFlag(arg string) bool {
-	return arg == "--version"
-}
-
 func versionOutput() string {
 	value := strings.TrimSpace(version)
 	if value == "" {
