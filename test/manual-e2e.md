@@ -99,7 +99,7 @@ envvault admin start --addr 127.0.0.1:17891
 This checks the default path for tools that require a normal environment value.
 
 ```bash
-printf 'postgres://user:pass@127.0.0.1:5432/app\n' | envvault credential add database/dev \
+printf 'postgres://user:pass@127.0.0.1:5432/app\n' | envvault credential set database/dev \
   --value-stdin
 
 envvault exec --env DATABASE_URL=envvault://database/dev -- \
@@ -125,7 +125,7 @@ sleep 1
 Register a credential and proxy:
 
 ```bash
-printf 'sk-local-demo\n' | envvault credential add openai-key/dev \
+printf 'sk-local-demo\n' | envvault credential set openai-key/dev \
   --value-stdin
 
 envvault proxy add openai-proxy/dev \

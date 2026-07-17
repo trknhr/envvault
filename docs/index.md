@@ -23,12 +23,23 @@ envvault admin start
 The printed localhost URL opens forms for adding credentials and creating
 optional proxies. Stored credential values are not displayed by the UI.
 
-For scripts or repeatable tests, use the equivalent CLI path:
+For a shorter interactive CLI path, use `set`. It reads the value from a hidden
+terminal prompt:
 
 ```bash
-printf 'secret-value\n' | envvault credential add app/dev \
+envvault credential set app/dev
+```
+
+For scripts or repeatable tests, use the same command with explicit stdin:
+
+```bash
+printf 'secret-value\n' | envvault credential set app/dev \
   --value-stdin
 ```
+
+Remove an unused credential with `envvault credential delete app/dev`. If
+profiles still reference it, deletion fails unless `--cascade` is supplied to
+remove those dependent profiles too.
 
 Use a repository-safe reference in the app's `.env` file or pass the same
 reference with `envvault exec --env`:
@@ -47,11 +58,34 @@ envvault exec \
 envvault exec --env-file .env -- npm start
 ```
 
+For a tool that always reads a file under its home directory, inject a resolved
+copy of a repository-safe JSON, YAML, or TOML source into an isolated temporary
+home. For example, keep this non-secret file at `config/hogehoge.yaml`:
+
+```yaml
+token: envvault://app/dev
+```
+
+```bash
+envvault exec \
+  --home-file .hogehoge=config/hogehoge.yaml \
+  -- your-command
+```
+
+The destination is relative to the isolated home. Relative source paths are
+resolved from the invocation working directory, and absolute source paths are
+also allowed.
+
 ## Credential Flows
 
 - **Direct credential**: use `envvault://<credential>` for the default local
   development path. The child process receives the real value in its
   environment.
+- **Isolated home file**: use repeatable
+  `--home-file DEST=SOURCE` for a tool that requires a home-directory file.
+  EnvVault resolves whole-string direct credential references in source values,
+  leaves the source unchanged, and removes the isolated copy after the child
+  exits normally. JSON, YAML, and TOML sources are supported.
 - **Proxy**: use generated `envvault://<proxy>/base-url` and
   `envvault://<proxy>/token` references when an app accepts a custom endpoint
   and bearer token.

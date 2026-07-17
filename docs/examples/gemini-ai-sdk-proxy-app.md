@@ -50,7 +50,7 @@ envvault admin start
 For repeatable local testing, use the equivalent CLI commands:
 
 ```bash
-printf 'YOUR_GEMINI_API_KEY\n' | ./bin/envvault credential add gemini-api-key \
+printf 'YOUR_GEMINI_API_KEY\n' | ./bin/envvault credential set gemini-api-key \
   --value-stdin
 
 ./bin/envvault proxy add gemini-openai/dev \

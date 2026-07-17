@@ -17,7 +17,7 @@ go build -o ./bin/envvault ./cmd/envvault
 Register a local credential:
 
 ```bash
-printf 'postgres://user:pass@127.0.0.1:5432/app\n' | ./bin/envvault credential add database/dev \
+printf 'postgres://user:pass@127.0.0.1:5432/app\n' | ./bin/envvault credential set database/dev \
   --value-stdin
 ```
 

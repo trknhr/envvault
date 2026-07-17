@@ -24,7 +24,7 @@ envvault admin start
 For repeatable local testing, use the equivalent CLI commands:
 
 ```bash
-printf 'sk-local-demo\n' | ./bin/envvault credential add openai-key/dev \
+printf 'sk-local-demo\n' | ./bin/envvault credential set openai-key/dev \
   --value-stdin
 
 ./bin/envvault proxy add openai-proxy/dev \

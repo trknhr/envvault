@@ -21,7 +21,7 @@ go build -o ./bin/envvault ./cmd/envvault
 Register a demo provider secret and proxy:
 
 ```bash
-printf 'sk-local-demo\n' | ./bin/envvault credential add openai-key/dev \
+printf 'sk-local-demo\n' | ./bin/envvault credential set openai-key/dev \
   --value-stdin
 
 ./bin/envvault proxy add openai-proxy/dev \

@@ -139,28 +139,43 @@ func (a App) newCredentialCommand(execution *commandExecution) *cobra.Command {
 	credentialCommand := newCommandGroup(
 		"credential",
 		"Manage raw credentials",
-		"envvault: usage: envvault credential add <name> --value-stdin",
+		"envvault: usage: envvault credential <set|delete|list> [options]",
 		execution,
 	)
 	credentialCommand.AddCommand(
-		a.newCredentialAddCommand(execution),
+		a.newCredentialSetCommand(execution),
+		a.newCredentialDeleteCommand(execution),
 		newListLeaf("list", "List credential names", execution, a.runCredentialList),
 	)
 	return credentialCommand
 }
 
-func (a App) newCredentialAddCommand(execution *commandExecution) *cobra.Command {
-	var valueStdin bool
+func (a App) newCredentialDeleteCommand(execution *commandExecution) *cobra.Command {
+	var cascade bool
 	cmd := &cobra.Command{
-		Use:   "add <name>",
-		Short: "Store a credential in the OS credential store",
+		Use:   "delete <name>",
+		Short: "Delete a credential from the OS credential store",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if !valueStdin {
-				failCommand(execution, cmd, clerr.New(clerr.ConfigInvalid, "credential value input is required"))
+			execution.exitCode = a.runCredentialDelete(cmd.Context(), args[0], cascade, cmd.ErrOrStderr())
+		},
+	}
+	cmd.Flags().BoolVar(&cascade, "cascade", false, "Also delete profiles that reference the credential")
+	return cmd
+}
+
+func (a App) newCredentialSetCommand(execution *commandExecution) *cobra.Command {
+	var valueStdin bool
+	cmd := &cobra.Command{
+		Use:   "set <name>",
+		Short: "Store or update a credential",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if valueStdin {
+				execution.exitCode = a.runCredentialSetFromStdin(cmd.Context(), args[0], cmd.ErrOrStderr())
 				return
 			}
-			execution.exitCode = a.runCredentialAdd(cmd.Context(), args[0], cmd.ErrOrStderr())
+			execution.exitCode = a.runCredentialSetInteractive(cmd.Context(), args[0], cmd.ErrOrStderr())
 		},
 	}
 	cmd.Flags().BoolVar(&valueStdin, "value-stdin", false, "Read the credential value from stdin")
@@ -347,24 +362,6 @@ func (a App) newInjectAddCommand(execution *commandExecution) *cobra.Command {
 	cmd.Flags().StringVar(&credentialName, "credential", "", "Stored credential name")
 	cmd.Flags().StringVar(&projectBinding, "project-binding", projectBinding, projectBindingUsage)
 	return cmd
-}
-
-func (a App) newListCommand(execution *commandExecution) *cobra.Command {
-	listCommand := newCommandGroup(
-		"list",
-		"List credentials or profiles",
-		"envvault: usage: envvault list <credentials|proxies>",
-		execution,
-	)
-	credentials := newListLeaf("credentials", "List credential names", execution, a.runCredentialList)
-	credentials.Aliases = []string{"credential"}
-	proxies := newListLeaf("proxies", "List provider API proxies", execution, a.runProxyList)
-	proxies.Aliases = []string{"proxy"}
-	profiles := newListLeaf("profiles", "List profiles", execution, a.runProfileList)
-	profiles.Aliases = []string{"profile"}
-	profiles.Hidden = true
-	listCommand.AddCommand(credentials, proxies, profiles)
-	return listCommand
 }
 
 func parseProjectBinding(raw string) (profile.ProjectBinding, error) {

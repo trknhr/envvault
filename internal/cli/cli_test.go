@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,7 @@ import (
 	"github.com/trknhr/envvault/internal/profilemgr"
 	"github.com/trknhr/envvault/internal/projectbinding"
 	resetpkg "github.com/trknhr/envvault/internal/reset"
+	"gopkg.in/yaml.v3"
 )
 
 func TestRunRequiresCommand(t *testing.T) {
@@ -54,6 +56,9 @@ func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
 	for _, want := range []string{
 		"Usage:",
 		"envvault version",
+		"envvault credential set <name>",
+		"envvault credential set <name> --value-stdin",
+		"envvault credential delete <name>",
 		"envvault credential list",
 		"envvault proxy list",
 		"envvault exec --env KEY=envvault://<credential> -- <command>",
@@ -64,6 +69,73 @@ func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	for _, forbidden := range []string{
+		"\n  set         ",
+		"\n  delete      ",
+		"\n  list        ",
+	} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout = %q, did not want top-level command %q", stdout.String(), forbidden)
+		}
+	}
+}
+
+func TestRunCredentialHelpShowsUnifiedAPI(t *testing.T) {
+	app := cli.New(cli.Options{})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"credential", "--help"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{
+		"delete      Delete a credential",
+		"list        List credential names",
+		"set         Store or update a credential",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+	if strings.Contains(stdout.String(), "add         ") {
+		t.Fatalf("stdout = %q, did not want credential add", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunCredentialMutationHelpShowsInputAndCascadeFlags(t *testing.T) {
+	app := cli.New(cli.Options{})
+	for _, tt := range []struct {
+		name      string
+		args      []string
+		want      string
+		forbidden string
+	}{
+		{name: "set", args: []string{"credential", "set", "--help"}, want: "--value-stdin"},
+		{name: "delete", args: []string{"credential", "delete", "--help"}, want: "--cascade", forbidden: "--force"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+
+			code := app.Run(context.Background(), tt.args, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), tt.want) {
+				t.Fatalf("stdout = %q, want %q", stdout.String(), tt.want)
+			}
+			if tt.forbidden != "" && strings.Contains(stdout.String(), tt.forbidden) {
+				t.Fatalf("stdout = %q, did not want %q", stdout.String(), tt.forbidden)
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("stderr = %q, want empty", stderr.String())
+			}
+		})
 	}
 }
 
@@ -131,8 +203,15 @@ func TestRunExecHelpShowsInlineEnvWithoutServices(t *testing.T) {
 		"Usage:",
 		"envvault exec --env-file .env -- <command>",
 		"envvault exec --env OPENAI_API_KEY=envvault://openai/dev",
+		"envvault exec --home-file .hogehoge=./config/hogehoge.yaml -- your-command",
 		"envvault exec --env OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url",
 		"--env KEY=VALUE",
+		"--home-file stringArray",
+		"Relative sources are read from the current",
+		".json, .yaml, .yml, or .toml",
+		"extensionless sources default to JSON",
+		"PATH uses PATH as both destination and source",
+		"one raw credential instead",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
@@ -543,6 +622,338 @@ func TestRunExecProvidesSignalChannelToRunner(t *testing.T) {
 	}
 }
 
+func TestRunExecInjectsCredentialIntoIsolatedHomeFileAndCleansUp(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	realHome := filepath.Join(t.TempDir(), "real-home")
+	if err := os.MkdirAll(realHome, 0o700); err != nil {
+		t.Fatalf("MkdirAll(real home) error = %v", err)
+	}
+	secrets := keyring.NewMemoryStore()
+	const secret = `{"token":"secret-canary"}`
+	if err := secrets.Put(ctx, keyring.CredentialValue("hogehoge/config"), []byte(secret)); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	var isolatedHome string
+	runner := childRunnerFunc(func(_ context.Context, input process.RunInput) (int, error) {
+		isolatedHome = input.Env["HOME"]
+		if isolatedHome == "" || isolatedHome == realHome {
+			t.Fatalf("HOME = %q, want isolated home", isolatedHome)
+		}
+		body, err := os.ReadFile(filepath.Join(isolatedHome, ".hogehoge"))
+		if err != nil {
+			t.Fatalf("ReadFile(home file) error = %v", err)
+		}
+		if string(body) != secret {
+			t.Fatalf("home file = %q", body)
+		}
+		for key, value := range input.Env {
+			if strings.Contains(value, "secret-canary") {
+				t.Fatalf("environment %s leaked home file secret", key)
+			}
+		}
+		return 23, nil
+	})
+	app := cli.New(cli.Options{
+		Paths:           paths,
+		ParentEnv:       []string{"HOME=" + realHome},
+		ProjectStartDir: t.TempDir(),
+		Secrets:         secrets,
+		Runner:          runner,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{
+		"exec",
+		"--home-file", ".hogehoge=envvault://hogehoge/config",
+		"--", "child",
+	}, &stdout, &stderr)
+
+	if code != 23 {
+		t.Fatalf("Run() code = %d, want child code 23; stderr=%q", code, stderr.String())
+	}
+	if _, err := os.Stat(isolatedHome); !os.IsNotExist(err) {
+		t.Fatalf("isolated home still exists: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(realHome, ".hogehoge")); !os.IsNotExist(err) {
+		t.Fatalf("real home was modified: %v", err)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "secret-canary") {
+		t.Fatalf("CLI output leaked secret; stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExecResolvesProjectYAMLTemplateIntoIsolatedHome(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	realHome := filepath.Join(t.TempDir(), "real-home")
+	attackerHome := filepath.Join(t.TempDir(), "attacker-home")
+	projectRoot := t.TempDir()
+	sourceDirectory := filepath.Join(projectRoot, "config")
+	for _, directory := range []string{realHome, attackerHome, sourceDirectory} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", directory, err)
+		}
+	}
+	templatePath := filepath.Join(sourceDirectory, "hogehoge.yaml")
+	template := []byte("endpoint: https://api.example.test\ntoken: envvault://hogehoge/auth\n")
+	if err := os.WriteFile(templatePath, template, 0o600); err != nil {
+		t.Fatalf("WriteFile(template) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(attackerHome, ".hogehoge"), []byte(`{"token":"wrong-home"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile(attacker template) error = %v", err)
+	}
+	secrets := keyring.NewMemoryStore()
+	const secret = "quoted=\"secret\"\n"
+	if err := secrets.Put(ctx, keyring.CredentialValue("hogehoge/auth"), []byte(secret)); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	var isolatedHome string
+	runner := childRunnerFunc(func(_ context.Context, input process.RunInput) (int, error) {
+		isolatedHome = input.Env["HOME"]
+		if isolatedHome == "" || isolatedHome == realHome || isolatedHome == attackerHome {
+			t.Fatalf("HOME = %q, want isolated home", isolatedHome)
+		}
+		body, err := os.ReadFile(filepath.Join(isolatedHome, ".hogehoge"))
+		if err != nil {
+			t.Fatalf("ReadFile(resolved template) error = %v", err)
+		}
+		var config map[string]any
+		if err := yaml.Unmarshal(body, &config); err != nil {
+			t.Fatalf("Unmarshal(resolved YAML template) error = %v", err)
+		}
+		if config["endpoint"] != "https://api.example.test" || config["token"] != secret {
+			t.Fatalf("resolved config = %#v", config)
+		}
+		for key, value := range input.Env {
+			if strings.Contains(value, "secret") {
+				t.Fatalf("environment %s leaked home file secret", key)
+			}
+		}
+		return 29, nil
+	})
+	app := cli.New(cli.Options{
+		Paths:           paths,
+		ParentEnv:       []string{"HOME=" + realHome},
+		ProjectStartDir: projectRoot,
+		Secrets:         secrets,
+		Runner:          runner,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{
+		"exec",
+		"--env", "HOME=" + attackerHome,
+		"--home-file", ".hogehoge=config/hogehoge.yaml",
+		"--", "child",
+	}, &stdout, &stderr)
+
+	if code != 29 {
+		t.Fatalf("Run() code = %d, want child code 29; stderr=%q", code, stderr.String())
+	}
+	if _, err := os.Stat(isolatedHome); !os.IsNotExist(err) {
+		t.Fatalf("isolated home still exists: %v", err)
+	}
+	after, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("ReadFile(source template) error = %v", err)
+	}
+	if !bytes.Equal(after, template) {
+		t.Fatalf("source template changed: %q", after)
+	}
+	if _, err := os.Stat(filepath.Join(realHome, ".hogehoge")); !os.IsNotExist(err) {
+		t.Fatalf("real home was modified: %v", err)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), secret) {
+		t.Fatalf("CLI output leaked secret; stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExecResolvesRelativeHomeFileFromInvocationWorkingDirectory(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	projectRoot := t.TempDir()
+	realHome := filepath.Join(t.TempDir(), "real-home")
+	inlineHome := filepath.Join(t.TempDir(), "inline-home")
+	for _, directory := range []string{
+		filepath.Join(projectRoot, "config"),
+		filepath.Join(inlineHome, "config"),
+		realHome,
+	} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", directory, err)
+		}
+	}
+	templatePath := filepath.Join(projectRoot, "config", "cwd.json")
+	template := []byte(`{"source":"cwd","token":"envvault://hogehoge/auth"}`)
+	if err := os.WriteFile(templatePath, template, 0o600); err != nil {
+		t.Fatalf("WriteFile(cwd template) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(inlineHome, "config", "cwd.json"), []byte(`{"source":"inline-home"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile(inline HOME decoy) error = %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	secrets := keyring.NewMemoryStore()
+	const secret = "secret-from-cwd-template"
+	if err := secrets.Put(ctx, keyring.CredentialValue("hogehoge/auth"), []byte(secret)); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	var isolatedHome string
+	runner := childRunnerFunc(func(_ context.Context, input process.RunInput) (int, error) {
+		isolatedHome = input.Env["HOME"]
+		if isolatedHome == "" || isolatedHome == realHome || isolatedHome == inlineHome {
+			t.Fatalf("HOME = %q, want isolated home", isolatedHome)
+		}
+		body, err := os.ReadFile(filepath.Join(isolatedHome, ".hogehoge"))
+		if err != nil {
+			t.Fatalf("ReadFile(resolved template) error = %v", err)
+		}
+		var config map[string]any
+		if err := json.Unmarshal(body, &config); err != nil {
+			t.Fatalf("Unmarshal(resolved template) error = %v", err)
+		}
+		if config["source"] != "cwd" || config["token"] != secret {
+			t.Fatalf("resolved config = %#v", config)
+		}
+		return 0, nil
+	})
+	app := cli.New(cli.Options{
+		Paths:     paths,
+		ParentEnv: []string{"HOME=" + realHome},
+		Secrets:   secrets,
+		Runner:    runner,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{
+		"exec",
+		"--env", "HOME=" + inlineHome,
+		"--home-file", ".hogehoge=config/cwd.json",
+		"--", "child",
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if _, err := os.Stat(isolatedHome); !os.IsNotExist(err) {
+		t.Fatalf("isolated home still exists: %v", err)
+	}
+	after, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("ReadFile(cwd template) error = %v", err)
+	}
+	if !bytes.Equal(after, template) {
+		t.Fatalf("cwd template changed: %q", after)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), secret) {
+		t.Fatalf("CLI output leaked secret; stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExecRejectsUnsafeHomeFileBeforeStartingChild(t *testing.T) {
+	runner := &fakeChildRunner{}
+	app := cli.New(cli.Options{Runner: runner})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--home-file", "../credential=envvault://hogehoge/config",
+		"--", "child",
+	}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("Run() code = %d, want 1", code)
+	}
+	if len(runner.input.Command) != 0 {
+		t.Fatalf("runner command = %#v, want no child start", runner.input.Command)
+	}
+	if !strings.Contains(stderr.String(), string(clerr.ConfigInvalid)) {
+		t.Fatalf("stderr = %q, want config error", stderr.String())
+	}
+}
+
+func TestRunExecRejectsInvalidHomeJSONTemplateBeforeStartingChild(t *testing.T) {
+	projectRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectRoot, "hogehoge.json"), []byte(`{"token":"Bearer envvault://hogehoge/auth"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile(template) error = %v", err)
+	}
+	runner := &fakeChildRunner{}
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(context.Background(), keyring.CredentialValue("hogehoge/auth"), []byte("secret-canary")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	app := cli.New(cli.Options{
+		Paths:           testPaths(t),
+		ProjectStartDir: projectRoot,
+		Secrets:         secrets,
+		Runner:          runner,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--home-file", ".hogehoge=hogehoge.json",
+		"--", "child",
+	}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("Run() code = %d, want 1", code)
+	}
+	if len(runner.input.Command) != 0 {
+		t.Fatalf("runner command = %#v, want no child start", runner.input.Command)
+	}
+	if !strings.Contains(stderr.String(), string(clerr.ConfigInvalid)) {
+		t.Fatalf("stderr = %q, want config error", stderr.String())
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "secret-canary") {
+		t.Fatalf("output leaked secret; stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExecCleansIsolatedHomeWhenRunnerFails(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(ctx, keyring.CredentialValue("hogehoge/config"), []byte("secret-canary")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	var isolatedHome string
+	runner := childRunnerFunc(func(_ context.Context, input process.RunInput) (int, error) {
+		isolatedHome = input.Env["HOME"]
+		return 0, errors.New("start child failed")
+	})
+	app := cli.New(cli.Options{
+		Paths:           paths,
+		ProjectStartDir: t.TempDir(),
+		Secrets:         secrets,
+		Runner:          runner,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{
+		"exec",
+		"--home-file", ".hogehoge=envvault://hogehoge/config",
+		"--", "child",
+	}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("Run() code = %d, want 1", code)
+	}
+	if isolatedHome == "" {
+		t.Fatal("runner did not receive isolated HOME")
+	}
+	if _, err := os.Stat(isolatedHome); !os.IsNotExist(err) {
+		t.Fatalf("isolated home still exists after runner failure: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "start child failed") {
+		t.Fatalf("stderr = %q, want runner error", stderr.String())
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "secret-canary") {
+		t.Fatalf("output leaked home file secret; stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunSecretAddStoresProviderAPIKey(t *testing.T) {
 	ctx := context.Background()
 	secrets := keyring.NewMemoryStore()
@@ -573,7 +984,7 @@ func TestRunSecretAddStoresProviderAPIKey(t *testing.T) {
 	}
 }
 
-func TestRunCredentialAddStoresCredentialValue(t *testing.T) {
+func TestRunCredentialSetFromStdinStoresCredentialValue(t *testing.T) {
 	ctx := context.Background()
 	paths := testPaths(t)
 	secrets := keyring.NewMemoryStore()
@@ -585,7 +996,7 @@ func TestRunCredentialAddStoresCredentialValue(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	code := app.Run(ctx, []string{
-		"credential", "add", "database/dev",
+		"credential", "set", "database/dev",
 		"--value-stdin",
 	}, &stdout, &stderr)
 
@@ -608,6 +1019,280 @@ func TestRunCredentialAddStoresCredentialValue(t *testing.T) {
 	}
 	if stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCredentialSetStoresPromptedCredentialValue(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "credential subcommand", args: []string{"credential", "set", "database/dev"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			paths := testPaths(t)
+			secrets := keyring.NewMemoryStore()
+			promptedValue := []byte("postgres://user:pass@localhost/db\n")
+			app := cli.New(cli.Options{
+				Paths:   paths,
+				Secrets: secrets,
+				CredentialReader: func(output io.Writer) ([]byte, error) {
+					_, err := io.WriteString(output, "Credential value: ")
+					return promptedValue, err
+				},
+			})
+			var stdout, stderr bytes.Buffer
+
+			code := app.Run(ctx, tt.args, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+			}
+			got, err := secrets.Get(ctx, keyring.CredentialValue("database/dev"))
+			if err != nil {
+				t.Fatalf("Get() error = %v", err)
+			}
+			if string(got) != "postgres://user:pass@localhost/db" {
+				t.Fatalf("stored credential = %q", got)
+			}
+			cfg, err := config.Load(paths.ConfigFile)
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if strings.Join(cfg.Credentials, ",") != "database/dev" {
+				t.Fatalf("Credentials = %#v", cfg.Credentials)
+			}
+			if stdout.Len() != 0 || stderr.String() != "Credential value: " {
+				t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
+			}
+			for i, b := range promptedValue {
+				if b != 0 {
+					t.Fatalf("prompted credential byte %d was not cleared", i)
+				}
+			}
+		})
+	}
+}
+
+func TestRunCredentialSetRequiresInteractiveReader(t *testing.T) {
+	app := cli.New(cli.Options{Secrets: keyring.NewMemoryStore()})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"credential", "set", "database/dev"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("Run() code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "interactive credential input unavailable") ||
+		!strings.Contains(stderr.String(), "credential set <name> --value-stdin") {
+		t.Fatalf("stderr = %q, want interactive input guidance", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestRunCredentialSetRejectsCredentialAsArgument(t *testing.T) {
+	app := cli.New(cli.Options{Secrets: keyring.NewMemoryStore()})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{"credential", "set", "database/dev", "secret-canary"}, &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("Run() code = %d, want 2", code)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "secret-canary") {
+		t.Fatalf("output leaked rejected credential argument; stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCredentialDeleteRemovesCredential(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "credential subcommand", args: []string{"credential", "delete", "database/dev"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			paths := testPaths(t)
+			writeBaseConfig(t, paths)
+			cfg, err := config.Load(paths.ConfigFile)
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			cfg.AddCredential("database/dev")
+			if err := config.Save(paths.ConfigFile, cfg); err != nil {
+				t.Fatalf("Save() error = %v", err)
+			}
+			secrets := keyring.NewMemoryStore()
+			if err := secrets.Put(ctx, keyring.CredentialValue("database/dev"), []byte("secret-canary")); err != nil {
+				t.Fatalf("Put() error = %v", err)
+			}
+			app := cli.New(cli.Options{Paths: paths, Secrets: secrets})
+			var stdout, stderr bytes.Buffer
+
+			code := app.Run(ctx, tt.args, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+			}
+			if _, err := secrets.Get(ctx, keyring.CredentialValue("database/dev")); err == nil {
+				t.Fatal("credential still exists in keyring")
+			}
+			cfg, err = config.Load(paths.ConfigFile)
+			if err != nil {
+				t.Fatalf("Load() after delete error = %v", err)
+			}
+			if len(cfg.CredentialNames()) != 0 {
+				t.Fatalf("CredentialNames() = %#v, want empty", cfg.CredentialNames())
+			}
+			if stdout.Len() != 0 || stderr.Len() != 0 {
+				t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunCredentialDeleteRejectsReferencedCredential(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	writeBaseConfig(t, paths)
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	cfg.AddCredential("database/dev")
+	cfg.Profiles["app/dev"] = config.Profile{
+		Kind:           profile.KindInject,
+		CredentialName: "database/dev",
+		ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
+	}
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(ctx, keyring.CredentialValue("database/dev"), []byte("secret-canary")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	app := cli.New(cli.Options{Paths: paths, Secrets: secrets})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{"credential", "delete", "database/dev"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("Run() code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "credential is used by profiles: app/dev") ||
+		!strings.Contains(stderr.String(), "--cascade") {
+		t.Fatalf("stderr = %q, want dependent profile guidance", stderr.String())
+	}
+	value, err := secrets.Get(ctx, keyring.CredentialValue("database/dev"))
+	if err != nil || string(value) != "secret-canary" {
+		t.Fatalf("stored credential = %q, error = %v", value, err)
+	}
+	cfg, err = config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() after rejected delete error = %v", err)
+	}
+	if len(cfg.CredentialNames()) != 1 || cfg.Profiles["app/dev"].CredentialName != "database/dev" {
+		t.Fatalf("config changed after rejected delete: %#v", cfg)
+	}
+}
+
+func TestRunCredentialDeleteCascadeRemovesDependentProfiles(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	writeBaseConfig(t, paths)
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	cfg.AddCredential("database/dev")
+	cfg.Profiles["app/dev"] = config.Profile{
+		Kind:           profile.KindInject,
+		CredentialName: "database/dev",
+		ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
+	}
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(ctx, keyring.CredentialValue("database/dev"), []byte("secret-canary")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	app := cli.New(cli.Options{Paths: paths, Secrets: secrets})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{"credential", "delete", "database/dev", "--cascade"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if _, err := secrets.Get(ctx, keyring.CredentialValue("database/dev")); err == nil {
+		t.Fatal("credential still exists in keyring")
+	}
+	cfg, err = config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() after delete error = %v", err)
+	}
+	if len(cfg.CredentialNames()) != 0 || len(cfg.Profiles) != 0 {
+		t.Fatalf("config retained deleted credential state: %#v", cfg)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q, want both empty", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCredentialDeleteRestoresCredentialWhenConfigSaveFails(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	writeBaseConfig(t, paths)
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	cfg.AddCredential("database/dev")
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	secrets := keyring.NewMemoryStore()
+	if err := secrets.Put(ctx, keyring.CredentialValue("database/dev"), []byte("secret-canary")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	app := cli.New(cli.Options{
+		Paths:   paths,
+		Secrets: secrets,
+		ConfigSaver: func(_ string, proposed config.File) error {
+			if len(proposed.CredentialNames()) != 0 {
+				t.Fatalf("proposed credentials = %#v, want empty", proposed.CredentialNames())
+			}
+			return errors.New("save failed")
+		},
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(ctx, []string{"credential", "delete", "database/dev"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("Run() code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "save failed") {
+		t.Fatalf("stderr = %q, want save error", stderr.String())
+	}
+	value, err := secrets.Get(ctx, keyring.CredentialValue("database/dev"))
+	if err != nil || string(value) != "secret-canary" {
+		t.Fatalf("restored credential = %q, error = %v", value, err)
+	}
+	cfg, err = config.Load(paths.ConfigFile)
+	if err != nil {
+		t.Fatalf("Load() after rollback error = %v", err)
+	}
+	if strings.Join(cfg.CredentialNames(), ",") != "database/dev" {
+		t.Fatalf("CredentialNames() = %#v, want original metadata", cfg.CredentialNames())
 	}
 }
 

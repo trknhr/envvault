@@ -3,6 +3,8 @@ package acceptance_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/cli"
+	"github.com/trknhr/envvault/internal/config"
 	"github.com/trknhr/envvault/internal/issuer"
 	"github.com/trknhr/envvault/internal/keyring"
 	"github.com/trknhr/envvault/internal/process"
@@ -146,6 +149,101 @@ func TestExecPropagatesChildExitCode(t *testing.T) {
 	}
 }
 
+func TestExecResolvesProjectJSONTemplatesWithoutLeakingSecrets(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+	inspectHome := buildFixture(t, repoRoot, "inspect-home")
+	projectRoot := t.TempDir()
+	realHome := filepath.Join(t.TempDir(), "real-home")
+	templateDirectory := filepath.Join(projectRoot, "config")
+	for _, directory := range []string{realHome, templateDirectory} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", directory, err)
+		}
+	}
+	const secret = "home-secret-canary"
+	const nestedSecret = "nested-secret-canary\n"
+	templates := map[string][]byte{
+		"config/hogehoge.json": []byte(`{"endpoint":"https://api.example.test","token":"envvault://hogehoge/auth"}`),
+		"config/session.json":  []byte(`{"enabled":true,"session":"envvault://hogehoge/session"}`),
+	}
+	for source, body := range templates {
+		if err := os.WriteFile(filepath.Join(projectRoot, filepath.FromSlash(source)), body, 0o600); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", source, err)
+		}
+	}
+	app := newCredentialExecApp(t, projectRoot, map[string]string{
+		"hogehoge/auth":    secret,
+		"hogehoge/session": nestedSecret,
+	}, "HOME="+realHome)
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--home-file", ".hogehoge=config/hogehoge.json",
+		"--home-file", ".config/hogehoge/session.json=config/session.json",
+		"--", inspectHome, ".hogehoge", ".config/hogehoge/session.json",
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	var child homeSnapshot
+	if err := json.Unmarshal(stdout.Bytes(), &child); err != nil {
+		t.Fatalf("Unmarshal(inspect-home) error = %v; stdout=%q", err, stdout.String())
+	}
+	primaryOutput, err := json.MarshalIndent(map[string]any{
+		"endpoint": "https://api.example.test",
+		"token":    secret,
+	}, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent(primary output) error = %v", err)
+	}
+	primaryOutput = append(primaryOutput, '\n')
+	digest := sha256.Sum256(primaryOutput)
+	if got := child.Files[".hogehoge"].SHA256; got != hex.EncodeToString(digest[:]) {
+		t.Fatalf("home file digest = %q", got)
+	}
+	nestedOutput, err := json.MarshalIndent(map[string]any{
+		"enabled": true,
+		"session": nestedSecret,
+	}, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent(nested output) error = %v", err)
+	}
+	nestedOutput = append(nestedOutput, '\n')
+	nestedDigest := sha256.Sum256(nestedOutput)
+	if got := child.Files[".config/hogehoge/session.json"].SHA256; got != hex.EncodeToString(nestedDigest[:]) {
+		t.Fatalf("nested home file digest = %q", got)
+	}
+	if child.Home == "" || child.Home == realHome {
+		t.Fatalf("child HOME = %q, want isolated home", child.Home)
+	}
+	if _, err := os.Stat(child.Home); !os.IsNotExist(err) {
+		t.Fatalf("isolated home still exists: %v", err)
+	}
+	for source, want := range templates {
+		after, err := os.ReadFile(filepath.Join(projectRoot, filepath.FromSlash(source)))
+		if err != nil {
+			t.Fatalf("ReadFile(source %s) error = %v", source, err)
+		}
+		if !bytes.Equal(after, want) {
+			t.Fatalf("source template %s changed: %q", source, after)
+		}
+		if bytes.Contains(after, []byte("secret-canary")) {
+			t.Fatalf("source template %s contains resolved secret", source)
+		}
+	}
+	for _, destination := range []string{".hogehoge", ".config/hogehoge/session.json"} {
+		if _, err := os.Stat(filepath.Join(realHome, filepath.FromSlash(destination))); !os.IsNotExist(err) {
+			t.Fatalf("real home destination %s was modified: %v", destination, err)
+		}
+	}
+	output := stdout.String() + stderr.String()
+	if strings.Contains(output, "home-secret-canary") || strings.Contains(output, "nested-secret-canary") {
+		t.Fatalf("output leaked home file secret; stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
 type inspectSnapshot struct {
 	Env       map[string]string            `json:"env"`
 	StartedAt string                       `json:"started_at"`
@@ -155,6 +253,17 @@ type inspectSnapshot struct {
 type inspectPortStatus struct {
 	Reachable bool   `json:"reachable"`
 	Error     string `json:"error,omitempty"`
+}
+
+type homeSnapshot struct {
+	Home  string                    `json:"home"`
+	Files map[string]homeFileStatus `json:"files"`
+}
+
+type homeFileStatus struct {
+	SHA256 string      `json:"sha256"`
+	Mode   os.FileMode `json:"mode"`
+	Size   int64       `json:"size"`
 }
 
 type fakeProfileResolver map[string]profile.Profile
@@ -193,6 +302,9 @@ func newCredentialExecApp(t *testing.T, projectRoot string, credentials map[stri
 	parent := credentialExecParentEnv()
 	parent = append(parent, extraParentEnv...)
 	return cli.New(cli.Options{
+		Paths: config.Paths{
+			CacheDir: filepath.Join(projectRoot, ".envvault-cache"),
+		},
 		ParentEnv:       parent,
 		ProjectStartDir: projectRoot,
 		Secrets:         secrets,

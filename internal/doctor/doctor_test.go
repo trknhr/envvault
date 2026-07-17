@@ -19,6 +19,7 @@ import (
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/config"
 	"github.com/trknhr/envvault/internal/doctor"
+	"github.com/trknhr/envvault/internal/homefile"
 	"github.com/trknhr/envvault/internal/keyring"
 	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 	"github.com/trknhr/envvault/internal/sqlite"
@@ -138,6 +139,14 @@ func TestCheckerReportsStaleRuntimeLockAndTempFilesWithoutRepair(t *testing.T) {
 	if err := os.Chtimes(staleTemp, stale, stale); err != nil {
 		t.Fatalf("Chtimes(stale temp) error = %v", err)
 	}
+	staleHome := filepath.Join(tmpDir, "envvault-home-secret-canary")
+	if err := os.MkdirAll(filepath.Join(staleHome, "home"), 0o700); err != nil {
+		t.Fatalf("MkdirAll(stale home) error = %v", err)
+	}
+	writeHomeWorkspaceLock(t, staleHome)
+	if err := os.Chtimes(staleHome, stale, stale); err != nil {
+		t.Fatalf("Chtimes(stale home) error = %v", err)
+	}
 
 	result, err := doctor.Checker{
 		Paths:            fixture.paths,
@@ -159,7 +168,7 @@ func TestCheckerReportsStaleRuntimeLockAndTempFilesWithoutRepair(t *testing.T) {
 	if tempCheck.Status != doctor.StatusWarn {
 		t.Fatalf("temp-files status = %q, want warn", tempCheck.Status)
 	}
-	for _, path := range []string{staleLock, staleTemp} {
+	for _, path := range []string{staleLock, staleTemp, staleHome} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected %s to remain after non-repair check: %v", path, err)
 		}
@@ -305,6 +314,27 @@ func TestCheckerRepairRemovesOnlyStaleRuntimeLockAndEnvVaultTempFiles(t *testing
 			t.Fatalf("Chtimes(%s) error = %v", item.path, err)
 		}
 	}
+	staleHome := filepath.Join(tmpDir, "envvault-home-stale")
+	freshHome := filepath.Join(tmpDir, "envvault-home-fresh")
+	unrelatedDir := filepath.Join(tmpDir, "envvault-unrelated-dir")
+	for _, item := range []struct {
+		path string
+		when time.Time
+	}{
+		{path: staleHome, when: stale},
+		{path: freshHome, when: fresh},
+		{path: unrelatedDir, when: stale},
+	} {
+		if err := os.MkdirAll(filepath.Join(item.path, "home"), 0o700); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", item.path, err)
+		}
+		if strings.HasPrefix(filepath.Base(item.path), homefile.WorkspacePrefix) {
+			writeHomeWorkspaceLock(t, item.path)
+		}
+		if err := os.Chtimes(item.path, item.when, item.when); err != nil {
+			t.Fatalf("Chtimes(%s) error = %v", item.path, err)
+		}
+	}
 
 	result, err := (doctor.Checker{
 		Paths:            paths,
@@ -321,7 +351,10 @@ func TestCheckerRepairRemovesOnlyStaleRuntimeLockAndEnvVaultTempFiles(t *testing
 	if _, err := os.Stat(staleTemp); !os.IsNotExist(err) {
 		t.Fatalf("stale temp file still exists or stat failed: %v", err)
 	}
-	for _, path := range []string{freshTemp, unrelated} {
+	if _, err := os.Stat(staleHome); !os.IsNotExist(err) {
+		t.Fatalf("stale isolated home still exists or stat failed: %v", err)
+	}
+	for _, path := range []string{freshTemp, unrelated, freshHome, unrelatedDir} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected %s to remain: %v", path, err)
 		}
@@ -334,6 +367,78 @@ func TestCheckerRepairRemovesOnlyStaleRuntimeLockAndEnvVaultTempFiles(t *testing
 	}
 	if strings.Contains(rendered, "secret-canary") {
 		t.Fatalf("repair output leaked secret marker: %q", rendered)
+	}
+}
+
+func TestCheckerRepairDoesNotRemoveStaleButActiveHomeWorkspace(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	fixture := prepareHealthyDoctorInstallation(t, ctx)
+	secrets := keyring.NewMemoryStore()
+	putSecret(t, ctx, secrets, keyring.CredentialValue("app/config"), "secret-canary")
+	specs, err := homefile.ParseAll([]string{".hogehoge=envvault://app/config"})
+	if err != nil {
+		t.Fatalf("ParseAll() error = %v", err)
+	}
+	workspace, err := homefile.Prepare(ctx, homefile.Options{
+		CacheDir: fixture.paths.CacheDir,
+		Specs:    specs,
+		Secrets:  secrets,
+	})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	defer workspace.Close()
+	workspaceRoot := filepath.Dir(workspace.HomeDir())
+	stale := now.Add(-2 * time.Hour)
+	if err := os.Chtimes(workspaceRoot, stale, stale); err != nil {
+		t.Fatalf("Chtimes(workspace) error = %v", err)
+	}
+
+	result, err := (doctor.Checker{
+		Paths:            fixture.paths,
+		Secrets:          fixture.secrets,
+		Now:              func() time.Time { return now },
+		RepairStaleAfter: time.Hour,
+		RuntimeManifest:  fixture.manifest,
+		RuntimePlatform:  fixture.platform,
+	}).Repair(ctx)
+	if err != nil {
+		t.Fatalf("Repair() error = %v", err)
+	}
+	if _, err := os.Stat(workspace.HomeDir()); err != nil {
+		t.Fatalf("active isolated home was removed: %v", err)
+	}
+	if check := findCheck(t, result, "repair-temp-files"); check.Status != doctor.StatusOK {
+		t.Fatalf("repair-temp-files status = %q, want ok; message=%q", check.Status, check.Message)
+	}
+}
+
+func TestCheckerRepairFailsClosedWhenStaleHomeLockIsMissing(t *testing.T) {
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	paths := testPaths(t)
+	workspaceRoot := filepath.Join(paths.CacheDir, "tmp", homefile.WorkspacePrefix+"missing-lock")
+	if err := os.MkdirAll(filepath.Join(workspaceRoot, "home"), 0o700); err != nil {
+		t.Fatalf("MkdirAll(workspace) error = %v", err)
+	}
+	stale := now.Add(-2 * time.Hour)
+	if err := os.Chtimes(workspaceRoot, stale, stale); err != nil {
+		t.Fatalf("Chtimes(workspace) error = %v", err)
+	}
+
+	result, err := (doctor.Checker{
+		Paths:            paths,
+		Now:              func() time.Time { return now },
+		RepairStaleAfter: time.Hour,
+	}).Repair(context.Background())
+	if err != nil {
+		t.Fatalf("Repair() error = %v", err)
+	}
+	if _, err := os.Stat(workspaceRoot); err != nil {
+		t.Fatalf("workspace with unknown active state was removed: %v", err)
+	}
+	if check := findCheck(t, result, "repair-temp-files"); check.Status != doctor.StatusError {
+		t.Fatalf("repair-temp-files status = %q, want error; message=%q", check.Status, check.Message)
 	}
 }
 
@@ -439,6 +544,13 @@ func testPaths(t *testing.T) config.Paths {
 		ConfigFile: filepath.Join(root, "config", "config.yaml"),
 		DataDir:    filepath.Join(root, "data"),
 		CacheDir:   filepath.Join(root, "cache"),
+	}
+}
+
+func writeHomeWorkspaceLock(t *testing.T, workspaceRoot string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(workspaceRoot, homefile.LockFilename), nil, 0o600); err != nil {
+		t.Fatalf("WriteFile(active lock) error = %v", err)
 	}
 }
 

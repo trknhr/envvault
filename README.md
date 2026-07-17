@@ -5,6 +5,9 @@ Keep real secrets out of project `.env` files and coding-agent prompts.
 EnvVault replaces plaintext `.env` secrets with repository-safe `envvault://`
 references. At runtime, it resolves credentials from the OS credential store or
 starts a localhost proxy that gives the app a local URL and local proxy token.
+For tools that require a credential file under the user's home directory, it
+can instead create an isolated temporary home containing only the requested
+resolved files.
 
 Links: [Documentation](https://trknhr.github.io/envvault/) |
 [Homebrew tap](https://github.com/trknhr/homebrew-tap)
@@ -44,11 +47,23 @@ Common commands:
 
 ```bash
 envvault admin start
+envvault credential set app/dev
+envvault credential delete app/dev
 envvault credential list
 envvault proxy list
 envvault exec --env APP_SECRET=envvault://app/dev -- npm run dev
 envvault exec --env-file .env -- npm start
+envvault exec --home-file .hogehoge=config/hogehoge.yaml -- your-command
 ```
+
+`envvault credential set <name>` prompts for a credential with terminal echo
+disabled, so no `printf` pipeline or secret-valued command-line argument is
+needed. For non-interactive scripts, add `--value-stdin` to the same command.
+
+`envvault credential delete <name>` removes the credential from the OS
+credential store and local metadata. It refuses to delete credentials used by a
+profile; pass `--cascade` only when the dependent profiles should be deleted
+too.
 
 `envvault admin start` starts the local browser UI for adding credentials and
 creating optional proxies. The printed URL includes a per-run local admin token.
@@ -59,12 +74,43 @@ process environment at launch. Use proxy mode only when an API client accepts a
 custom base URL and you want to avoid passing the real upstream credential to
 the child process.
 
+`--home-file DEST=SOURCE` supports tools that always read a file such as
+`~/.hogehoge`. `DEST` is a safe relative path inside a private, otherwise empty
+temporary home. A relative `SOURCE` is resolved from the invocation working
+directory; an absolute source path is also allowed. For example, a
+repository-safe YAML source can contain normal configuration plus a direct
+credential reference:
+
+```yaml
+endpoint: https://api.example.com
+token: envvault://app/dev
+```
+
+Source filenames select JSON (`.json`), YAML (`.yaml` or `.yml`), or TOML
+(`.toml`); extensionless names and single dotfiles default to JSON. EnvVault
+recursively resolves only whole-string `envvault://<credential>` values, never
+keys, and writes the result at `DEST`. A bare `--home-file .hogehoge` uses
+`./.hogehoge` as both source and destination. The source is never modified, and
+child changes are discarded. YAML mapping keys must be strings; anchors,
+aliases, and merge keys are not supported. The option is repeatable.
+`DEST=envvault://<credential>` remains available for tools whose entire file is
+one raw credential.
+
 ## Security Limitations
 
 EnvVault reduces credential exposure; it does not create a sandbox.
 
 - A child process can read any credential value or local proxy token placed in
   its environment until it exits.
+- A child process can read any credential file created with `--home-file`.
+  EnvVault removes the isolated home when the child exits normally. A forced
+  termination or system failure can leave it behind until
+  `envvault doctor --repair` removes the stale workspace.
+- Home-file isolation is environment based, not a filesystem sandbox. The child
+  must honor `HOME` or the platform config-directory variables; a tool that
+  resolves the OS account home independently can still reach the real home.
+- The isolated home belongs to the foreground child lifetime. A daemonized
+  descendant does not keep it alive after the direct child exits.
 - A process running as the same OS user can use the same OS credential store
   permissions as the user.
 - If the OS credential store is compromised, stored credentials are compromised.
@@ -79,9 +125,9 @@ EnvVault reduces credential exposure; it does not create a sandbox.
 
 This repository contains the local-first implementation path: strict reference
 parsing, OS keyring abstraction, browser admin server, direct credential
-resolution, optional provider proxies, process environment construction,
-metadata-only audit records, reset/doctor support, runnable examples, and
-acceptance fixtures.
+resolution, isolated home-file injection, optional provider proxies, process
+environment construction, metadata-only audit records, reset/doctor support,
+runnable examples, and acceptance fixtures.
 
 Local archive packaging is available through
 `go run ./cmd/envvault-release package`, and local Homebrew/Scoop metadata can

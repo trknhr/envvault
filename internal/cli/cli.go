@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/trknhr/envvault/internal/config"
 	doctorpkg "github.com/trknhr/envvault/internal/doctor"
 	"github.com/trknhr/envvault/internal/envref"
+	"github.com/trknhr/envvault/internal/homefile"
 	"github.com/trknhr/envvault/internal/issuer"
 	"github.com/trknhr/envvault/internal/issuer/local"
 	"github.com/trknhr/envvault/internal/jwks"
@@ -88,6 +90,8 @@ type DoctorRepairer interface {
 	Repair(ctx context.Context) (doctorpkg.Result, error)
 }
 
+type ConfigSaver func(path string, cfg config.File) error
+
 type Options struct {
 	Paths                   config.Paths
 	Initializer             Initializer
@@ -95,6 +99,8 @@ type Options struct {
 	Doctor                  Doctor
 	Secrets                 keyring.Store
 	Stdin                   io.Reader
+	CredentialReader        CredentialReader
+	ConfigSaver             ConfigSaver
 	ParentEnv               []string
 	ProjectStartDir         string
 	Profiles                process.ProfileResolver
@@ -117,6 +123,8 @@ type App struct {
 	doctor                  Doctor
 	secrets                 keyring.Store
 	stdin                   io.Reader
+	credentialReader        CredentialReader
+	configSaver             ConfigSaver
 	parentEnv               []string
 	projectStartDir         string
 	profiles                process.ProfileResolver
@@ -140,6 +148,8 @@ func New(options Options) App {
 		doctor:                  options.Doctor,
 		secrets:                 options.Secrets,
 		stdin:                   options.Stdin,
+		credentialReader:        options.CredentialReader,
+		configSaver:             options.ConfigSaver,
 		parentEnv:               append([]string(nil), options.ParentEnv...),
 		projectStartDir:         options.ProjectStartDir,
 		profiles:                options.Profiles,
@@ -163,14 +173,15 @@ func defaultOptions(paths config.Paths) Options {
 	auditRecorder := &audit.FileRecorder{Path: filepath.Join(paths.DataDir, defaultAuditFilename)}
 	tokenIssuer := local.NewIssuerWithAudit(profiles, secrets, managedTalos, auditRecorder)
 	return Options{
-		Paths:          paths,
-		Initializer:    managedTalos,
-		Secrets:        secrets,
-		Profiles:       profiles,
-		Issuer:         tokenIssuer,
-		Runner:         process.Runner{},
-		Browser:        browser.Client{Issuer: tokenIssuer, Opener: browser.CommandOpener{}, Audit: auditRecorder},
-		ProfileManager: profilemgr.New(paths.ConfigFile, secrets, managedTalos),
+		Paths:            paths,
+		Initializer:      managedTalos,
+		Secrets:          secrets,
+		CredentialReader: terminalCredentialReader(os.Stdin),
+		Profiles:         profiles,
+		Issuer:           tokenIssuer,
+		Runner:           process.Runner{},
+		Browser:          browser.Client{Issuer: tokenIssuer, Opener: browser.CommandOpener{}, Audit: auditRecorder},
+		ProfileManager:   profilemgr.New(paths.ConfigFile, secrets, managedTalos),
 		ProjectBindingConfirmer: ttyProjectBindingConfirmer{
 			input:      os.Stdin,
 			output:     os.Stderr,
@@ -331,7 +342,7 @@ func (a App) runSecretAdd(ctx context.Context, name string, stderr io.Writer) in
 	return 0
 }
 
-func (a App) runCredentialAdd(ctx context.Context, name string, stderr io.Writer) int {
+func (a App) runCredentialSetFromStdin(ctx context.Context, name string, stderr io.Writer) int {
 	if a.secrets == nil {
 		fmt.Fprintln(stderr, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable"))
 		return 1
@@ -345,12 +356,39 @@ func (a App) runCredentialAdd(ctx context.Context, name string, stderr io.Writer
 		fmt.Fprintln(stderr, clerr.Wrap(clerr.ConfigInvalid, "read credential from stdin", err))
 		return 1
 	}
-	value := []byte(strings.TrimSpace(string(raw)))
-	defer zero(value)
+	defer zero(raw)
+	value := bytes.TrimSpace(raw)
 	if len(value) == 0 {
 		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "credential value is required"))
 		return 1
 	}
+	return a.storeCredential(ctx, name, value, stderr)
+}
+
+func (a App) runCredentialSetInteractive(ctx context.Context, name string, stderr io.Writer) int {
+	if a.secrets == nil {
+		fmt.Fprintln(stderr, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable"))
+		return 1
+	}
+	if a.credentialReader == nil {
+		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "interactive credential input unavailable; use envvault credential set <name> --value-stdin"))
+		return 1
+	}
+	raw, err := a.credentialReader(stderr)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	defer zero(raw)
+	value := bytes.TrimSpace(raw)
+	if len(value) == 0 {
+		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "credential value is required"))
+		return 1
+	}
+	return a.storeCredential(ctx, name, value, stderr)
+}
+
+func (a App) storeCredential(ctx context.Context, name string, value []byte, stderr io.Writer) int {
 	if err := a.secrets.Put(ctx, keyring.CredentialValue(name), value); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -361,6 +399,65 @@ func (a App) runCredentialAdd(ctx context.Context, name string, stderr io.Writer
 		return 1
 	}
 	return 0
+}
+
+func (a App) runCredentialDelete(ctx context.Context, name string, cascade bool, stderr io.Writer) int {
+	if a.secrets == nil {
+		fmt.Fprintln(stderr, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable"))
+		return 1
+	}
+	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	name = strings.TrimSpace(name)
+	if !cfg.RemoveCredential(name) {
+		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "credential not found"))
+		return 1
+	}
+	referencingProfiles := profilesUsingCredential(cfg, name)
+	if len(referencingProfiles) > 0 && !cascade {
+		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "credential is used by profiles: "+strings.Join(referencingProfiles, ", ")+"; pass --cascade to delete them too"))
+		return 1
+	}
+
+	value, err := a.secrets.Get(ctx, keyring.CredentialValue(name))
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	defer zero(value)
+	if err := a.secrets.Delete(ctx, keyring.CredentialValue(name)); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	for _, profileName := range referencingProfiles {
+		delete(cfg.Profiles, profileName)
+	}
+	saveConfig := a.configSaver
+	if saveConfig == nil {
+		saveConfig = config.Save
+	}
+	if err := saveConfig(a.paths.ConfigFile, cfg); err != nil {
+		if restoreErr := a.secrets.Put(context.WithoutCancel(ctx), keyring.CredentialValue(name), value); restoreErr != nil {
+			fmt.Fprintln(stderr, clerr.Wrap(clerr.CleanupFailed, "restore credential after config update failed", restoreErr))
+		}
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func profilesUsingCredential(cfg config.File, credentialName string) []string {
+	names := make([]string, 0)
+	for name, stored := range cfg.Profiles {
+		if strings.TrimSpace(stored.CredentialName) == credentialName {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names
 }
 
 func (a App) runCredentialList(stdout, stderr io.Writer) int {
@@ -733,6 +830,16 @@ func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Wri
 		fmt.Fprintln(stderr, "envvault: command \"exec\" is not implemented yet")
 		return 2
 	}
+	parentEnvironment := a.parentEnvironment()
+	homeFileSourceDir := ""
+	var err error
+	if homefile.RequiresSourceDir(parsed.homeFiles) {
+		homeFileSourceDir, err = a.homeFileSourceDir()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+	}
 	projectIdentity, err := a.detectProjectIdentity(ctx)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -748,7 +855,7 @@ func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Wri
 		_ = refResolver.Close(shutdownCtx)
 	}()
 	env, err := process.BuildEnv(ctx, process.EnvInput{
-		Parent:            a.parentEnvironment(),
+		Parent:            parentEnvironment,
 		EnvFiles:          parsed.envFiles,
 		InlineEnv:         parsed.inlineEnv,
 		ProjectIdentity:   projectIdentity,
@@ -757,6 +864,21 @@ func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Wri
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
+	}
+	var homeWorkspace *homefile.Workspace
+	if len(parsed.homeFiles) > 0 {
+		homeWorkspace, err = homefile.Prepare(ctx, homefile.Options{
+			CacheDir:  a.paths.CacheDir,
+			SourceDir: homeFileSourceDir,
+			Specs:     parsed.homeFiles,
+			Secrets:   a.secrets,
+		})
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		homeWorkspace.ApplyEnvironment(env)
+		defer homeWorkspace.Close()
 	}
 	signals := make(chan os.Signal, 1)
 	process.NotifyInterrupt(signals)
@@ -769,11 +891,40 @@ func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Wri
 		Stdout:  stdout,
 		Stderr:  stderr,
 	})
+	var cleanupErr error
+	if homeWorkspace != nil {
+		cleanupErr = homeWorkspace.Close()
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, err)
+		if cleanupErr != nil {
+			fmt.Fprintln(stderr, cleanupErr)
+		}
 		return 1
 	}
+	if cleanupErr != nil {
+		fmt.Fprintln(stderr, cleanupErr)
+		if code == 0 {
+			return 1
+		}
+	}
 	return code
+}
+
+func (a App) homeFileSourceDir() (string, error) {
+	start := a.projectStartDir
+	if start == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", clerr.Wrap(clerr.ConfigInvalid, "get current directory for --home-file", err)
+		}
+		start = cwd
+	}
+	absolute, err := filepath.Abs(start)
+	if err != nil {
+		return "", clerr.Wrap(clerr.ConfigInvalid, "resolve current directory for --home-file", err)
+	}
+	return filepath.Clean(absolute), nil
 }
 
 func (a App) detectProjectIdentity(ctx context.Context) (projectbinding.Identity, error) {
@@ -1047,6 +1198,7 @@ func parseTokenFormat(raw string) (tokenout.Format, error) {
 type execArgs struct {
 	envFiles  []string
 	inlineEnv []string
+	homeFiles []homefile.Spec
 	command   []string
 }
 

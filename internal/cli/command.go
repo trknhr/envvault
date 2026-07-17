@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/trknhr/envvault/internal/admin"
 	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/homefile"
 	resetpkg "github.com/trknhr/envvault/internal/reset"
 	tokenout "github.com/trknhr/envvault/internal/token"
 )
@@ -40,7 +41,9 @@ func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 		Long:  "EnvVault keeps real credentials in the OS credential store and resolves envvault:// references at process launch.",
 		Example: commandExamples(
 			"envvault admin start",
-			"envvault credential add <name> --value-stdin",
+			"envvault credential set <name>",
+			"envvault credential set <name> --value-stdin",
+			"envvault credential delete <name>",
 			"envvault credential list",
 			"envvault exec --env KEY=envvault://<credential> -- <command>",
 			"envvault proxy list",
@@ -66,7 +69,6 @@ func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 		a.newSecretCommand(execution),
 		a.newProxyCommand(execution),
 		a.newInjectCommand(execution),
-		a.newListCommand(execution),
 		a.newAdminCommand(execution),
 		a.newTokenCommand(execution),
 		a.newExecCommand(execution),
@@ -220,28 +222,46 @@ func (a App) newTokenCommand(execution *commandExecution) *cobra.Command {
 func (a App) newExecCommand(execution *commandExecution) *cobra.Command {
 	var envFiles []string
 	var inlineEnv []string
+	var homeFiles []string
 	cmd := &cobra.Command{
 		Use:   "exec [flags] -- <command>",
 		Short: "Run a child process with resolved credentials",
 		Long: strings.TrimSpace(`Run a child process after resolving EnvVault references.
 
-Options accept --env-file <path> and --env KEY=VALUE. Both flags are repeatable.`),
+Options accept repeatable --env-file <path>, --env KEY=VALUE, and
+--home-file DEST=SOURCE values. Relative sources are read from the current
+directory, and absolute sources are accepted. The .json, .yaml, .yml, or .toml
+suffix selects the template format; extensionless sources default to JSON.
+Templates resolve whole-string direct envvault:// credential references. A bare
+PATH uses PATH as both destination and source. DEST=envvault://CREDENTIAL writes
+one raw credential instead. Destinations live in a private isolated HOME until
+the child exits.`),
 		Example: commandExamples(
 			"envvault exec --env-file .env -- <command>",
 			"envvault exec --env OPENAI_API_KEY=envvault://openai/dev -- npm run dev",
+			"envvault exec --home-file .hogehoge=./config/hogehoge.yaml -- your-command",
+			"envvault exec --home-file .hogehoge -- your-command",
+			"envvault exec --home-file .token=envvault://hogehoge/auth -- your-command",
 			"envvault exec --env OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url --env OPENAI_API_KEY=envvault://openai-proxy/dev/token -- npm run dev",
 		),
 		Args: validateExecCommand,
 		Run: func(cmd *cobra.Command, args []string) {
+			parsedHomeFiles, err := homefile.ParseAll(homeFiles)
+			if err != nil {
+				failCommand(execution, cmd, err)
+				return
+			}
 			execution.exitCode = a.runExec(cmd.Context(), execArgs{
 				envFiles:  append([]string(nil), envFiles...),
 				inlineEnv: append([]string(nil), inlineEnv...),
+				homeFiles: parsedHomeFiles,
 				command:   append([]string(nil), args...),
 			}, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
 	cmd.Flags().StringArrayVar(&envFiles, "env-file", nil, "Read KEY=VALUE entries from a dotenv file (repeatable)")
 	cmd.Flags().StringArrayVar(&inlineEnv, "env", nil, "Add KEY=VALUE to the child environment (repeatable)")
+	cmd.Flags().StringArrayVar(&homeFiles, "home-file", nil, "Resolve DEST=SOURCE JSON/YAML/TOML into an isolated HOME (repeatable)")
 	return cmd
 }
 

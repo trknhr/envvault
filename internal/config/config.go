@@ -212,6 +212,22 @@ func (f *File) AddCredential(name string) {
 	f.Credentials = normalizeCredentialNames(f.Credentials)
 }
 
+func (f *File) RemoveCredential(name string) bool {
+	name = strings.TrimSpace(name)
+	names := f.CredentialNames()
+	filtered := names[:0]
+	found := false
+	for _, candidate := range names {
+		if candidate == name {
+			found = true
+			continue
+		}
+		filtered = append(filtered, candidate)
+	}
+	f.Credentials = filtered
+	return found
+}
+
 func (f File) Validate() error {
 	if f.Version != 1 {
 		return clerr.New(clerr.ConfigInvalid, "config version must be 1")

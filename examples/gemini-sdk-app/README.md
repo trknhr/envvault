@@ -39,7 +39,7 @@ Install the example dependency:
 Store your Gemini API key in the OS credential store:
 
 ```bash
-printf 'YOUR_GEMINI_API_KEY\n' | ./bin/envvault credential add gemini/dev \
+printf 'YOUR_GEMINI_API_KEY\n' | ./bin/envvault credential set gemini/dev \
   --value-stdin
 ```
 
@@ -60,4 +60,4 @@ Or use the checked-in example `.env` file:
 ```
 
 If you already added `gemini/dev` in the Admin UI, you can skip the
-`credential add` command.
+`credential set` command.

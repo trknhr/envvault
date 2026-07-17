@@ -50,11 +50,26 @@ testing.
 Store the real credential in the OS credential store:
 
 ```bash
-printf 'secret-value\n' | envvault credential add app/dev \
+envvault credential set app/dev
+```
+
+Enter the value at the hidden terminal prompt. EnvVault does not accept the
+credential as a positional argument, keeping it out of shell history and
+process arguments.
+
+For non-interactive scripts, pass the value over stdin explicitly:
+
+```bash
+printf 'secret-value\n' | envvault credential set app/dev \
   --value-stdin
 ```
 
-You can also add the credential from the Admin UI.
+You can also add or update the credential from the Admin UI.
+
+To remove it later, use `envvault credential delete app/dev`. EnvVault refuses
+when a profile still references the credential.
+`envvault credential delete app/dev --cascade` removes both the credential and
+every dependent profile.
 
 ## 4. Add the Reference to `.env`
 
@@ -88,7 +103,105 @@ This mode intentionally passes the raw credential to the child process
 environment. It is the most compatible path and works with SDKs that expect a
 normal API key environment variable.
 
-## 6. Advanced: API Proxy Mode
+## 6. Advanced: Isolated Home Files
+
+Some tools always read a credential or configuration file from the user's home
+directory. Keep a repository-safe source file in the project with only the
+secret fields represented by EnvVault references. For example, create
+`config/hogehoge.yaml`:
+
+```yaml
+endpoint: https://api.example.com
+token: envvault://app/dev
+```
+
+Then run the tool through EnvVault:
+
+```bash
+envvault exec \
+  --home-file .hogehoge=config/hogehoge.yaml \
+  -- your-command
+```
+
+The left-hand `DEST` is a safe relative path inside a private, otherwise empty
+temporary home. The right-hand `SOURCE` is resolved relative to the invocation
+working directory; an absolute source path is also allowed. `~` is not expanded,
+so use an already-expanded path such as `"$HOME/.hogehoge"` when the source
+really belongs in the normal home:
+
+```bash
+envvault exec \
+  --home-file ".hogehoge=$HOME/.hogehoge" \
+  -- your-command
+```
+
+A bare path uses the same relative source and destination. Because a single
+dotfile has no format extension, this example reads `./.hogehoge` as JSON and
+writes it to `~/.hogehoge` under the isolated home:
+
+```bash
+envvault exec --home-file .hogehoge -- your-command
+```
+
+Supported template formats are selected from the source filename:
+
+- `.json` for JSON
+- `.yaml` or `.yml` for YAML
+- `.toml` for TOML
+- no extension or a single dotfile name for JSON
+
+An unknown extension is rejected. EnvVault parses the source, recursively
+resolves values, and serializes the result at `DEST`. Only a string value that
+consists entirely of a direct `envvault://<credential>` reference is replaced.
+Keys are never resolved. Partial strings such as
+`"Bearer envvault://app/dev"` and proxy `/base-url` or `/token` outputs are
+rejected. A credential remains a string even if its text looks like JSON, YAML,
+or TOML. YAML anchors, aliases, and merge keys are not supported; mapping keys
+must be strings.
+
+The result is normalized output; comments, quoting, whitespace, and key order
+may change. The source file itself is never modified, and changes made by the
+child are not written back. Templates are limited to 4 MiB and 128 nesting
+levels. Duplicate keys, multiple JSON or YAML documents, non-regular source
+files, source symlinks, and credential values that are not valid UTF-8 are
+rejected before the child starts.
+
+Destination paths must remain relative to the isolated home. Absolute
+destinations, `~`, `..`, empty path segments, and drive or volume prefixes are
+rejected. Repeat `--home-file` when a command needs more than one file or
+format:
+
+```bash
+envvault exec \
+  --home-file .config/example/auth.json=config/auth.json \
+  --home-file .config/example/settings.toml=config/settings.toml \
+  -- your-command
+```
+
+For a tool whose entire file is one raw credential, the earlier shorthand is
+still available:
+
+```bash
+envvault exec --home-file .token=envvault://app/dev -- your-command
+```
+
+Temporary directories are private and resolved files are readable and writable
+only by the current user.
+
+The child process receives the isolated home through the platform's home and
+config environment variables. EnvVault creates the workspace below its private
+cache directory and copies no unrelated real-home contents. The child therefore
+cannot rely on other configuration files being present in the isolated home.
+The child can read the resolved credential files. EnvVault removes the isolated
+home when the child exits normally. If EnvVault is forcibly terminated or the
+system fails, `envvault doctor --repair` removes stale isolated-home workspaces.
+
+This mode is intended for foreground tools that honor those environment
+variables. It is not a filesystem sandbox: a tool that resolves the OS account
+home independently can still reach the real home, and a daemonized descendant
+does not extend the isolated home's lifetime after the direct child exits.
+
+## 7. Advanced: API Proxy Mode
 
 Use proxy mode when the app or SDK accepts a custom base URL and bearer token,
 and you do not want to pass the real upstream credential to the child process.
@@ -132,7 +245,7 @@ matching the allowlist.
 Proxy mode reduces raw-secret exposure, but it also requires separate local
 environment variables for the provider base URL.
 
-## 7. Inspect Health
+## 8. Inspect Health
 
 ```bash
 envvault doctor
@@ -143,10 +256,11 @@ envvault reset --dry-run
 ```
 
 `doctor` reports local state health. `doctor --repair` removes stale EnvVault
-runtime locks and temporary files before re-checking health. `reset --dry-run`
-shows EnvVault-owned files and keyring entries that would be removed.
+runtime locks, temporary files, and isolated-home workspaces before re-checking
+health. `reset --dry-run` shows EnvVault-owned files and keyring entries that
+would be removed.
 
-## 8. Generate Shell Completion
+## 9. Generate Shell Completion
 
 ```bash
 envvault completion bash
@@ -157,7 +271,7 @@ envvault completion powershell
 
 Write the generated script to the completion location used by your shell.
 
-## 9. Install The Agent Skill
+## 10. Install The Agent Skill
 
 EnvVault includes an agent skill for tools that need to launch commands with
 EnvVault, configure credentials or proxies, or debug `envvault://` references.

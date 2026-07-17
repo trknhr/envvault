@@ -20,6 +20,7 @@ import (
 
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/homefile"
 	"github.com/trknhr/envvault/internal/keyring"
 	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 	_ "modernc.org/sqlite"
@@ -360,7 +361,7 @@ func (c Checker) checkTempFiles(result *Result) {
 
 	stale := 0
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "envvault-") {
+		if !strings.HasPrefix(entry.Name(), "envvault-") {
 			continue
 		}
 		info, err := entry.Info()
@@ -368,9 +369,23 @@ func (c Checker) checkTempFiles(result *Result) {
 			addError(result, "temp-files", clerr.Wrap(clerr.ConfigInvalid, "inspect temporary file", err), "temporary directory is unavailable")
 			return
 		}
-		if c.isStale(info) {
-			stale++
+		if !isManagedTempEntry(entry.Name(), info.IsDir()) {
+			continue
 		}
+		if !c.isStale(info) {
+			continue
+		}
+		if isHomeWorkspace(entry.Name(), info.IsDir()) {
+			active, err := homefile.IsActive(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				addError(result, "temp-files", err, "isolated home workspace state is unavailable")
+				return
+			}
+			if active {
+				continue
+			}
+		}
+		stale++
 	}
 	if stale == 0 {
 		addOK(result, "temp-files", "no stale temporary files")
@@ -460,7 +475,7 @@ func (c Checker) repairTempFiles(result *Result) {
 
 	removed := 0
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "envvault-") {
+		if !strings.HasPrefix(entry.Name(), "envvault-") {
 			continue
 		}
 		info, err := entry.Info()
@@ -468,11 +483,31 @@ func (c Checker) repairTempFiles(result *Result) {
 			addError(result, "repair-temp-files", clerr.Wrap(clerr.ConfigInvalid, "inspect temporary file", err), "temporary file repair failed")
 			return
 		}
+		if !isManagedTempEntry(entry.Name(), info.IsDir()) {
+			continue
+		}
 		if !c.isStale(info) {
 			continue
 		}
-		if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
-			addError(result, "repair-temp-files", clerr.Wrap(clerr.CleanupFailed, "remove stale temporary file", err), "temporary file repair failed")
+		path := filepath.Join(dir, entry.Name())
+		if isHomeWorkspace(entry.Name(), info.IsDir()) {
+			active, err := homefile.IsActive(path)
+			if err != nil {
+				addError(result, "repair-temp-files", err, "isolated home workspace repair failed")
+				return
+			}
+			if active {
+				continue
+			}
+		}
+		var removeErr error
+		if info.IsDir() {
+			removeErr = os.RemoveAll(path)
+		} else {
+			removeErr = os.Remove(path)
+		}
+		if removeErr != nil {
+			addError(result, "repair-temp-files", clerr.Wrap(clerr.CleanupFailed, "remove stale temporary file", removeErr), "temporary file repair failed")
 			return
 		}
 		removed++
@@ -482,6 +517,20 @@ func (c Checker) repairTempFiles(result *Result) {
 		return
 	}
 	addOK(result, "repair-temp-files", fmt.Sprintf("removed %d stale temporary file%s", removed, pluralS(removed)))
+}
+
+func isManagedTempEntry(name string, isDir bool) bool {
+	if !strings.HasPrefix(name, "envvault-") {
+		return false
+	}
+	if isDir {
+		return strings.HasPrefix(name, homefile.WorkspacePrefix)
+	}
+	return true
+}
+
+func isHomeWorkspace(name string, isDir bool) bool {
+	return isDir && strings.HasPrefix(name, homefile.WorkspacePrefix)
 }
 
 func (c Checker) isStale(info os.FileInfo) bool {

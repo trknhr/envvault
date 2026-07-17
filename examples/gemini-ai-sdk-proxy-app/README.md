@@ -56,7 +56,7 @@ Install the example dependencies:
 Store your Gemini API key in the OS credential store:
 
 ```bash
-printf 'YOUR_GEMINI_API_KEY\n' | ./bin/envvault credential add gemini-api-key \
+printf 'YOUR_GEMINI_API_KEY\n' | ./bin/envvault credential set gemini-api-key \
   --value-stdin
 ```
 

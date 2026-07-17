@@ -16,9 +16,12 @@ credential references never use `/value`.
 Store the real credential:
 
 ```bash
-printf 'secret-value\n' | envvault credential add app/dev \
-  --value-stdin
+envvault credential set app/dev
 ```
+
+The value is entered at a hidden terminal prompt. For non-interactive scripts,
+use `envvault credential set app/dev --value-stdin` and pipe the value over
+stdin.
 
 Create a localhost proxy:
 

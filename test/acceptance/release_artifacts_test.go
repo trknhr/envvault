@@ -224,13 +224,21 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 	}
 }
 
-func TestReleaseDocsCoverCredentialAndProxyFlows(t *testing.T) {
+func TestReleaseDocsCoverCredentialHomeFileAndProxyFlows(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	requiredDocs := map[string][]string{
 		"docs/quickstart.md": {
 			"# Quickstart",
 			"Add a Credential",
 			"envvault://app/dev",
+			"Advanced: Isolated Home Files",
+			"--home-file .hogehoge=config/hogehoge.yaml",
+			"Supported template formats",
+			"relative to the invocation",
+			"working directory; an absolute source path",
+			"YAML anchors, aliases, and merge keys",
+			"--home-file .token=envvault://app/dev",
+			"envvault doctor --repair",
 			"Advanced: API Proxy Mode",
 			"envvault://api-proxy/dev/base-url",
 			"envvault://api-proxy/dev/token",
@@ -285,7 +293,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 	requiredFiles := map[string][]string{
 		"examples/env-app/README.md": {
 			"# Env App Example",
-			"envvault credential add database/dev",
+			"envvault credential set database/dev",
 			"envvault://database/dev",
 		},
 		"examples/env-app/app.sh": {
@@ -308,7 +316,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		},
 		"examples/gemini-sdk-app/README.md": {
 			"# Gemini SDK App Example",
-			"envvault credential add gemini/dev",
+			"envvault credential set gemini/dev",
 			"@google/genai",
 		},
 		"examples/gemini-sdk-app/app.mjs": {
@@ -364,6 +372,10 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		"skills/envvault/SKILL.md": {
 			"name: envvault",
 			"envvault exec --env-file .env -- <command>",
+			"--home-file <destination>=<source>",
+			"--home-file .hogehoge=config/hogehoge.yaml",
+			"`.json`, `.yaml`,",
+			"`.yml`, or `.toml`",
 			"envvault://api-proxy/dev/base-url",
 			"envvault://database/dev",
 			"stay within the admin, credential, proxy, exec",

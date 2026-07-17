@@ -13,6 +13,25 @@ import (
 	"github.com/trknhr/envvault/internal/profile"
 )
 
+func TestRemoveCredential(t *testing.T) {
+	cfg, err := config.DefaultFile()
+	if err != nil {
+		t.Fatalf("DefaultFile() error = %v", err)
+	}
+	cfg.AddCredential("database/dev")
+	cfg.AddCredential("openai/dev")
+
+	if !cfg.RemoveCredential("database/dev") {
+		t.Fatal("RemoveCredential() = false, want true")
+	}
+	if got := strings.Join(cfg.CredentialNames(), ","); got != "openai/dev" {
+		t.Fatalf("CredentialNames() = %q, want openai/dev", got)
+	}
+	if cfg.RemoveCredential("missing/dev") {
+		t.Fatal("RemoveCredential(missing) = true, want false")
+	}
+}
+
 func TestLoadProfileAppliesDefaultsAndValidates(t *testing.T) {
 	path := writeConfig(t, `
 version: 1
