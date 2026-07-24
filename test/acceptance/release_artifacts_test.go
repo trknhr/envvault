@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -37,10 +38,7 @@ func TestReleaseIncludesThirdPartyLicenseNotices(t *testing.T) {
 	}
 
 	var missing []string
-	for _, mod := range listGoModules(t, repoRoot) {
-		if mod.Main {
-			continue
-		}
+	for _, mod := range listReleaseGoModules(t, repoRoot) {
 		moduleVersion := mod.Path + " " + mod.Version
 		if !strings.Contains(notices, moduleVersion) {
 			missing = append(missing, moduleVersion)
@@ -230,6 +228,7 @@ func TestReleaseDocsCoverCredentialHomeFileAndProxyFlows(t *testing.T) {
 		"docs/quickstart.md": {
 			"# Quickstart",
 			"Add a Credential",
+			"envvault inspect --path .",
 			"envvault://app/dev",
 			"Advanced: Isolated Home Files",
 			"--home-file .hogehoge=config/hogehoge.yaml",
@@ -281,6 +280,7 @@ func TestReleaseDocsCoverCredentialHomeFileAndProxyFlows(t *testing.T) {
 		"[Quickstart](docs/quickstart.md)",
 		"[Proxies](docs/proxies.md)",
 		"[Threat model](docs/threat-model.md)",
+		"envvault inspect --path .",
 	} {
 		if !strings.Contains(string(readme), want) {
 			t.Fatalf("README.md missing documentation link %q", want)
@@ -582,28 +582,65 @@ type goModule struct {
 	Main    bool
 }
 
-func listGoModules(t *testing.T, repoRoot string) []goModule {
+func listReleaseGoModules(t *testing.T, repoRoot string) []goModule {
 	t.Helper()
-	cmd := exec.Command("go", "list", "-m", "-json", "all")
-	cmd.Dir = repoRoot
-	body, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("go list -m -json all error = %v\n%s", err, body)
+	platforms := []struct {
+		goos   string
+		goarch string
+	}{
+		{goos: "darwin", goarch: "amd64"},
+		{goos: "darwin", goarch: "arm64"},
+		{goos: "linux", goarch: "amd64"},
+		{goos: "linux", goarch: "arm64"},
+		{goos: "windows", goarch: "amd64"},
 	}
 
-	dec := json.NewDecoder(bytes.NewReader(body))
-	var modules []goModule
-	for {
-		var mod goModule
-		err := dec.Decode(&mod)
-		if errors.Is(err, io.EOF) {
-			break
-		}
+	modulesByPath := make(map[string]goModule)
+	for _, platform := range platforms {
+		cmd := exec.Command("go", "list", "-deps", "-json", "./cmd/envvault")
+		cmd.Dir = repoRoot
+		cmd.Env = append(os.Environ(),
+			"CGO_ENABLED=0",
+			"GOOS="+platform.goos,
+			"GOARCH="+platform.goarch,
+		)
+		body, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("decode go module JSON error = %v", err)
+			t.Fatalf(
+				"go list dependencies for %s/%s error = %v\n%s",
+				platform.goos,
+				platform.goarch,
+				err,
+				body,
+			)
 		}
+
+		dec := json.NewDecoder(bytes.NewReader(body))
+		for {
+			var pkg struct {
+				Module *goModule
+			}
+			err := dec.Decode(&pkg)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				t.Fatalf("decode Go package JSON error = %v", err)
+			}
+			if pkg.Module == nil || pkg.Module.Main {
+				continue
+			}
+			modulesByPath[pkg.Module.Path] = *pkg.Module
+		}
+	}
+
+	modules := make([]goModule, 0, len(modulesByPath))
+	for _, mod := range modulesByPath {
 		modules = append(modules, mod)
 	}
+	sort.Slice(modules, func(i, j int) bool {
+		return modules[i].Path < modules[j].Path
+	})
 	return modules
 }
 

@@ -50,6 +50,7 @@ envvault admin start
 envvault credential set app/dev
 envvault credential delete app/dev
 envvault credential list
+envvault inspect --path .
 envvault proxy list
 envvault exec --env APP_SECRET=envvault://app/dev -- npm run dev
 envvault exec --env-file .env -- npm start
@@ -96,6 +97,29 @@ aliases, and merge keys are not supported. The option is repeatable.
 `DEST=envvault://<credential>` remains available for tools whose entire file is
 one raw credential.
 
+## Inspect Local Files
+
+Find potential raw credentials before moving them into the OS credential store:
+
+```bash
+envvault inspect --path .
+envvault inspect --path ~/.config --depth 2 --include-medium
+envvault inspect --path . --format json --fail-on-findings
+```
+
+`inspect` is read-only. It scans current files without reading Git history and
+includes ignored and untracked files. It does not follow symlinks or print
+credential values. High-confidence provider-specific Gitleaks and known-file
+findings are shown by default; `--include-medium` also reports Gitleaks'
+contextual generic API-key candidates and secret-named fields in `.env`, JSON,
+YAML, and TOML files. Findings are candidates for review, not proof that a
+value is valid. File inspection runs concurrently using an automatically
+bounded worker count; use `--workers` to override it. `--depth 1` scans files
+at the requested root and one nested directory, while the default `--depth 0`
+is unlimited. The default output reports only the skipped-path count; add
+`--verbose` to list every skipped path. Migration and source-file deletion are
+intentionally separate steps.
+
 ## Security Limitations
 
 EnvVault reduces credential exposure; it does not create a sandbox.
@@ -126,8 +150,8 @@ EnvVault reduces credential exposure; it does not create a sandbox.
 This repository contains the local-first implementation path: strict reference
 parsing, OS keyring abstraction, browser admin server, direct credential
 resolution, isolated home-file injection, optional provider proxies, process
-environment construction, metadata-only audit records, reset/doctor support,
-runnable examples, and acceptance fixtures.
+environment construction, read-only raw-credential inspection, metadata-only
+audit records, reset/doctor support, runnable examples, and acceptance fixtures.
 
 Local archive packaging is available through
 `go run ./cmd/envvault-release package`, and local Homebrew/Scoop metadata can

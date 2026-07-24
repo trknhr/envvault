@@ -60,6 +60,7 @@ func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
 		"envvault credential set <name> --value-stdin",
 		"envvault credential delete <name>",
 		"envvault credential list",
+		"envvault inspect --path .",
 		"envvault proxy list",
 		"envvault exec --env KEY=envvault://<credential> -- <command>",
 	} {

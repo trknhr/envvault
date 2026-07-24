@@ -45,6 +45,7 @@ func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 			"envvault credential set <name> --value-stdin",
 			"envvault credential delete <name>",
 			"envvault credential list",
+			"envvault inspect --path .",
 			"envvault exec --env KEY=envvault://<credential> -- <command>",
 			"envvault proxy list",
 			"envvault version",
@@ -64,6 +65,7 @@ func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 		a.newInitCommand(execution),
 		a.newResetCommand(execution),
 		a.newDoctorCommand(execution),
+		a.newInspectCommand(execution),
 		a.newProfileCommand(execution),
 		a.newCredentialCommand(execution),
 		a.newSecretCommand(execution),
@@ -119,6 +121,57 @@ func (a App) newDoctorCommand(execution *commandExecution) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&repair, "repair", false, "Repair safe local-state problems")
+	return cmd
+}
+
+func (a App) newInspectCommand(execution *commandExecution) *cobra.Command {
+	var paths []string
+	var format string
+	var includeMedium bool
+	var failOnFindings bool
+	var depth int
+	var workers int
+	var verbose bool
+	cmd := &cobra.Command{
+		Use:   "inspect",
+		Short: "Find potential raw credentials in local files",
+		Long: strings.TrimSpace(`Scan local files for potential raw credentials without reading Git history.
+
+The scan includes ignored and untracked files, does not follow symlinks, scans
+files with bounded parallelism, and never prints credential values. Migration
+and deletion are separate operations.`),
+		Example: commandExamples(
+			"envvault inspect --path .",
+			"envvault inspect --path ~/.config --depth 2",
+			"envvault inspect --path ~/.config --include-medium",
+			"envvault inspect --path . --format json",
+			"envvault inspect --path . --workers 4 --fail-on-findings",
+		),
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
+			execution.exitCode = a.runInspect(cmd.Context(), inspectArgs{
+				paths:          append([]string(nil), paths...),
+				format:         format,
+				includeMedium:  includeMedium,
+				failOnFindings: failOnFindings,
+				depth:          depth,
+				workers:        workers,
+				verbose:        verbose,
+			}, cmd.OutOrStdout(), cmd.ErrOrStderr())
+		},
+	}
+	cmd.Flags().StringArrayVar(&paths, "path", nil, "File or directory to inspect (repeatable; default: .)")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text or json")
+	cmd.Flags().BoolVar(
+		&includeMedium,
+		"include-medium",
+		false,
+		"Include contextual generic API-key and semantic secret-field findings",
+	)
+	cmd.Flags().BoolVar(&failOnFindings, "fail-on-findings", false, "Exit with status 1 when findings are detected")
+	cmd.Flags().IntVar(&depth, "depth", 0, "Maximum nested directory depth (0: unlimited)")
+	cmd.Flags().IntVar(&workers, "workers", 0, "Concurrent file scanners (0: auto, max: 32)")
+	cmd.Flags().BoolVar(&verbose, "verbose", false, "Show every skipped path")
 	return cmd
 }
 

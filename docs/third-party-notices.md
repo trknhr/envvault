@@ -1,9 +1,10 @@
 # Third-Party Notices
 
-This notice index covers the Go modules returned by `go list -m all` for the
-EnvVault workspace on 2026-07-10. Release packaging must include
-this file and preserve upstream `LICENSE`, `NOTICE`, `PATENTS`, and equivalent
-notice files from bundled source or vendored artifacts.
+This notice index covers the Go modules linked into EnvVault release binaries,
+as reviewed on 2026-07-17, and retains existing workspace build/test notices.
+Release packaging must include this file and preserve upstream `LICENSE`,
+`NOTICE`, `PATENTS`, and equivalent notice files from bundled source or
+vendored artifacts.
 
 ## Go Modules
 
@@ -49,3 +50,60 @@ notice files from bundled source or vendored artifacts.
 - modernc.org/sqlite v1.53.0 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
 - modernc.org/strutil v1.2.1 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
 - modernc.org/token v1.1.0 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+
+### Raw-Credential Scanner Dependencies
+
+- dario.cat/mergo v1.0.1 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/BobuSumisu/aho-corasick v1.0.3 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/Masterminds/goutils v1.1.1 - Apache-2.0 License. Upstream notice file: `LICENSE.txt`.
+- github.com/Masterminds/semver/v3 v3.3.0 - MIT License. Upstream notice file: `LICENSE.txt`.
+- github.com/Masterminds/sprig/v3 v3.3.0 - MIT License. Upstream notice file: `LICENSE.txt`.
+- github.com/STARRY-S/zip v0.2.1 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/andybalholm/brotli v1.1.2-0.20250424173009-453214e765f3 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/aymanbagabas/go-osc52/v2 v2.0.1 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/bodgit/plumbing v1.3.0 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/bodgit/sevenzip v1.6.0 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/bodgit/windows v1.0.1 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/charmbracelet/lipgloss v0.5.0 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 - BSD-3-Clause License. Upstream notice file: `LICENSE.md`.
+- github.com/fatih/semgroup v1.2.0 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/fsnotify/fsnotify v1.8.0 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/gitleaks/go-gitdiff v0.9.1 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/h2non/filetype v1.1.3 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/hashicorp/errwrap v1.1.0 - MPL-2.0 License. Upstream notice file: `LICENSE`.
+- github.com/hashicorp/go-multierror v1.1.1 - MPL-2.0 License. Upstream notice file: `LICENSE`.
+- github.com/hashicorp/go-version v1.7.0 - MPL-2.0 License. Upstream notice file: `LICENSE`.
+- github.com/hashicorp/hcl v1.0.0 - MPL-2.0 License. Upstream notice file: `LICENSE`.
+- github.com/huandu/xstrings v1.5.0 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/klauspost/compress v1.17.11 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/klauspost/pgzip v1.2.6 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/lucasb-eyer/go-colorful v1.2.0 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/magiconair/properties v1.8.9 - BSD-2-Clause License. Upstream notice file: `LICENSE.md`.
+- github.com/mattn/go-colorable v0.1.14 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/mattn/go-runewidth v0.0.14 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/mholt/archives v0.1.2 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/minio/minlz v1.0.0 - Apache-2.0 License. Upstream notice file: `LICENSE`.
+- github.com/mitchellh/copystructure v1.2.0 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/mitchellh/mapstructure v1.5.0 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/mitchellh/reflectwalk v1.0.2 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/muesli/reflow v0.2.1-0.20210115123740-9e1d0d53df68 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/muesli/termenv v0.15.1 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/nwaples/rardecode/v2 v2.1.0 - BSD-2-Clause License. Upstream notice file: `LICENSE`.
+- github.com/pierrec/lz4/v4 v4.1.21 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/rivo/uniseg v0.2.0 - MIT License. Upstream notice file: `LICENSE.txt`.
+- github.com/rs/zerolog v1.33.0 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/sagikazarmark/slog-shim v0.1.0 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/shopspring/decimal v1.4.0 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/sorairolake/lzip-go v0.3.5 - Apache-2.0 License. Upstream notice file: `LICENSE`.
+- github.com/spf13/afero v1.12.0 - Apache-2.0 License. Upstream notice file: `LICENSE.txt`.
+- github.com/spf13/cast v1.7.1 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/spf13/viper v1.19.0 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/subosito/gotenv v1.6.0 - MIT License. Upstream notice file: `LICENSE`.
+- github.com/therootcompany/xz v1.0.1 - CC0-1.0. Upstream notice file: `LICENSE`.
+- github.com/ulikunitz/xz v0.5.12 - BSD-3-Clause License. Upstream notice file: `LICENSE`.
+- github.com/zricethezav/gitleaks/v8 v8.30.1 - MIT License. Upstream notice file: `LICENSE`.
+- go4.org v0.0.0-20230225012048-214862532bf5 - Apache-2.0 License. Upstream notice file: `LICENSE`.
+- golang.org/x/crypto v0.35.0 - BSD-3-Clause License. Upstream notice files: `LICENSE`, `PATENTS`.
+- golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa - BSD-3-Clause License. Upstream notice files: `LICENSE`, `PATENTS`.
+- golang.org/x/text v0.22.0 - BSD-3-Clause License. Upstream notice files: `LICENSE`, `PATENTS`.
+- gopkg.in/ini.v1 v1.67.0 - Apache-2.0 License. Upstream notice file: `LICENSE`.

@@ -54,6 +54,9 @@ EnvVault protects long-lived local credential material from routine project and
 ## Security Controls
 
 - Credential values are stored in the OS credential store.
+- `envvault inspect` scans local file contents in-process without Git history,
+  network verification, or symlink traversal. Its output model contains only
+  path, location, rule, and confidence metadata; matched values are discarded.
 - Direct references use strict `envvault://<credential>` parsing.
 - `.env` references reject query strings, fragments, path traversal, and
   percent-encoded separators.

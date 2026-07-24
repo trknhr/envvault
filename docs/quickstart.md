@@ -71,6 +71,24 @@ when a profile still references the credential.
 `envvault credential delete app/dev --cascade` removes both the credential and
 every dependent profile.
 
+Inventory potential raw credentials before replacing them with EnvVault
+references:
+
+```bash
+envvault inspect --path .
+envvault inspect --path ~/.config --depth 2 --include-medium
+```
+
+The scan reads current files directly, including ignored and untracked files;
+it does not inspect Git history or follow symlinks. Output contains only paths,
+locations, rule identifiers, and confidence—not credential values. Generic
+API-key candidates are medium confidence and require `--include-medium`; known
+provider formats remain high confidence. The command uses bounded parallel file
+scanning; `--workers` overrides the automatic worker count. Depth zero is
+unlimited, while `--depth 1` includes root files and files one directory below
+the requested root. Skipped paths are listed only with `--verbose`; their count
+is always included. The command does not migrate or delete anything.
+
 ## 4. Add the Reference to `.env`
 
 Use the environment variable name expected by the app, and make the value an

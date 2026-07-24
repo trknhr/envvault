@@ -41,6 +41,20 @@ Remove an unused credential with `envvault credential delete app/dev`. If
 profiles still reference it, deletion fails unless `--cascade` is supplied to
 remove those dependent profiles too.
 
+To find plaintext credentials that still need review, scan current local files:
+
+```bash
+envvault inspect --path .
+```
+
+The scan is read-only, includes ignored and untracked files, and never prints
+credential values. Add `--include-medium` for contextual generic API-key
+candidates and semantic `.env`, JSON, YAML, and TOML findings. Scanning uses
+bounded parallel workers; `--depth 2` limits directory traversal and
+`--workers 4` overrides automatic worker selection. Skipped paths are
+summarized by count unless `--verbose` is supplied. Migration remains a
+separate operation.
+
 Use a repository-safe reference in the app's `.env` file or pass the same
 reference with `envvault exec --env`:
 
