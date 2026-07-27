@@ -604,14 +604,16 @@ func listReleaseGoModules(t *testing.T, repoRoot string) []goModule {
 			"GOOS="+platform.goos,
 			"GOARCH="+platform.goarch,
 		)
-		body, err := cmd.CombinedOutput()
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		body, err := cmd.Output()
 		if err != nil {
 			t.Fatalf(
 				"go list dependencies for %s/%s error = %v\n%s",
 				platform.goos,
 				platform.goarch,
 				err,
-				body,
+				stderr.String(),
 			)
 		}
 
