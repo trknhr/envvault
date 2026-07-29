@@ -108,21 +108,26 @@ also allowed.
 
 ## Agent Skill
 
-Install the EnvVault skill with the `skills` CLI:
+The public EnvVault skill is a small discovery stub. Detailed agent instructions
+come from the installed CLI, keeping them aligned with its version.
+
+Install the CLI and the cross-client discovery skill:
 
 ```bash
-npx skills add trknhr/envvault --skill envvault
+brew install trknhr/tap/envvault
+envvault skills install
 ```
 
-From a local checkout:
+Or install the discovery stub from GitHub:
 
 ```bash
-npx skills add . --skill envvault
+npx skills add trknhr/envvault --skill envvault -g -a codex
 ```
 
-Use the `skills` CLI options to choose global/project scope or a specific
-agent, for example `-g` for global installation or `-a <agent>`.
-Restart your agent after installing or updating skills.
+When activated, the stub runs `envvault skills get core` to load instructions
+that match the installed binary. It installs the CLI only when the user
+explicitly requests installation or setup; otherwise it asks first. See
+[Agent Skill](/agent-skill) for scopes, upgrades, status, and uninstall.
 
 ## Advanced API Proxy
 

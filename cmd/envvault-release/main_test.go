@@ -139,6 +139,7 @@ func TestRunPackageManifestsWritesHomebrewAndScoopFiles(t *testing.T) {
 		"class Envvault < Formula",
 		`url "https://github.com/trknhr/envvault/releases/download/v0.1.0/envvault_v0.1.0_darwin_arm64.tar.gz"`,
 		strings.Repeat("d", 64),
+		`envvault skills install`,
 		`system "#{bin}/envvault", "version"`,
 	} {
 		if !strings.Contains(string(homebrew), want) {

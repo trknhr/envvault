@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trknhr/envvault/internal/agentskill"
 	releasepkg "github.com/trknhr/envvault/internal/releasepkg"
 	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 	"gopkg.in/yaml.v3"
@@ -46,6 +47,18 @@ func TestReleaseIncludesThirdPartyLicenseNotices(t *testing.T) {
 	}
 	if len(missing) > 0 {
 		t.Fatalf("third-party notices missing Go modules:\n%s", strings.Join(missing, "\n"))
+	}
+}
+
+func TestPublicAgentSkillMatchesBundledDiscoveryStub(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+	path := filepath.Join(repoRoot, "skills", "envvault", "SKILL.md")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	if string(body) != agentskill.Stub() {
+		t.Fatalf("public discovery stub differs from bundled stub:\n%s", body)
 	}
 }
 
@@ -164,6 +177,9 @@ func TestReleasePackageManagerManifestsReferenceArchivesAndChecksums(t *testing.
 	homebrewText := string(homebrew)
 	if !strings.Contains(homebrewText, `desc "Run local apps without plaintext .env secrets"`) {
 		t.Fatalf("homebrew formula missing current description:\n%s", homebrewText)
+	}
+	if !strings.Contains(homebrewText, "envvault skills install") {
+		t.Fatalf("homebrew formula missing agent skill caveat:\n%s", homebrewText)
 	}
 	for _, artifact := range artifacts[:4] {
 		assertReleaseSHA256(t, artifact.SHA256)
@@ -362,6 +378,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"base: '/envvault/'",
 			"sidebar",
 			"outDir: '../site'",
+			"link: '/agent-skill'",
 		},
 		"test/manual-e2e.md": {
 			"# Manual E2E Playbook",
@@ -371,6 +388,13 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		},
 		"skills/envvault/SKILL.md": {
 			"name: envvault",
+			"discovery stub",
+			"envvault skills get core",
+			"brew install trknhr/tap/envvault",
+			"ask before changing",
+		},
+		"internal/agentskill/data/core/SKILL.md": {
+			"name: core",
 			"envvault exec --env-file .env -- <command>",
 			"--home-file <destination>=<source>",
 			"--home-file .hogehoge=config/hogehoge.yaml",
@@ -379,6 +403,14 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"envvault://api-proxy/dev/base-url",
 			"envvault://database/dev",
 			"stay within the admin, credential, proxy, exec",
+		},
+		"docs/agent-skill.md": {
+			"# Agent Skill",
+			"envvault skills get core",
+			"envvault skills install --agent codex",
+			"npx skills add trknhr/envvault --skill envvault",
+			"brew upgrade trknhr/tap/envvault",
+			"envvault skills uninstall",
 		},
 		".github/workflows/pages.yml": {
 			"name: Deploy Docs",
@@ -439,6 +471,11 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"VitePress",
 			"Keep real secrets out of project",
 			"Admin UI",
+		},
+		"site/agent-skill.html": {
+			"Agent Skill",
+			"CLI-First Installation",
+			"Ownership and Uninstall",
 		},
 		"test/fake-keyring/store.go": {
 			"package fakekeyring",
@@ -728,11 +765,13 @@ func assertReleasePackageEntries(t *testing.T, entries map[string]os.FileMode, r
 	for _, want := range []string{
 		root + "/" + binaryName,
 		root + "/README.md",
+		root + "/docs/agent-skill.md",
 		root + "/docs/quickstart.md",
 		root + "/docs/threat-model.md",
 		root + "/docs/uninstall.md",
 		root + "/docs/recovery.md",
 		root + "/docs/third-party-notices.md",
+		root + "/site/agent-skill.html",
 		root + "/site/index.html",
 		root + "/site/logo.svg",
 		root + "/site/quickstart.html",

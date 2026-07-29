@@ -293,19 +293,32 @@ Write the generated script to the completion location used by your shell.
 
 EnvVault includes an agent skill for tools that need to launch commands with
 EnvVault, configure credentials or proxies, or debug `envvault://` references.
+The installed file is a small discovery stub; it loads version-matched
+instructions from the EnvVault binary with `envvault skills get core`.
 
-Install it from the public repository:
-
-```bash
-npx skills add trknhr/envvault --skill envvault
-```
-
-From a local checkout, use:
+Install the cross-client discovery skill after installing EnvVault:
 
 ```bash
-npx skills add . --skill envvault
+envvault skills install
 ```
 
-Use the `skills` CLI options to choose global/project scope or a specific
-agent, for example `-g` for global installation or `-a <agent>`.
-Restart your agent after installing or updating skills.
+This installs into `~/.agents/skills/`. Use `--agent codex` for Codex's native
+location, or add `--project` for a project-local skill.
+
+Alternatively, install the discovery skill from the public repository:
+
+```bash
+npx skills add trknhr/envvault --skill envvault -g -a codex
+```
+
+If the discovery skill finds that EnvVault is missing, it installs the CLI only
+when the user explicitly requested installation or setup. For other tasks, it
+explains the dependency and asks before changing system-wide packages.
+
+Check the installation, then restart the agent:
+
+```bash
+envvault skills status
+```
+
+See [Agent Skill](/agent-skill) for upgrades, supported targets, and uninstall.

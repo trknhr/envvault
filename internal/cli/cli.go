@@ -94,6 +94,7 @@ type ConfigSaver func(path string, cfg config.File) error
 
 type Options struct {
 	Paths                   config.Paths
+	AgentSkillHomeDir       string
 	Initializer             Initializer
 	Resetter                Resetter
 	Doctor                  Doctor
@@ -118,6 +119,7 @@ type Options struct {
 
 type App struct {
 	paths                   config.Paths
+	agentSkillHomeDir       string
 	initializer             Initializer
 	resetter                Resetter
 	doctor                  Doctor
@@ -143,6 +145,7 @@ type App struct {
 func New(options Options) App {
 	return App{
 		paths:                   options.Paths,
+		agentSkillHomeDir:       options.AgentSkillHomeDir,
 		initializer:             options.Initializer,
 		resetter:                options.Resetter,
 		doctor:                  options.Doctor,
@@ -167,21 +170,23 @@ func New(options Options) App {
 }
 
 func defaultOptions(paths config.Paths) Options {
+	agentSkillHomeDir, _ := os.UserHomeDir()
 	secrets := keyring.NewOSStore()
 	profiles := config.ProfileStore{Path: paths.ConfigFile}
 	managedTalos := newManagedTalos(paths, secrets)
 	auditRecorder := &audit.FileRecorder{Path: filepath.Join(paths.DataDir, defaultAuditFilename)}
 	tokenIssuer := local.NewIssuerWithAudit(profiles, secrets, managedTalos, auditRecorder)
 	return Options{
-		Paths:            paths,
-		Initializer:      managedTalos,
-		Secrets:          secrets,
-		CredentialReader: terminalCredentialReader(os.Stdin),
-		Profiles:         profiles,
-		Issuer:           tokenIssuer,
-		Runner:           process.Runner{},
-		Browser:          browser.Client{Issuer: tokenIssuer, Opener: browser.CommandOpener{}, Audit: auditRecorder},
-		ProfileManager:   profilemgr.New(paths.ConfigFile, secrets, managedTalos),
+		Paths:             paths,
+		AgentSkillHomeDir: agentSkillHomeDir,
+		Initializer:       managedTalos,
+		Secrets:           secrets,
+		CredentialReader:  terminalCredentialReader(os.Stdin),
+		Profiles:          profiles,
+		Issuer:            tokenIssuer,
+		Runner:            process.Runner{},
+		Browser:           browser.Client{Issuer: tokenIssuer, Opener: browser.CommandOpener{}, Audit: auditRecorder},
+		ProfileManager:    profilemgr.New(paths.ConfigFile, secrets, managedTalos),
 		ProjectBindingConfirmer: ttyProjectBindingConfirmer{
 			input:      os.Stdin,
 			output:     os.Stderr,

@@ -35,6 +35,24 @@ envvault/credential/<credential-name>/value
 Do not remove repository files as part of EnvVault cleanup unless you
 intentionally own that project change.
 
+## Agent Skill
+
+If the discovery skill was installed by EnvVault, remove it before uninstalling
+the CLI:
+
+```bash
+envvault skills uninstall
+```
+
+Use the same `--project` and `--agent` options that were used for installation.
+The command removes only files marked as EnvVault-managed and refuses to remove
+a skill installed by another tool. For a skill installed with `npx skills`,
+remove it with that tool instead:
+
+```bash
+npx skills remove envvault -g -a codex
+```
+
 ## Verification
 
 Run:

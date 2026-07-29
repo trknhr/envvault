@@ -43,6 +43,13 @@ Install EnvVault from the [Homebrew tap](https://github.com/trknhr/homebrew-tap)
 brew install trknhr/tap/envvault
 ```
 
+Upgrade an existing installation:
+
+```bash
+brew update
+brew upgrade trknhr/tap/envvault
+```
+
 Common commands:
 
 ```bash
@@ -164,6 +171,7 @@ publishes tagged release archives and updates the Homebrew tap.
 
 - [Documentation site](https://trknhr.github.io/envvault/)
 - [Quickstart](docs/quickstart.md)
+- [Agent skill](docs/agent-skill.md)
 - [Proxies](docs/proxies.md)
 - [Threat model](docs/threat-model.md)
 - [Uninstall](docs/uninstall.md)
@@ -172,11 +180,25 @@ publishes tagged release archives and updates the Homebrew tap.
 
 ## Agent Skill
 
-EnvVault includes an agent skill at [skills/envvault/SKILL.md](skills/envvault/SKILL.md).
-Install it with the `skills` CLI:
+EnvVault includes a thin discovery skill at
+[skills/envvault/SKILL.md](skills/envvault/SKILL.md). The complete instructions
+are bundled with the EnvVault binary, so they always match the installed CLI
+version.
+
+After installing the CLI, install the discovery skill directly:
 
 ```bash
-npx skills add trknhr/envvault --skill envvault
+envvault skills install
+```
+
+This uses the cross-client `~/.agents/skills/` location. Use
+`--agent codex` for Codex's native location, or add `--project` for a
+project-local installation.
+
+Alternatively, install the discovery skill from GitHub:
+
+```bash
+npx skills add trknhr/envvault --skill envvault -g -a codex
 ```
 
 From a local checkout, use:
@@ -185,15 +207,20 @@ From a local checkout, use:
 npx skills add . --skill envvault
 ```
 
-Check installed skills:
+Inspect the bundled and installed skills:
 
 ```bash
-npx skills list
+envvault skills list
+envvault skills get core
+envvault skills status
+envvault skills path
 ```
 
-Use the `skills` CLI options to choose global/project scope or a specific
-agent, for example `-g` for global installation or `-a <agent>`.
-Restart your agent after installing or updating skills.
+The discovery skill checks whether `envvault` is installed. It may install the
+CLI when the user explicitly asks to install or set up EnvVault; otherwise it
+asks before changing system-wide packages. Restart the agent after installing
+the discovery skill. See the [agent skill guide](docs/agent-skill.md) for
+upgrade, scope, ownership, and uninstall details.
 
 ## Examples
 

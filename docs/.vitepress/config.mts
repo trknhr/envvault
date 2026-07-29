@@ -26,6 +26,7 @@ export default defineConfig({
         items: [
           { text: 'Overview', link: '/' },
           { text: 'Quickstart', link: '/quickstart' },
+          { text: 'Agent Skill', link: '/agent-skill' },
           { text: 'Proxies', link: '/proxies' }
         ]
       },

@@ -35,6 +35,7 @@ type Artifact struct {
 
 var packageFiles = []string{
 	"README.md",
+	"docs/agent-skill.md",
 	"docs/quickstart.md",
 	"docs/threat-model.md",
 	"docs/uninstall.md",

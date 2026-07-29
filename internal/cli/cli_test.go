@@ -63,6 +63,8 @@ func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
 		"envvault inspect --path .",
 		"envvault proxy list",
 		"envvault exec --env KEY=envvault://<credential> -- <command>",
+		"envvault skills get core",
+		"envvault skills install --agent codex",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout = %q, want %q", stdout.String(), want)
@@ -79,6 +81,112 @@ func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("stdout = %q, did not want top-level command %q", stdout.String(), forbidden)
 		}
+	}
+}
+
+func TestRunSkillsListAndGetWithoutServices(t *testing.T) {
+	app := cli.New(cli.Options{})
+
+	var listOut, listErr bytes.Buffer
+	code := app.Run(context.Background(), []string{"skills", "list"}, &listOut, &listErr)
+	if code != 0 {
+		t.Fatalf("skills list code = %d; stderr=%q", code, listErr.String())
+	}
+	for _, want := range []string{"core", "Version-matched EnvVault CLI workflows"} {
+		if !strings.Contains(listOut.String(), want) {
+			t.Fatalf("skills list stdout = %q, want %q", listOut.String(), want)
+		}
+	}
+
+	var getOut, getErr bytes.Buffer
+	code = app.Run(context.Background(), []string{"skills", "get", "core"}, &getOut, &getErr)
+	if code != 0 {
+		t.Fatalf("skills get code = %d; stderr=%q", code, getErr.String())
+	}
+	for _, want := range []string{
+		"name: core",
+		"envvault exec --env-file .env -- <command>",
+		"Do not print credential-bearing environment values",
+	} {
+		if !strings.Contains(getOut.String(), want) {
+			t.Fatalf("skills get stdout missing %q:\n%s", want, getOut.String())
+		}
+	}
+	if listErr.Len() != 0 || getErr.Len() != 0 {
+		t.Fatalf("list stderr=%q get stderr=%q, want empty", listErr.String(), getErr.String())
+	}
+}
+
+func TestRunSkillsManagedInstallStatusPathAndUninstall(t *testing.T) {
+	home := t.TempDir()
+	app := cli.New(cli.Options{AgentSkillHomeDir: home})
+	expectedPath := filepath.Join(home, ".codex", "skills", "envvault")
+
+	var installOut, installErr bytes.Buffer
+	code := app.Run(context.Background(), []string{"skills", "install", "--agent", "codex"}, &installOut, &installErr)
+	if code != 0 {
+		t.Fatalf("skills install code = %d; stderr=%q", code, installErr.String())
+	}
+	if !strings.Contains(installOut.String(), "installed\t"+expectedPath) {
+		t.Fatalf("skills install stdout = %q, want path %q", installOut.String(), expectedPath)
+	}
+
+	var statusOut, statusErr bytes.Buffer
+	code = app.Run(context.Background(), []string{"skills", "status", "--agent", "codex"}, &statusOut, &statusErr)
+	if code != 0 {
+		t.Fatalf("skills status code = %d; stderr=%q", code, statusErr.String())
+	}
+	if !strings.Contains(statusOut.String(), "managed (current)\t"+expectedPath) {
+		t.Fatalf("skills status stdout = %q", statusOut.String())
+	}
+
+	var pathOut, pathErr bytes.Buffer
+	code = app.Run(context.Background(), []string{"skills", "path", "--agent", "codex"}, &pathOut, &pathErr)
+	if code != 0 {
+		t.Fatalf("skills path code = %d; stderr=%q", code, pathErr.String())
+	}
+	if strings.TrimSpace(pathOut.String()) != expectedPath {
+		t.Fatalf("skills path stdout = %q, want %q", pathOut.String(), expectedPath)
+	}
+
+	var uninstallOut, uninstallErr bytes.Buffer
+	code = app.Run(context.Background(), []string{"skills", "uninstall", "--agent", "codex"}, &uninstallOut, &uninstallErr)
+	if code != 0 {
+		t.Fatalf("skills uninstall code = %d; stderr=%q", code, uninstallErr.String())
+	}
+	if !strings.Contains(uninstallOut.String(), "removed\t"+expectedPath) {
+		t.Fatalf("skills uninstall stdout = %q", uninstallOut.String())
+	}
+
+	var missingOut, missingErr bytes.Buffer
+	code = app.Run(context.Background(), []string{"skills", "status", "--agent", "codex"}, &missingOut, &missingErr)
+	if code != 1 {
+		t.Fatalf("missing skills status code = %d, want 1; stderr=%q", code, missingErr.String())
+	}
+	if !strings.Contains(missingOut.String(), "not-installed (absent)\t"+expectedPath) {
+		t.Fatalf("missing skills status stdout = %q", missingOut.String())
+	}
+}
+
+func TestRunSkillsRejectsConflictingScopes(t *testing.T) {
+	app := cli.New(cli.Options{AgentSkillHomeDir: t.TempDir()})
+	var stdout, stderr bytes.Buffer
+
+	code := app.Run(
+		context.Background(),
+		[]string{"skills", "install", "--global", "--project"},
+		&stdout,
+		&stderr,
+	)
+
+	if code != 1 {
+		t.Fatalf("Run() code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "mutually exclusive") {
+		t.Fatalf("stderr = %q, want mutually exclusive", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 }
 

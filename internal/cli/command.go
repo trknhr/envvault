@@ -48,6 +48,8 @@ func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 			"envvault inspect --path .",
 			"envvault exec --env KEY=envvault://<credential> -- <command>",
 			"envvault proxy list",
+			"envvault skills get core",
+			"envvault skills install --agent codex",
 			"envvault version",
 		),
 		Version:       strings.TrimSpace(versionOutput()),
@@ -77,6 +79,7 @@ func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 		a.newOpenCommand(execution),
 		a.newJWKSCommand(execution),
 		a.newIssuerCommand(execution),
+		a.newSkillsCommand(execution),
 		newCompletionCommand(execution),
 		newVersionCommand(execution),
 	)
