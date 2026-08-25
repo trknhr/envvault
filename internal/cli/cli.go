@@ -34,6 +34,8 @@ import (
 	"github.com/trknhr/envvault/internal/projectbinding"
 	"github.com/trknhr/envvault/internal/providerproxy"
 	resetpkg "github.com/trknhr/envvault/internal/reset"
+	"github.com/trknhr/envvault/internal/sandbox"
+	sandboxdocker "github.com/trknhr/envvault/internal/sandbox/docker"
 	tokenout "github.com/trknhr/envvault/internal/token"
 )
 
@@ -115,6 +117,7 @@ type Options struct {
 	AdminTokenSource        func() (string, error)
 	StdoutIsTerminal        func() bool
 	Now                     func() time.Time
+	SandboxRuntimes         map[string]sandbox.Runtime
 }
 
 type App struct {
@@ -140,6 +143,7 @@ type App struct {
 	adminTokenSource        func() (string, error)
 	stdoutIsTerminal        func() bool
 	now                     func() time.Time
+	sandboxRuntimes         map[string]sandbox.Runtime
 }
 
 func New(options Options) App {
@@ -166,6 +170,7 @@ func New(options Options) App {
 		adminTokenSource:        options.AdminTokenSource,
 		stdoutIsTerminal:        options.StdoutIsTerminal,
 		now:                     options.Now,
+		sandboxRuntimes:         cloneSandboxRuntimes(options.SandboxRuntimes),
 	}
 }
 
@@ -197,7 +202,21 @@ func defaultOptions(paths config.Paths) Options {
 		AdminTokenSource: admin.NewToken,
 		Resetter:         resetpkg.Planner{Paths: paths, Secrets: secrets},
 		Doctor:           doctorpkg.Checker{Paths: paths, Secrets: secrets},
+		SandboxRuntimes: map[string]sandbox.Runtime{
+			"docker": sandboxdocker.New(sandboxdocker.Options{}),
+		},
 	}
+}
+
+func cloneSandboxRuntimes(in map[string]sandbox.Runtime) map[string]sandbox.Runtime {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]sandbox.Runtime, len(in))
+	for name, runtime := range in {
+		out[name] = runtime
+	}
+	return out
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {

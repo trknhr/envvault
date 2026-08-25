@@ -17,6 +17,10 @@ func TestBundledCoreSkillContainsVersionMatchedWorkflow(t *testing.T) {
 		"envvault credential set <credential-name>",
 		"envvault exec --env-file .env -- <command>",
 		"--home-file <destination>=<source>",
+		"--outbound-profile <proxy-name>",
+		"`--all`",
+		"late-bound",
+		"EnvVault-specific tool",
 		"Do not print credential-bearing environment values",
 	} {
 		if !strings.Contains(content, want) {

@@ -92,6 +92,40 @@ func TestProfileStoreReturnsProfileNotFound(t *testing.T) {
 	}
 }
 
+func TestProfileStoreListsProfilesInNameOrder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := config.Save(path, config.File{
+		Version:      1,
+		Installation: config.Installation{ID: "01JTESTINSTALL"},
+		Runtime: config.Runtime{Talos: config.TalosRuntime{
+			Mode: "managed", Version: "test-talos", Lifecycle: "on-demand",
+		}},
+		Defaults: config.Defaults{
+			TokenTTL: config.Duration(10 * time.Minute), MaxTokenTTL: config.Duration(time.Hour),
+		},
+		Profiles: map[string]config.Profile{
+			"zeta/dev": {
+				Kind: profile.KindInject, CredentialName: "zeta/dev",
+				ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
+			},
+			"alpha/dev": {
+				Kind: profile.KindInject, CredentialName: "alpha/dev",
+				ProjectBinding: config.ProjectBinding{Mode: profile.ProjectBindingNone},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	got, err := (config.ProfileStore{Path: path}).ListProfiles()
+	if err != nil {
+		t.Fatalf("ListProfiles() error = %v", err)
+	}
+	if len(got) != 2 || got[0].Name != "alpha/dev" || got[1].Name != "zeta/dev" {
+		t.Fatalf("ListProfiles() = %#v, want alpha/dev then zeta/dev", got)
+	}
+}
+
 func TestProfileStoreReloadsConfigForEachLookup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	base := config.File{

@@ -2,13 +2,16 @@ package providerproxy_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/trknhr/envvault/internal/connection"
 	"github.com/trknhr/envvault/internal/envref"
 	"github.com/trknhr/envvault/internal/keyring"
 	"github.com/trknhr/envvault/internal/profile"
@@ -18,8 +21,11 @@ import (
 
 func TestServerForwardsAllowedRequestWithProviderBearer(t *testing.T) {
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	var providerMu sync.Mutex
 	var gotAuth, gotPath, gotQuery, gotBody string
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		providerMu.Lock()
+		defer providerMu.Unlock()
 		gotAuth = r.Header.Get("Authorization")
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
@@ -61,17 +67,23 @@ func TestServerForwardsAllowedRequestWithProviderBearer(t *testing.T) {
 	if string(body) != `{"ok":true}` {
 		t.Fatalf("body = %q", body)
 	}
-	if gotAuth != "Bearer sk-real" {
-		t.Fatalf("provider Authorization = %q, want provider bearer", gotAuth)
+	providerMu.Lock()
+	authOK := gotAuth == "Bearer sk-real"
+	gotPathSnapshot := gotPath
+	gotQuerySnapshot := gotQuery
+	gotBodySnapshot := gotBody
+	providerMu.Unlock()
+	if !authOK {
+		t.Fatal("provider Authorization did not contain the expected credential")
 	}
-	if gotPath != "/v1/chat/completions" {
-		t.Fatalf("provider path = %q, want /v1/chat/completions", gotPath)
+	if gotPathSnapshot != "/v1/chat/completions" {
+		t.Fatalf("provider path = %q, want /v1/chat/completions", gotPathSnapshot)
 	}
-	if gotQuery != "model=test" {
-		t.Fatalf("provider query = %q, want model=test", gotQuery)
+	if gotQuerySnapshot != "model=test" {
+		t.Fatalf("provider query = %q, want model=test", gotQuerySnapshot)
 	}
-	if gotBody != `{"messages":[]}` {
-		t.Fatalf("provider body = %q", gotBody)
+	if gotBodySnapshot != `{"messages":[]}` {
+		t.Fatalf("provider body = %q", gotBodySnapshot)
 	}
 }
 
@@ -121,9 +133,12 @@ func TestServerRejectsInvalidTokenAndPolicy(t *testing.T) {
 func TestEnvResolverRewritesReferencesToLocalProxy(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	var providerMu sync.Mutex
 	var providerAuth string
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		providerMu.Lock()
 		providerAuth = r.Header.Get("Authorization")
+		providerMu.Unlock()
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, "accepted")
 	}))
@@ -159,7 +174,7 @@ func TestEnvResolverRewritesReferencesToLocalProxy(t *testing.T) {
 		t.Fatalf("baseURL = %q, want localhost proxy", baseURL)
 	}
 	if !strings.HasPrefix(localToken, "envvault-local-") {
-		t.Fatalf("token = %q, want local proxy token", localToken)
+		t.Fatal("resolver did not return a local proxy capability")
 	}
 
 	req, err := http.NewRequest(http.MethodPost, baseURL+"/chat/completions", nil)
@@ -175,10 +190,75 @@ func TestEnvResolverRewritesReferencesToLocalProxy(t *testing.T) {
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("status = %d, want 202", resp.StatusCode)
 	}
-	if providerAuth != "Bearer sk-real" {
-		t.Fatalf("provider Authorization = %q, want provider bearer", providerAuth)
+	providerMu.Lock()
+	authOK := providerAuth == "Bearer sk-real"
+	providerMu.Unlock()
+	if !authOK {
+		t.Fatal("provider Authorization did not contain the expected credential")
 	}
 }
+
+func TestEnvResolverResolveProxyBindsGrantToSubjectAndRedactsCapability(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	adapter := &captureAdapter{now: now}
+	resolver := &providerproxy.EnvResolver{
+		Profiles:  testProfiles{"openai/dev": providerProfile("https://api.example.test/v1")},
+		Adapter:   adapter,
+		SubjectID: "sandbox-123",
+		Now:       func() time.Time { return now },
+	}
+	defer func() {
+		if err := resolver.Close(context.Background()); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+	}()
+
+	lease, err := resolver.ResolveProxy(ctx, "openai/dev", projectbinding.Identity{})
+	if err != nil {
+		t.Fatalf("ResolveProxy() error = %v", err)
+	}
+	if adapter.request.Grant.SubjectID != "sandbox-123" {
+		t.Fatalf("grant subject = %q, want sandbox-123", adapter.request.Grant.SubjectID)
+	}
+	if lease.BaseURL != "http://127.0.0.1:43123/openai/dev" || lease.Token != "temporary-capability" {
+		t.Fatalf("ResolveProxy() returned unexpected delivery metadata")
+	}
+	formatted := fmt.Sprintf("%v %#v", lease, lease)
+	if strings.Contains(formatted, "temporary-capability") {
+		t.Fatal("formatted proxy lease leaked its session capability")
+	}
+}
+
+type captureAdapter struct {
+	now     time.Time
+	request connection.AdapterStartRequest
+}
+
+func (*captureAdapter) Protocol() connection.ProtocolType { return connection.ProtocolHTTP }
+
+func (*captureAdapter) Validate(connection.Policy) error { return nil }
+
+func (a *captureAdapter) Start(_ context.Context, request connection.AdapterStartRequest) (connection.AdapterLease, error) {
+	a.request = request
+	return captureAdapterLease{expiresAt: a.now.Add(time.Minute)}, nil
+}
+
+type captureAdapterLease struct {
+	expiresAt time.Time
+}
+
+func (captureAdapterLease) Endpoint() connection.Endpoint {
+	return connection.Endpoint{Network: "tcp", Address: "127.0.0.1:43123"}
+}
+
+func (l captureAdapterLease) ExpiresAt() time.Time { return l.expiresAt }
+
+func (captureAdapterLease) BaseURL() string { return "http://127.0.0.1:43123/openai/dev" }
+
+func (captureAdapterLease) Token() string { return "temporary-capability" }
+
+func (captureAdapterLease) Close(context.Context) error { return nil }
 
 func TestEnvResolverResolvesDefaultReferenceToCredentialValue(t *testing.T) {
 	ctx := context.Background()
@@ -193,7 +273,7 @@ func TestEnvResolverResolvesDefaultReferenceToCredentialValue(t *testing.T) {
 		t.Fatalf("ResolveReference() error = %v", err)
 	}
 	if value != "sk-real" {
-		t.Fatalf("value = %q, want credential value", value)
+		t.Fatal("default reference did not resolve to the expected credential")
 	}
 }
 
@@ -231,6 +311,7 @@ func providerProfile(targetURL string) profile.Profile {
 	return profile.Profile{
 		Name:           "openai/dev",
 		Kind:           profile.KindProviderProxy,
+		CredentialName: "openai/dev",
 		Provider:       "openai-compatible",
 		TargetURL:      targetURL,
 		AllowedPaths:   []string{"/chat/completions"},

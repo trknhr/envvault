@@ -7,7 +7,8 @@ references. At runtime, it resolves credentials from the OS credential store or
 starts a localhost proxy that gives the app a local URL and local proxy token.
 For tools that require a credential file under the user's home directory, it
 can instead create an isolated temporary home containing only the requested
-resolved files.
+resolved files. An experimental Docker command can run a process with proxy
+capabilities while keeping the upstream credential on the host.
 
 Links: [Documentation](https://trknhr.github.io/envvault/) |
 [Homebrew tap](https://github.com/trknhr/homebrew-tap)
@@ -62,6 +63,7 @@ envvault proxy list
 envvault exec --env APP_SECRET=envvault://app/dev -- npm run dev
 envvault exec --env-file .env -- npm start
 envvault exec --home-file .hogehoge=config/hogehoge.yaml -- your-command
+envvault sandbox run --runtime docker --image node:22 --env-file .env -- npm test
 ```
 
 `envvault credential set <name>` prompts for a credential with terminal echo
@@ -127,9 +129,146 @@ is unlimited. The default output reports only the skipped-path count; add
 `--verbose` to list every skipped path. Migration and source-file deletion are
 intentionally separate steps.
 
+## Experimental Docker Sandbox
+
+When `.env` contains provider-proxy output references, run a command in Docker
+without delivering the upstream credential:
+
+```bash
+envvault sandbox run \
+  --runtime docker \
+  --image node:22 \
+  --env-file .env \
+  -- npm test
+```
+
+The current directory is mounted at `/workspace`. The container receives a
+temporary gateway URL and bearer capability; the upstream credential remains
+in the host credential store and trusted gateway process. Direct
+`envvault://<credential>` references fail by default unless an attached
+outbound profile authorizes that exact reference. The compatibility escape
+hatch `--allow-materialized-secrets` delivers other raw values and reports
+`materialized-static` with a warning.
+
+The Docker prototype reports `brokered`, not `brokered-enforced`: direct bridge
+egress is still available. See [Experimental Docker Sandbox](docs/sandbox.md)
+for setup, hardening defaults, published ports, cleanup, and limitations.
+
+For a directly invoked Codex CLI, EnvVault can discover one compatible
+`openai-compatible` provider-proxy profile and attach it without an `.env`
+file:
+
+```bash
+docker build --tag envvault-codex:local examples/codex-sandbox
+
+envvault sandbox run -it \
+  --runtime docker \
+  --image envvault-codex:local \
+  -- codex
+```
+
+Use `--agent-auth <profile>` when multiple compatible profiles exist, or
+`--no-agent-auth` to disable automatic attachment. The container receives a
+temporary capability and invocation-scoped Codex provider settings, not the
+upstream credential or host `~/.codex` state.
+
+For ChatGPT subscription OAuth, opt into an isolated native Codex home. Login
+once with device authorization, then reuse the named profile:
+
+```bash
+envvault sandbox run -it \
+  --agent-auth native \
+  --agent-auth-profile personal \
+  --runtime docker \
+  --image envvault-codex:local \
+  -- codex login --device-auth
+
+envvault sandbox run -it \
+  --agent-auth native \
+  --agent-auth-profile personal \
+  --runtime docker \
+  --image envvault-codex:local \
+  -- codex
+```
+
+Native mode mounts an EnvVault-managed, profile-specific `CODEX_HOME`; it does
+not mount the operator's `~/.codex`. Codex owns login and token refresh. Because
+the writable auth state contains OAuth tokens and is visible to the container,
+native mode reports `materialized-static` and requires explicit selection.
+
+For everyday use, the
+[zsh `evcodex` wrapper](docs/sandbox.md#daily-codex-wrapper-zsh) starts with no
+application outbound profile and accepts selected or all project-allowed
+profiles per session:
+
+```bash
+evcodex
+evcodex -o gemini-openai/dev
+evcodex -o gemini-openai/dev -o tools-api-outbound/dev
+evcodex --all
+```
+
+For a bearer-authenticated API used by tools inside the sandbox, preserve its
+original URL with a repeatable outbound attachment:
+
+```dotenv
+TOOLS_API_KEY=envvault://tools-api/dev
+```
+
+The app can load this mounted project file normally, or EnvVault can pass the
+same literal reference into its process environment with `--env-file .env`.
+
+```bash
+envvault sandbox run -it \
+  --agent-auth native \
+  --agent-auth-profile personal \
+  --outbound-profile tools-api-outbound/dev \
+  --env-file .env \
+  --runtime docker \
+  --image envvault-codex:local \
+  -- codex
+```
+
+The application initializes its normal SDK with the literal, non-secret
+reference. The broker accepts only the exact credential reference declared by
+the attached profile, then substitutes the real value in the bearer header at
+egress. The Docker adapter also provides an authenticated `HTTP(S)_PROXY` and
+ephemeral public CA; the upstream credential and CA private key stay in
+EnvVault. This first version targets Node 22.21+ proxy-aware clients and still
+reports `brokered`: a process can ignore the proxy and use direct bridge egress.
+The legacy profile translator supports bearer late binding; provider-specific
+Gemini, Kaggle, signed-request, and OAuth adapters are follow-up work. See
+[RFC 0003](docs/rfcs/0003-url-preserving-outbound-broker.md).
+
+## External Agent Sandbox Plugin
+
+Existing agent-sandbox control planes can use EnvVault as a connection provider
+without delegating sandbox creation to EnvVault:
+
+```bash
+envvault sandbox plugin serve \
+  --gateway-listen 0.0.0.0:0 \
+  --gateway-host host.docker.internal
+```
+
+The experimental command speaks a versioned NDJSON protocol over stdin/stdout.
+An `open` request returns environment values containing a temporary gateway URL
+and capability plus the gateway endpoints that the sandbox egress policy must
+allow. The upstream credential stays in EnvVault. `close`, EOF, or process
+termination revokes outstanding leases.
+
+The plugin belongs in the sandbox platform's trusted control plane; its
+stdin/stdout handles must not be exposed inside the sandbox. EnvVault reports
+`brokered` because the generic plugin cannot prove that the external platform
+enforced the returned network policy. See
+[External Sandbox Plugin](docs/sandbox-plugin.md) for the wire flow and trust
+boundary.
+
 ## Security Limitations
 
-EnvVault reduces credential exposure; it does not create a sandbox.
+EnvVault reduces credential exposure. The compatibility `envvault exec` path
+does not create a sandbox. The experimental Docker path creates a container but
+does not yet enforce default-deny egress.
 
 - A child process can read any credential value or local proxy token placed in
   its environment until it exits.
@@ -151,6 +290,15 @@ EnvVault reduces credential exposure; it does not create a sandbox.
   This is the default compatibility path for local development.
 - Proxy mode can reduce raw-secret exposure, but it requires the app or SDK to
   accept a custom base URL and bearer token.
+- Docker sandbox mode places its short-lived gateway token in the container
+  environment and metadata. It does not place the upstream credential there.
+- Native agent auth explicitly mounts writable OAuth state into the container;
+  use separate profiles for unrelated trust boundaries.
+- The external sandbox plugin returns short-lived capabilities to a trusted
+  control plane. Protocol responses must not be logged or exposed to unrelated
+  sandboxes.
+- The experimental Docker bridge can still reach the internet and may reach
+  host services. Do not interpret `brokered` as network isolation.
 
 ## Status
 
@@ -159,6 +307,9 @@ parsing, OS keyring abstraction, browser admin server, direct credential
 resolution, isolated home-file injection, optional provider proxies, process
 environment construction, read-only raw-credential inspection, metadata-only
 audit records, reset/doctor support, runnable examples, and acceptance fixtures.
+It also contains an experimental Docker sandbox runtime, an external sandbox
+plugin contract, an HTTP connection adapter, and a Codex native-auth adapter.
+Enforced egress remains future work.
 
 Local archive packaging is available through
 `go run ./cmd/envvault-release package`, and local Homebrew/Scoop metadata can
@@ -173,6 +324,8 @@ publishes tagged release archives and updates the Homebrew tap.
 - [Quickstart](docs/quickstart.md)
 - [Agent skill](docs/agent-skill.md)
 - [Proxies](docs/proxies.md)
+- [Experimental Docker Sandbox](docs/sandbox.md)
+- [External Sandbox Plugin](docs/sandbox-plugin.md)
 - [Threat model](docs/threat-model.md)
 - [Uninstall](docs/uninstall.md)
 - [Recovery](docs/recovery.md)
@@ -228,6 +381,7 @@ upgrade, scope, ownership, and uninstall details.
 - [Env app example](examples/env-app/README.md)
 - [OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)
 - [Gemini AI SDK proxy app example](examples/gemini-ai-sdk-proxy-app/README.md)
+- [Gemini AI SDK outbound sandbox app example](examples/gemini-ai-sdk-outbound-app/README.md)
 
 ## Development
 

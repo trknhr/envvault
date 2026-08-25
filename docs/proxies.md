@@ -80,3 +80,69 @@ Non-interactive use fails closed when the binding is unknown.
 
 Use `none` only for low-risk local workflows. Use `path-hash` when a project has
 no git remote but still needs local binding.
+
+## Use a Proxy in the Docker Sandbox
+
+The same proxy references work with the experimental Docker runtime:
+
+```bash
+envvault sandbox run \
+  --runtime docker \
+  --image node:22 \
+  --env-file .env \
+  -- node app.mjs
+```
+
+For `envvault exec`, the generated base URL points at host loopback. For
+`sandbox run`, EnvVault rewrites it to an ephemeral host gateway address that
+the container can reach. In both cases, the application receives a temporary
+bearer capability and the upstream credential remains in the OS credential
+store and trusted proxy process.
+
+Direct `envvault://<credential>` references are rejected in sandbox mode unless
+they exactly match a credential used by an attached outbound profile or
+`--allow-materialized-secrets` is explicit. The Docker prototype reports
+`brokered`: proxy method/path policy is enforced, but direct container egress is
+not blocked. See [Experimental Docker Sandbox](/sandbox) for the exact boundary.
+
+### Preserve the provider URL
+
+The same stored profile can be attached without using its generated base URL:
+
+```dotenv
+APP_API_KEY=envvault://app/dev
+```
+
+An application that already loads the mounted project `.env` can do so
+unchanged. Pass `--env-file .env` only when it expects the value in its process
+environment instead.
+
+```bash
+envvault sandbox run -it \
+  --agent-auth native \
+  --outbound-profile api-proxy/dev \
+  --env-file .env \
+  --runtime docker \
+  --image envvault-codex:local \
+  -- codex
+```
+
+EnvVault preserves the exact underlying credential reference in the container
+and supplies an authenticated `HTTP(S)_PROXY` plus an ephemeral public CA. A
+proxy-aware process can initialize its ordinary SDK from `APP_API_KEY` and call
+the original `target_url`. The host broker requires that reference in the
+configured bearer header, checks profile policy, and only then substitutes the
+real credential. Missing or mismatched references fail locally. The flag is
+repeatable. The first Docker adapter targets Node 22.21+ and does not force
+applications to use the proxy, so it remains `brokered` rather than
+`brokered-enforced`. The legacy profile format supports bearer late binding
+only.
+
+For a trusted convenience session, `sandbox run --all` attaches every
+provider-proxy profile whose project binding permits the current workspace.
+It excludes other profile kinds and profiles bound elsewhere, but includes
+profiles configured with `project-binding none`. Do not combine it with an
+explicit `--outbound-profile`.
+
+See [Original-URL outbound profiles](/sandbox#original-url-outbound-profiles)
+and [RFC 0003](/rfcs/0003-url-preserving-outbound-broker).

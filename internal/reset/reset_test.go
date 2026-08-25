@@ -22,6 +22,8 @@ func TestPlannerDryRunReportsEnvVaultOwnedFilesAndKeyringEntries(t *testing.T) {
 	writeFile(t, filepath.Join(paths.DataDir, "talos.sqlite"), "talos-metadata-db")
 	writeFile(t, filepath.Join(paths.DataDir, "envvault-jwks.json"), `{"keys":[]}`)
 	writeFile(t, filepath.Join(paths.DataDir, "audit.jsonl"), `{"event":"credential_issued"}`)
+	nativeAuthPath := filepath.Join(paths.DataDir, "agent-auth", "codex", "personal", "auth.json")
+	writeFile(t, nativeAuthPath, `{"tokens":"secret-canary-native"}`)
 	secrets := keyring.NewMemoryStore()
 	putSecret(t, ctx, secrets, keyring.TalosHMACKey(), "secret-canary-hmac")
 	putSecret(t, ctx, secrets, keyring.TalosSigningKey("current"), "secret-canary-signing")
@@ -48,6 +50,9 @@ func TestPlannerDryRunReportsEnvVaultOwnedFilesAndKeyringEntries(t *testing.T) {
 	if !contains(result.Files, filepath.Join(paths.DataDir, "audit.jsonl")) {
 		t.Fatalf("Files = %#v, want audit file", result.Files)
 	}
+	if !contains(result.Files, filepath.Join(paths.DataDir, "agent-auth")) {
+		t.Fatalf("Files = %#v, want native agent auth directory", result.Files)
+	}
 	if !contains(result.KeyringKeys, string(keyring.ProfileParentKey("backend-a/dev"))) {
 		t.Fatalf("KeyringKeys = %#v, want profile parent key", result.KeyringKeys)
 	}
@@ -63,6 +68,9 @@ func TestPlannerDryRunReportsEnvVaultOwnedFilesAndKeyringEntries(t *testing.T) {
 	if _, err := secrets.Get(ctx, keyring.TalosHMACKey()); err != nil {
 		t.Fatalf("keyring changed during dry-run: %v", err)
 	}
+	if got := readFile(t, nativeAuthPath); !strings.Contains(got, "secret-canary-native") {
+		t.Fatalf("native auth changed during dry-run: %q", got)
+	}
 	if got := readFile(t, repoFile); got != "TOKEN=envvault://backend-a/dev\n" {
 		t.Fatalf("repository file changed: %q", got)
 	}
@@ -76,10 +84,12 @@ func TestPlannerResetDeletesEnvVaultFilesAndKnownKeyringEntries(t *testing.T) {
 	talosSQLitePath := filepath.Join(paths.DataDir, "talos.sqlite")
 	jwksPath := filepath.Join(paths.DataDir, "envvault-jwks.json")
 	auditPath := filepath.Join(paths.DataDir, "audit.jsonl")
+	nativeAuthDir := filepath.Join(paths.DataDir, "agent-auth")
 	writeFile(t, sqlitePath, "metadata-only-db")
 	writeFile(t, talosSQLitePath, "talos-metadata-db")
 	writeFile(t, jwksPath, `{"keys":[]}`)
 	writeFile(t, auditPath, `{"event":"credential_issued"}`)
+	writeFile(t, filepath.Join(nativeAuthDir, "codex", "personal", "auth.json"), `{"tokens":"native"}`)
 	writeFile(t, filepath.Join(paths.CacheDir, "talos-v0.1.0-linux-amd64"), "runtime")
 	secrets := keyring.NewMemoryStore()
 	putSecret(t, ctx, secrets, keyring.TalosHMACKey(), "hmac")
@@ -100,6 +110,9 @@ func TestPlannerResetDeletesEnvVaultFilesAndKnownKeyringEntries(t *testing.T) {
 	}
 	if _, err := os.Stat(paths.CacheDir); !os.IsNotExist(err) {
 		t.Fatalf("cache dir still exists after reset; err=%v", err)
+	}
+	if _, err := os.Stat(nativeAuthDir); !os.IsNotExist(err) {
+		t.Fatalf("native agent auth dir still exists after reset; err=%v", err)
 	}
 	for _, key := range []keyring.Key{
 		keyring.TalosHMACKey(),

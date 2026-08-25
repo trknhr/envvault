@@ -5,6 +5,8 @@ Keep real secrets out of project `.env` files and coding-agent prompts.
 EnvVault replaces plaintext `.env` secrets with repository-safe `envvault://`
 references. At runtime, it resolves credentials from the OS credential store or
 starts a localhost proxy that gives the app a local URL and local proxy token.
+An experimental Docker runtime can pass that temporary proxy capability into a
+container without passing the upstream credential.
 
 ## Quick Start
 
@@ -103,6 +105,20 @@ also allowed.
 - **Proxy**: use generated `envvault://<proxy>/base-url` and
   `envvault://<proxy>/token` references when an app accepts a custom endpoint
   and bearer token.
+- **Docker sandbox**: reuse proxy output references with
+  `envvault sandbox run`. The current prototype is `brokered`; direct container
+  egress is not blocked.
+- **URL-preserving outbound proxy**: attach a bearer provider profile with
+  `--outbound-profile` when a supported proxy-aware sandbox client must keep the
+  original provider URL. The upstream credential and ephemeral CA private key
+  remain host-side.
+- **Native agent auth**: explicitly use `--agent-auth native` to mount an
+  EnvVault-managed, agent/profile-specific auth home. The official agent owns
+  OAuth login and refresh; the sandbox can read the resulting credential state,
+  so this path reports `materialized-static`.
+- **External sandbox plugin**: let a trusted agent-sandbox control plane use
+  `envvault sandbox plugin serve` to obtain sandbox-bound gateway leases without
+  giving EnvVault responsibility for creating the sandbox.
 - **Local state**: store only credential names and proxy policy in config; store
   real credential values in the OS credential store.
 
@@ -134,3 +150,11 @@ explicitly requests installation or setup; otherwise it asks first. See
 The [proxy examples](/examples) show the optional proxy workflow: a credential
 stays in the OS credential store while the app receives only a localhost proxy
 URL and local token.
+
+See [Experimental Docker Sandbox](/sandbox) to run that proxy workflow inside a
+container or attach an original-URL outbound profile. The
+[daily Codex wrapper](/sandbox#daily-codex-wrapper-zsh) keeps agent OAuth and
+per-session application profiles separate.
+
+See [External Sandbox Plugin](/sandbox-plugin) to attach the same connection
+broker to an existing agent sandbox.

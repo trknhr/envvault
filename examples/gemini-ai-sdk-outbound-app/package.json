@@ -1,0 +1,16 @@
+{
+  "name": "gemini-ai-sdk-outbound-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check app.mjs",
+    "start": "node app.mjs"
+  },
+  "engines": {
+    "node": ">=22.21.0"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.0",
+    "ai": "^7.0.2"
+  }
+}

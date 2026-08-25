@@ -31,3 +31,35 @@ or pass the references directly with `envvault exec --env`.
 ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url
 ENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token
 ```
+
+## Original-URL Outbound Sandbox Example
+
+- [Gemini AI SDK outbound sandbox app](/examples/gemini-ai-sdk-outbound-app)
+
+Use this when an SDK should retain its production provider URL and normal
+API-key variable while the real credential remains outside the sandbox:
+
+```dotenv
+GEMINI_API_KEY=envvault://gemini-api-key
+```
+
+The app loads this project `.env` itself. With
+`--outbound-profile gemini-openai/dev`, the broker requires the exact reference
+in the SDK's bearer field and substitutes the real key only at egress.
+
+## Run a Proxy Example in Docker
+
+After installing the Gemini example dependencies, the same checked-in `.env`
+references can be used in the experimental Docker sandbox:
+
+```bash
+./bin/envvault sandbox run \
+  --runtime docker \
+  --image node:22 \
+  --env-file examples/gemini-ai-sdk-proxy-app/.env \
+  -- npm --prefix examples/gemini-ai-sdk-proxy-app start
+```
+
+The repository is mounted at `/workspace`. The container receives the gateway
+URL and temporary capability, not the Gemini API key. This currently reports
+`brokered`, because the Docker bridge still permits direct egress.

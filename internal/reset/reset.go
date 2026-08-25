@@ -18,6 +18,7 @@ const (
 	talosSQLiteFilename = "talos.sqlite"
 	jwksFilename        = "envvault-jwks.json"
 	auditFilename       = "audit.jsonl"
+	nativeAgentAuthDir  = "agent-auth"
 	signingKeyID        = "current"
 )
 
@@ -72,6 +73,7 @@ func (p Planner) plan() (Result, error) {
 		filepath.Join(p.Paths.DataDir, talosSQLiteFilename),
 		filepath.Join(p.Paths.DataDir, jwksFilename),
 		filepath.Join(p.Paths.DataDir, auditFilename),
+		filepath.Join(p.Paths.DataDir, nativeAgentAuthDir),
 		p.Paths.CacheDir,
 	}
 	keys := []string{

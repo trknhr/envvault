@@ -37,8 +37,8 @@ func (a App) execute(ctx context.Context, args []string, stdout, stderr io.Write
 func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "envvault",
-		Short: "Resolve credentials when launching a process",
-		Long:  "EnvVault keeps real credentials in the OS credential store and resolves envvault:// references at process launch.",
+		Short: "Broker credentials for local processes and agent sandboxes",
+		Long:  "EnvVault keeps real credentials in the OS credential store and resolves envvault:// references for local processes and trusted sandbox integrations.",
 		Example: commandExamples(
 			"envvault admin start",
 			"envvault credential set <name>",
@@ -47,6 +47,8 @@ func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 			"envvault credential list",
 			"envvault inspect --path .",
 			"envvault exec --env KEY=envvault://<credential> -- <command>",
+			"envvault sandbox run --runtime docker --image IMAGE -- <command>",
+			"envvault sandbox plugin serve",
 			"envvault proxy list",
 			"envvault skills get core",
 			"envvault skills install --agent codex",
@@ -76,6 +78,7 @@ func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 		a.newAdminCommand(execution),
 		a.newTokenCommand(execution),
 		a.newExecCommand(execution),
+		a.newSandboxCommand(execution),
 		a.newOpenCommand(execution),
 		a.newJWKSCommand(execution),
 		a.newIssuerCommand(execution),

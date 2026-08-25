@@ -105,6 +105,10 @@ func TestDefaultOptionsWireResetAndDoctorServices(t *testing.T) {
 	if options.AdminServer == nil {
 		t.Fatal("AdminServer = nil, want local admin server")
 	}
+	dockerRuntime := options.SandboxRuntimes["docker"]
+	if dockerRuntime == nil || dockerRuntime.Name() != "docker" {
+		t.Fatalf("SandboxRuntimes[docker] = %T, want Docker runtime", dockerRuntime)
+	}
 }
 
 func TestManagedTalosLocalConfigUsesDedicatedRuntimeDBAndIssuer(t *testing.T) {

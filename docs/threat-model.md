@@ -9,6 +9,11 @@ EnvVault protects long-lived local credential material from routine project and
 - Credential files inside temporary isolated-home workspaces while a child
   process is running.
 - Local proxy bearer tokens while the child process is running.
+- URL-preserving outbound proxy capabilities and ephemeral CA private keys
+  while a sandbox lease is active.
+- External sandbox plugin capabilities while a sandbox lease is active.
+- Persistent native agent OAuth state stored under EnvVault's private data
+  directory.
 - EnvVault config policy and project-binding approvals.
 
 ## Trust Boundaries
@@ -23,6 +28,19 @@ EnvVault protects long-lived local credential material from routine project and
   writing the requested destination under the real home directory.
 - Localhost provider proxy: accepts local proxy bearer tokens and adds provider
   API keys for allowlisted requests.
+- Host-side outbound broker: terminates configured HTTP/HTTPS routes, enforces
+  destination/method/path policy, and adds provider credentials while keeping
+  its ephemeral CA private key outside the sandbox.
+- Experimental Docker sandbox: receives a short-lived gateway capability but
+  not the upstream credential in brokered mode.
+- Native agent auth mount: an explicitly selected, writable, profile-specific
+  agent home containing OAuth tokens and persistent agent configuration.
+- External sandbox control plane: trusted to own the plugin stdin/stdout,
+  inject selected capability values, apply egress policy, and revoke leases.
+- External agent sandbox: untrusted; receives selected gateway capabilities but
+  never the plugin control channel or upstream credential.
+- Docker daemon: trusted host component that creates, starts, stops, and removes
+  the application container.
 - Third-party provider API: receives the real provider API key from the child
   process or proxy.
 
@@ -34,9 +52,16 @@ EnvVault protects long-lived local credential material from routine project and
   home directory.
 - Third-party SDKs that can be configured with both a custom base URL and bearer
   token.
+- Proxy-aware sandbox applications that must retain the provider's original
+  URL and can send a request without possessing the real bearer credential.
 - Repository changes that try to request a different credential, proxy target
   URL, method, or path.
 - Child processes that can inspect their own environment.
+- Application containers that inspect their environment, image metadata, and
+  mounted workspace.
+- Application containers explicitly granted a native agent auth profile that
+  inspect or modify that persistent profile.
+- Existing agent sandboxes integrated through a trusted host-side plugin.
 
 ## Out of Scope
 
@@ -50,6 +75,17 @@ EnvVault protects long-lived local credential material from routine project and
 - Keeping a credential out of the child process when an SDK or tool requires
   the raw credential directly and cannot be pointed at the EnvVault localhost
   proxy.
+- Protecting native agent OAuth state from a container after the operator
+  explicitly selects `--agent-auth native`.
+- Default-deny Docker egress, DNS enforcement, cloud metadata blocking, and
+  isolation from every host service in experimental `brokered` mode.
+- Transparent interception for clients that ignore proxy settings, use TLS
+  certificate pinning, or require an unsupported language-specific trust store.
+- Docker daemon compromise or container escape.
+- A malicious or compromised external sandbox control plane. It owns the
+  temporary capabilities and is part of the trusted computing base.
+- Default-deny enforcement by a third-party sandbox platform. The generic
+  plugin reports only `brokered`.
 
 ## Security Controls
 
@@ -77,7 +113,40 @@ EnvVault protects long-lived local credential material from routine project and
   and local token lifetime.
 - Proxy `.env` references split proxy base URLs from local-only bearer tokens.
 - Non-interactive unapproved project bindings fail closed for proxy use.
+- `sandbox run --all` rechecks project bindings, selects only provider-proxy
+  profiles allowed for the current project, and fails when none are eligible.
+  Because newly added eligible profiles expand its authority automatically,
+  explicit profile names remain the least-authority, reproducible choice.
 - Audit records are metadata-only.
+- Docker sandbox mode rejects direct credential references unless the exact
+  reference belongs to an attached outbound profile or
+  `--allow-materialized-secrets` is explicit. Proxy mode places only the local
+  gateway URL and short-lived token in the container environment and metadata.
+- URL-preserving outbound mode places a non-secret, late-bound credential
+  reference, a short-lived authenticated proxy URL, and an ephemeral public CA
+  in the sandbox. The broker requires the exact reference in the configured
+  bearer field, fixes configured destinations, checks exact methods and paths,
+  removes hop-by-hop headers, replaces only that bearer field, and does not
+  follow credential-bearing redirects. Its CA private key and provider
+  credential remain host-side.
+- The outbound broker refuses unconfigured private, loopback, link-local, and
+  unspecified destinations. This prevents the broker itself from becoming a
+  general private-network relay; it does not block direct container traffic.
+- Native agent auth is explicit, uses a validated agent adapter and profile
+  name, stores state below EnvVault's private data directory, rejects symlinked
+  state paths, and forces private directory permissions. It never mounts the
+  operator's normal agent home implicitly.
+- The Docker runtime uses bridge networking, a read-only root filesystem,
+  ephemeral HOME and `/tmp`, dropped capabilities, `no-new-privileges`, PID,
+  memory, and CPU limits, and a workspace mount. Native mode adds one selected
+  agent-state mount. It does not mount the host home, OS credential store, or
+  Docker socket.
+- Docker containers, gateway listeners, and credential leases are cleaned up
+  after normal exit, lifecycle failure, or Ctrl-C.
+- The external sandbox plugin accepts only versioned, bounded NDJSON messages,
+  rejects direct credential outputs and duplicate environment mappings, binds
+  connection grants to the supplied sandbox identity, and revokes every lease
+  on `close`, EOF, or process cancellation.
 
 ## Residual Risk
 
@@ -99,3 +168,33 @@ daemonized descendant does not keep the workspace alive.
 
 Local proxy tokens are bearer tokens. Anyone who obtains one can use it until it
 expires, subject to the proxy allowlist.
+
+The URL-preserving proxy capability is also visible in the sandbox environment
+and Docker metadata. A sandbox can use it for every attached route until
+cleanup or expiry. The public CA is not a credential, but installing it lets
+the trusted broker terminate TLS for configured destinations and observe
+allowed request metadata and bodies. A client can bypass this cooperative path
+by ignoring `HTTP(S)_PROXY` because direct bridge egress remains available. The
+broker's private-destination check protects the host-side proxy only; it is not
+a Docker firewall.
+
+The Docker sandbox token is likewise visible to the application and in Docker
+container metadata. The upstream credential is not delivered in brokered mode,
+but the container retains direct bridge egress and may reach unrelated internet
+or host services. The temporary host gateway uses a random token and allowlist;
+it is not an egress firewall. A host crash or forced EnvVault termination may
+leave a labeled container requiring manual review and removal.
+
+Native agent auth intentionally gives the container read-write access to an
+OAuth-bearing agent home. A malicious image or repository command can
+exfiltrate refresh material through direct egress, log the state, delete it, or
+persist poisoned configuration for future invocations. A separate profile
+limits cross-project reuse but does not make the credential secret from the
+selected sandbox.
+
+The external sandbox plugin returns bearer capabilities to its trusted control
+plane. A platform that logs protocol responses, reuses a capability across
+sandboxes, exposes the plugin pipes to the sandbox, or fails to apply the
+returned egress restrictions weakens the boundary. Process EOF performs
+best-effort cleanup, but an uncatchable process or host failure may leave a
+gateway alive until its short TTL expires.

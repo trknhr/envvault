@@ -1,6 +1,6 @@
 ---
 name: core
-description: Version-matched EnvVault CLI workflows for launching local tools, resolving envvault:// references, injecting isolated home files, configuring optional API proxies, and diagnosing EnvVault setup.
+description: Version-matched EnvVault CLI workflows for launching local tools or Docker sandboxes, resolving envvault:// references, injecting isolated home files, configuring optional API proxies, and diagnosing EnvVault setup.
 ---
 
 # EnvVault
@@ -18,6 +18,11 @@ repository-safe `envvault://` references only when launching a child process.
 - List state: `envvault credential list`, `envvault proxy list`
 - Launch app: `envvault exec --env KEY=envvault://<credential> -- <command>` or `envvault exec --env-file .env -- <command>`
 - Resolve a home-file template: `envvault exec --home-file <destination>=<source> -- <command>`
+- Run a Docker sandbox: `envvault sandbox run -it --runtime docker --image <image> -- <command>`
+- Preserve provider URLs in a supported sandbox client: add repeatable
+  `--outbound-profile <proxy-name>` before `--`
+- Attach every provider-proxy profile allowed for the current workspace: add
+  `--all` instead of explicit outbound profiles
 - Inspect state: `envvault doctor`, `envvault admin status`, `envvault reset --dry-run`
 
 For local credential workflows, stay within the admin, credential, proxy, exec,
@@ -52,6 +57,53 @@ credential at launch.
 Use proxy mode only when an SDK accepts a custom base URL and bearer token. The
 child process receives a localhost URL and local token; EnvVault adds the real
 upstream credential only for allowlisted requests.
+
+For a proxy-aware tool inside the experimental Docker sandbox that must keep
+the provider's original URL, put the profile's underlying credential reference
+in the application's normal API-key variable:
+
+```dotenv
+PROVIDER_API_KEY=envvault://<credential-name>
+```
+
+Attach the stored bearer proxy profile and pass that file at launch:
+
+```bash
+envvault sandbox run -it \
+  --agent-auth native \
+  --outbound-profile <proxy-name> \
+  --env-file .env \
+  --runtime docker \
+  --image <agent-image> \
+  -- <agent-command>
+```
+
+If the application already loads the mounted project `.env` itself, omit
+`--env-file`; EnvVault does not rewrite the workspace file.
+
+Let the tool or coding agent use its normal provider URL and SDK. Do not rewrite
+calls to an EnvVault-specific tool. The literal reference is a late-bound,
+non-secret handle: EnvVault preserves it in the sandbox, requires the SDK to
+send that exact value in the configured bearer credential field, and replaces
+it only after outbound policy checks. Missing, different, or raw values fail
+locally. EnvVault also supplies a short-lived authenticated `HTTP(S)_PROXY` and
+ephemeral public CA to supported clients. The current Docker adapter targets
+Node 22.21+ and legacy bearer profiles. It is cooperative `brokered` delivery:
+direct container egress is still available.
+
+For Codex subscription OAuth, use explicit `--agent-auth native` and an optional
+`--agent-auth-profile <name>`. The agent owns login and refresh in an isolated
+EnvVault-managed home; this mode exposes OAuth state to the selected container
+and reports `materialized-static`. Never mount or copy the operator's normal
+agent home implicitly.
+
+Treat agent authentication and application outbound profiles as independent.
+Do not attach a fixed outbound profile to every session; attach only the
+repeatable `--outbound-profile` values required by the current task. For a
+trusted convenience session, `--all` selects every provider-proxy profile whose
+project binding permits the workspace. It includes profiles with
+`project-binding none`, cannot be combined with `--outbound-profile`, and does
+not select native agent authentication.
 
 Use repeatable `--home-file` options when a tool always reads credentials or
 configuration from its home directory. Keep a non-secret source in the project:
@@ -95,10 +147,11 @@ When using the shell for checks, put the child command after `--` and use
 envvault exec --env APP_SECRET=envvault://app/dev -- sh -lc 'test -n "$APP_SECRET" && echo OK'
 ```
 
-Do not print credential-bearing environment values. Avoid `echo "$API_KEY"`,
-`printenv`, `env`, `set`, or similar commands in a child process that may
-contain secrets. Check presence only, print fixed strings like `OK`, or make a
-provider request through the app instead.
+Do not print credential-bearing environment values or short-lived capability
+values. Avoid `echo "$API_KEY"`, `printenv`, `env`, `set`,
+`echo "$HTTP_PROXY"`, or similar commands in a child process that may contain
+secrets or proxy capabilities. Check presence only, print fixed strings like
+`OK`, or make a provider request through the app instead.
 
 ## Common Mistakes
 
@@ -117,3 +170,7 @@ provider request through the app instead.
 - A value is resolved only when the whole env value is an `envvault://...`
   reference.
 - Public `.env` references use `envvault://<credential>`.
+- `--outbound-profile` preserves the original URL only for clients that honor
+  the injected proxy and CA settings; the direct reference must name the
+  profile's exact underlying credential, and this is not default-deny network
+  isolation.

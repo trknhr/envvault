@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -16,6 +17,9 @@ import (
 	"time"
 
 	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/connection"
+	"github.com/trknhr/envvault/internal/connection/compatprofile"
+	"github.com/trknhr/envvault/internal/connection/keyringprovider"
 	"github.com/trknhr/envvault/internal/envref"
 	"github.com/trknhr/envvault/internal/keyring"
 	"github.com/trknhr/envvault/internal/profile"
@@ -27,14 +31,31 @@ type ProfileResolver interface {
 }
 
 type EnvResolver struct {
-	Profiles ProfileResolver
-	Secrets  keyring.Store
-	HTTP     *http.Client
-	Now      func() time.Time
+	Profiles      ProfileResolver
+	Secrets       keyring.Store
+	Credentials   connection.CredentialProvider
+	Adapter       connection.ProtocolAdapter
+	HTTP          *http.Client
+	Now           func() time.Time
+	SubjectID     string
+	ListenAddress string
+	AdvertiseHost string
 
-	mu      sync.Mutex
-	leases  map[string]*Lease
-	servers []*Server
+	mu            sync.Mutex
+	leases        map[string]*Lease
+	adapterLeases []connection.AdapterLease
+}
+
+// ResolveProxy opens or reuses the provider-proxy lease for name. The returned
+// value contains only sandbox-deliverable connection metadata: a gateway URL,
+// a short-lived capability, and its expiry. It never contains the upstream
+// credential.
+func (r *EnvResolver) ResolveProxy(ctx context.Context, name string, identity projectbinding.Identity) (Lease, error) {
+	lease, err := r.ensureLease(ctx, name, identity)
+	if err != nil {
+		return Lease{}, err
+	}
+	return *lease, nil
 }
 
 func (r *EnvResolver) ResolveReference(ctx context.Context, ref envref.Reference, identity projectbinding.Identity) (string, error) {
@@ -62,14 +83,14 @@ func (r *EnvResolver) ResolveReference(ctx context.Context, ref envref.Reference
 
 func (r *EnvResolver) Close(ctx context.Context) error {
 	r.mu.Lock()
-	servers := append([]*Server(nil), r.servers...)
-	r.servers = nil
+	adapterLeases := append([]connection.AdapterLease(nil), r.adapterLeases...)
+	r.adapterLeases = nil
 	r.leases = nil
 	r.mu.Unlock()
 
 	var err error
-	for _, server := range servers {
-		if closeErr := server.Close(ctx); closeErr != nil && err == nil {
+	for i := len(adapterLeases) - 1; i >= 0; i-- {
+		if closeErr := adapterLeases[i].Close(ctx); closeErr != nil && err == nil {
 			err = closeErr
 		}
 	}
@@ -97,45 +118,95 @@ func (r *EnvResolver) ensureLease(ctx context.Context, name string, identity pro
 	if err := projectbinding.Check(p.ProjectBinding, identity); err != nil {
 		return nil, err
 	}
-	secret, err := r.secret(ctx, credentialName(p, name))
+	policy, err := compatprofile.FromProviderProxyProfile(p)
 	if err != nil {
 		return nil, err
 	}
-	defer zero(secret)
-
-	token, err := newLocalToken()
+	now := r.now()
+	expiresAt := now.Add(policy.Limits.SessionTTL)
+	grantID, err := newMetadataID("grant_")
 	if err != nil {
 		return nil, err
 	}
-	server, err := Start(ctx, ServerOptions{
-		Profile: p,
-		APIKey:  string(secret),
-		Token:   token,
-		HTTP:    r.HTTP,
-		Now:     r.Now,
-		Expires: r.now().Add(p.LocalTokenTTL),
+	sessionID, err := newMetadataID("session_")
+	if err != nil {
+		return nil, err
+	}
+	maxConnections := policy.Limits.MaxConnections
+	if maxConnections == 0 {
+		maxConnections = math.MaxInt
+	}
+	grant := connection.Grant{
+		ID:             grantID,
+		SessionID:      sessionID,
+		SubjectID:      r.subjectID(),
+		PolicyName:     policy.Name,
+		PolicyRevision: "legacy-profile-v1",
+		Protocol:       policy.Protocol.Type,
+		Destination:    policy.Destination,
+		IssuedAt:       now,
+		ExpiresAt:      expiresAt,
+		MaxConnections: maxConnections,
+		MaxBytes:       policy.Limits.MaxBytes,
+	}
+	adapter := r.Adapter
+	if adapter == nil {
+		adapter = HTTPAdapter{
+			HTTP:          r.HTTP,
+			Now:           r.Now,
+			ListenAddress: r.ListenAddress,
+		}
+	}
+	credentials := r.Credentials
+	if credentials == nil {
+		credentials = keyringprovider.Provider{Store: r.Secrets, Now: r.Now}
+	}
+	adapterLease, err := adapter.Start(ctx, connection.AdapterStartRequest{
+		Policy:      policy,
+		Grant:       grant,
+		Credentials: credentials,
 	})
 	if err != nil {
+		return nil, err
+	}
+	httpLease, ok := adapterLease.(interface {
+		BaseURL() string
+		Token() string
+	})
+	if !ok {
+		_ = adapterLease.Close(context.Background())
+		return nil, clerr.New(clerr.RuntimeIncompatible, "http adapter lease does not expose client connection metadata")
+	}
+	baseURL, err := advertiseBaseURL(httpLease.BaseURL(), r.AdvertiseHost)
+	if err != nil {
+		_ = adapterLease.Close(context.Background())
 		return nil, err
 	}
 
 	lease := &Lease{
 		Profile:   name,
-		BaseURL:   server.BaseURL(),
-		Token:     token,
-		ExpiresAt: r.now().Add(p.LocalTokenTTL),
+		BaseURL:   baseURL,
+		Token:     httpLease.Token(),
+		ExpiresAt: adapterLease.ExpiresAt(),
 	}
 
 	r.mu.Lock()
 	if existing := r.leases[name]; existing != nil {
 		r.mu.Unlock()
-		_ = server.Close(context.Background())
+		_ = adapterLease.Close(context.Background())
 		return existing, nil
 	}
 	r.leases[name] = lease
-	r.servers = append(r.servers, server)
+	r.adapterLeases = append(r.adapterLeases, adapterLease)
 	r.mu.Unlock()
 	return lease, nil
+}
+
+func (r *EnvResolver) subjectID() string {
+	if subject := strings.TrimSpace(r.SubjectID); subject != "" {
+		return subject
+	}
+	return "compat-local-process"
 }
 
 func (r *EnvResolver) profile(name string) (profile.Profile, error) {
@@ -159,13 +230,6 @@ func (r *EnvResolver) now() time.Time {
 	return time.Now()
 }
 
-func credentialName(p profile.Profile, fallback string) string {
-	if strings.TrimSpace(p.CredentialName) != "" {
-		return p.CredentialName
-	}
-	return fallback
-}
-
 type Lease struct {
 	Profile   string
 	BaseURL   string
@@ -173,24 +237,37 @@ type Lease struct {
 	ExpiresAt time.Time
 }
 
+func (Lease) String() string {
+	return "provider proxy lease [REDACTED]"
+}
+
+func (Lease) GoString() string {
+	return "provider proxy lease [REDACTED]"
+}
+
 type ServerOptions struct {
-	Profile profile.Profile
-	APIKey  string
-	Token   string
-	Expires time.Time
-	HTTP    *http.Client
-	Now     func() time.Time
+	Profile       profile.Profile
+	APIKey        string
+	APIKeyBytes   []byte
+	Token         string
+	Expires       time.Time
+	HTTP          *http.Client
+	Now           func() time.Time
+	ListenAddress string
 }
 
 type Server struct {
 	profile profile.Profile
-	apiKey  string
-	token   string
+	apiKey  []byte
+	token   []byte
 	expires time.Time
 	client  *http.Client
 	now     func() time.Time
 	server  *http.Server
 	addr    string
+	closeMu sync.Mutex
+	valueMu sync.RWMutex
+	closed  bool
 }
 
 func Start(ctx context.Context, options ServerOptions) (*Server, error) {
@@ -200,21 +277,31 @@ func Start(ctx context.Context, options ServerOptions) (*Server, error) {
 	if options.Profile.Kind != profile.KindProviderProxy {
 		return nil, clerr.New(clerr.ProfileKindMismatch, options.Profile.Name)
 	}
-	if options.APIKey == "" {
+	apiKey := append([]byte(nil), options.APIKeyBytes...)
+	if len(apiKey) == 0 {
+		apiKey = []byte(options.APIKey)
+	}
+	if len(apiKey) == 0 {
 		return nil, clerr.New(clerr.KeyringUnavailable, "provider api key missing")
 	}
 	if options.Token == "" {
+		zero(apiKey)
 		return nil, clerr.New(clerr.IssueFailed, "local proxy token missing")
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listenAddress := options.ListenAddress
+	if listenAddress == "" {
+		listenAddress = "127.0.0.1:0"
+	}
+	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
+		zero(apiKey)
 		return nil, clerr.Wrap(clerr.RuntimeUnavailable, "start provider proxy listener", err)
 	}
 
 	s := &Server{
 		profile: options.Profile,
-		apiKey:  options.APIKey,
-		token:   options.Token,
+		apiKey:  apiKey,
+		token:   []byte(options.Token),
 		expires: options.Expires,
 		client:  options.HTTP,
 		now:     options.Now,
@@ -241,14 +328,27 @@ func (s *Server) BaseURL() string {
 }
 
 func (s *Server) Close(ctx context.Context) error {
-	if s.server == nil {
+	s.closeMu.Lock()
+	defer s.closeMu.Unlock()
+	if s.server == nil || s.closed {
 		return nil
 	}
 	shutdownCtx := ctx
 	if shutdownCtx == nil {
 		shutdownCtx = context.Background()
 	}
-	return s.server.Shutdown(shutdownCtx)
+	err := s.server.Shutdown(shutdownCtx)
+	if err != nil {
+		_ = s.server.Close()
+	}
+	s.valueMu.Lock()
+	zero(s.apiKey)
+	zero(s.token)
+	s.apiKey = nil
+	s.token = nil
+	s.valueMu.Unlock()
+	s.closed = true
+	return err
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -282,7 +382,9 @@ func (s *Server) authorized(r *http.Request) bool {
 		return false
 	}
 	got := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-	return subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
+	s.valueMu.RLock()
+	defer s.valueMu.RUnlock()
+	return subtle.ConstantTimeCompare([]byte(got), s.token) == 1
 }
 
 func (s *Server) expired() bool {
@@ -341,7 +443,10 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, proxyPath strin
 		return
 	}
 	copyHeaders(req.Header, r.Header)
-	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	s.valueMu.RLock()
+	apiKey := string(s.apiKey)
+	s.valueMu.RUnlock()
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Host = ""
 
 	resp, err := s.client.Do(req)
@@ -408,6 +513,29 @@ func newLocalToken() (string, error) {
 		return "", clerr.Wrap(clerr.IssueFailed, "generate local proxy token", err)
 	}
 	return "envvault-local-" + hex.EncodeToString(raw[:]), nil
+}
+
+func newMetadataID(prefix string) (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", clerr.Wrap(clerr.IssueFailed, "generate connection metadata id", err)
+	}
+	return prefix + hex.EncodeToString(raw[:]), nil
+}
+
+func advertiseBaseURL(baseURL, host string) (string, error) {
+	if strings.TrimSpace(host) == "" {
+		return baseURL, nil
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Port() == "" {
+		return "", clerr.New(clerr.RuntimeIncompatible, "http adapter returned an invalid base url")
+	}
+	if strings.ContainsAny(host, " /\\?#@\t\r\n") {
+		return "", clerr.New(clerr.ConfigInvalid, "advertised gateway host is invalid")
+	}
+	u.Host = net.JoinHostPort(host, u.Port())
+	return u.String(), nil
 }
 
 func zero(value []byte) {

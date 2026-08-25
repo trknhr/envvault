@@ -367,6 +367,30 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url",
 			"ENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token",
 		},
+		"examples/gemini-ai-sdk-outbound-app/README.md": {
+			"# Gemini AI SDK Outbound Sandbox App Example",
+			"--outbound-profile gemini-openai/dev",
+			"envvault://gemini-api-key",
+		},
+		"examples/gemini-ai-sdk-outbound-app/app.mjs": {
+			"loadEnvFile",
+			"createOpenAICompatible",
+			"GEMINI_API_KEY",
+			"generativelanguage.googleapis.com/v1beta/openai",
+		},
+		"examples/gemini-ai-sdk-outbound-app/package.json": {
+			"@ai-sdk/openai-compatible",
+			"node --check app.mjs",
+		},
+		"examples/gemini-ai-sdk-outbound-app/package-lock.json": {
+			"gemini-ai-sdk-outbound-app",
+			"@ai-sdk/openai-compatible",
+			"lockfileVersion",
+		},
+		"examples/gemini-ai-sdk-outbound-app/.env": {
+			"GEMINI_API_KEY=envvault://gemini-api-key",
+			"GEMINI_MODEL",
+		},
 		"package.json": {
 			"vitepress",
 			"docs:dev",
@@ -451,6 +475,13 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"Gemini SDK app",
 			"/examples/gemini-ai-sdk-proxy-app",
 			"/examples/openai-proxy-app",
+			"/examples/gemini-ai-sdk-outbound-app",
+		},
+		"docs/examples/gemini-ai-sdk-outbound-app.md": {
+			"# Gemini AI SDK Outbound Sandbox App Example",
+			"envvault://gemini-api-key",
+			"--outbound-profile gemini-openai/dev",
+			"original public URL",
 		},
 		"docs/examples/gemini-ai-sdk-proxy-app.md": {
 			"# Gemini AI SDK Proxy App Example",
@@ -465,6 +496,15 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"same generated references",
 			"mock-provider",
 			"OPENAI_BASE_URL=envvault://openai-proxy/dev/base-url",
+		},
+		"docs/sandbox.md": {
+			"# Experimental Docker Sandbox",
+			"--agent-auth native",
+			"--outbound-profile <profile>",
+			"sandbox run --all",
+			"Daily Codex wrapper (zsh)",
+			"evcodex -o gemini-openai/dev",
+			"direct egress is not blocked",
 		},
 		"site/index.html": {
 			"EnvVault",
@@ -567,6 +607,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		"[OpenAI-compatible proxy app example](examples/openai-proxy-app/README.md)",
 		"[Gemini SDK app example](examples/gemini-sdk-app/README.md)",
 		"[Gemini AI SDK proxy app example](examples/gemini-ai-sdk-proxy-app/README.md)",
+		"[Gemini AI SDK outbound sandbox app example](examples/gemini-ai-sdk-outbound-app/README.md)",
 		"[Env app example](examples/env-app/README.md)",
 	} {
 		if !strings.Contains(string(readme), want) {

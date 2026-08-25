@@ -27,13 +27,16 @@ export default defineConfig({
           { text: 'Overview', link: '/' },
           { text: 'Quickstart', link: '/quickstart' },
           { text: 'Agent Skill', link: '/agent-skill' },
-          { text: 'Proxies', link: '/proxies' }
+          { text: 'Proxies', link: '/proxies' },
+          { text: 'Docker Sandbox', link: '/sandbox' },
+          { text: 'Sandbox Plugin', link: '/sandbox-plugin' }
         ]
       },
       {
         text: 'Credential Flows',
         items: [
           { text: 'Examples', link: '/examples' },
+          { text: 'Gemini Outbound Sandbox', link: '/examples/gemini-ai-sdk-outbound-app' },
           { text: 'Gemini AI SDK Proxy', link: '/examples/gemini-ai-sdk-proxy-app' },
           { text: 'OpenAI Proxy', link: '/examples/openai-proxy-app' }
         ]

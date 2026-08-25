@@ -63,6 +63,7 @@ func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
 		"envvault inspect --path .",
 		"envvault proxy list",
 		"envvault exec --env KEY=envvault://<credential> -- <command>",
+		"envvault sandbox run --runtime docker --image IMAGE -- <command>",
 		"envvault skills get core",
 		"envvault skills install --agent codex",
 	} {
@@ -2587,6 +2588,14 @@ func (r fakeCLIProfileResolver) Profile(name string) (profile.Profile, error) {
 		return profile.Profile{}, clerr.New(clerr.ProfileNotFound, name)
 	}
 	return p, nil
+}
+
+func (r fakeCLIProfileResolver) ListProfiles() ([]profile.Profile, error) {
+	profiles := make([]profile.Profile, 0, len(r))
+	for _, candidate := range r {
+		profiles = append(profiles, candidate)
+	}
+	return profiles, nil
 }
 
 type fakeInitializer struct {

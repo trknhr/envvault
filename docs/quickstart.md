@@ -263,7 +263,50 @@ matching the allowlist.
 Proxy mode reduces raw-secret exposure, but it also requires separate local
 environment variables for the provider base URL.
 
-## 8. Inspect Health
+## 8. Experimental Docker Sandbox
+
+Reuse the proxy references inside an experimental Docker sandbox:
+
+```bash
+envvault sandbox run \
+  --runtime docker \
+  --image node:22 \
+  --env-file .env \
+  -- npm test
+```
+
+The container receives the short-lived proxy URL and token, not the upstream
+credential. Direct `envvault://<credential>` references are rejected by
+default unless an attached outbound profile authorizes that exact reference.
+This prototype reports `brokered` because direct container egress is not yet
+blocked. See [Experimental Docker Sandbox](/sandbox) for its hardening defaults
+and exact limitations.
+
+For a Node 22.21+ proxy-aware client that must keep the original provider URL,
+put the profile's underlying credential reference in the SDK's normal variable:
+
+```dotenv
+APP_API_KEY=envvault://app/dev
+```
+
+Then attach the bearer profile with `--outbound-profile api-proxy/dev`, instead
+of using the profile's `base-url` and `token` outputs. An app may load the
+mounted `.env` itself, as it does outside the sandbox, or receive the same
+literal value in its process environment through `--env-file .env`. The SDK
+sends the non-secret reference in its ordinary bearer field; the broker
+validates it and substitutes the real credential at egress. EnvVault also
+supplies a short-lived authenticated proxy and ephemeral public CA. Direct
+egress remains available in this prototype.
+
+Codex's own model login and an application's outbound credentials are
+independent. Use `--agent-auth` for Codex and repeat `--outbound-profile` only
+for APIs needed in that session. See the
+[daily Codex wrapper](/sandbox#daily-codex-wrapper-zsh) for a zsh function that
+does not fix an outbound profile globally. Trusted convenience sessions can
+use `--all` to attach every provider-proxy profile allowed by the current
+project binding.
+
+## 9. Inspect Health
 
 ```bash
 envvault doctor
@@ -278,7 +321,7 @@ runtime locks, temporary files, and isolated-home workspaces before re-checking
 health. `reset --dry-run` shows EnvVault-owned files and keyring entries that
 would be removed.
 
-## 9. Generate Shell Completion
+## 10. Generate Shell Completion
 
 ```bash
 envvault completion bash
@@ -289,7 +332,7 @@ envvault completion powershell
 
 Write the generated script to the completion location used by your shell.
 
-## 10. Install The Agent Skill
+## 11. Install The Agent Skill
 
 EnvVault includes an agent skill for tools that need to launch commands with
 EnvVault, configure credentials or proxies, or debug `envvault://` references.

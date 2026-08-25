@@ -1,6 +1,6 @@
 ---
 name: envvault
-description: Use when installing, configuring, upgrading, or running the EnvVault CLI; resolving envvault:// references; injecting isolated home files; configuring optional API proxies; or debugging EnvVault setup.
+description: Use when installing, configuring, upgrading, or running the EnvVault CLI; launching EnvVault Docker sandboxes; resolving envvault:// references; injecting isolated home files; configuring optional API proxies or outbound profiles; or debugging EnvVault setup.
 ---
 
 # EnvVault
