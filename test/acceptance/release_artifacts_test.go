@@ -452,6 +452,7 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 			"github.com/trknhr/envvault/internal/cli.version",
 			"github.com/trknhr/envvault/internal/cli.commit",
 			"gh release create",
+			"--generate-notes",
 		},
 		"docs/.vitepress/theme/custom.css": {
 			"--vp-c-brand-1",

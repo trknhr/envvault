@@ -155,7 +155,7 @@ jobs:
             gh release create "$VERSION" "${assets[@]}" \
               --target "$TARGET" \
               --title "$VERSION" \
-              --notes "Initial local-first credential launcher and localhost credential proxy release."
+              --generate-notes
           fi
 
       - name: Upload package-manager manifests as workflow artifact
