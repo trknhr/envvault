@@ -5,6 +5,11 @@ short-lived provider-proxy capabilities without delivering the real upstream
 credential. The command is experimental and currently reports `brokered`, not
 `brokered-enforced`.
 
+Already using agent-infra for worktrees, terminals, and clipboard integration?
+Use [`envvault sandbox exec`](/sandbox-exec) to launch a process in an existing
+sandbox. The `sandbox run` workflow below instead creates and removes its own
+container; its agent-auth and outbound flags do not apply to `sandbox exec`.
+
 ## Prerequisites
 
 - Docker Desktop on macOS or a current Docker Engine on Linux.

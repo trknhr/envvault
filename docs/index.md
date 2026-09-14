@@ -7,6 +7,9 @@ references. At runtime, it resolves credentials from the OS credential store or
 starts a localhost proxy that gives the app a local URL and local proxy token.
 An experimental Docker runtime can pass that temporary proxy capability into a
 container without passing the upstream credential.
+For existing agent-infra sandboxes, an experimental
+[`sandbox exec` integration](/sandbox-exec) delegates execution and clipboard
+handling to agent-infra while EnvVault manages temporary API access.
 
 ## Quick Start
 
@@ -108,6 +111,10 @@ also allowed.
 - **Docker sandbox**: reuse proxy output references with
   `envvault sandbox run`. The current prototype is `brokered`; direct container
   egress is not blocked.
+- **Existing agent-infra sandbox**: launch a fresh process with
+  [`envvault sandbox exec`](/sandbox-exec). API access is revoked when the
+  session ends, but the container stays running. This requires a local,
+  session-capable agent-infra build; stock 0.9.13 is unsupported.
 - **URL-preserving outbound proxy**: attach a bearer provider profile with
   `--outbound-profile` when a supported proxy-aware sandbox client must keep the
   original provider URL. The upstream credential and ephemeral CA private key
@@ -156,5 +163,6 @@ container or attach an original-URL outbound profile. The
 [daily Codex wrapper](/sandbox#daily-codex-wrapper-zsh) keeps agent OAuth and
 per-session application profiles separate.
 
-See [External Sandbox Plugin](/sandbox-plugin) to attach the same connection
-broker to an existing agent sandbox.
+See [External Sandbox Sessions](/sandbox-exec) to launch a tool in an existing
+agent-infra sandbox, or [External Sandbox Plugin](/sandbox-plugin) to build a
+host-side controller around the connection protocol.

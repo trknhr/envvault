@@ -32,6 +32,33 @@ ENVVAULT_PROXY_URL=envvault://gemini-openai/dev/base-url
 ENVVAULT_PROXY_TOKEN=envvault://gemini-openai/dev/token
 ```
 
+## Use an Existing agent-infra Sandbox
+
+[`envvault sandbox exec`](/sandbox-exec) launches a tool with selected API
+proxies in an already-running sandbox, keeping agent-infra's terminal and
+clipboard integration. It requires the local session-capable agent-infra
+extension, not stock 0.9.13. From the host project, after the
+[build checks](/sandbox-exec#build-and-check-the-local-integration):
+
+```bash
+envvault sandbox exec \
+  --runtime agent-infra \
+  --runtime-command /absolute/path/to/modified/agent-infra/dist/bin/cli.js \
+  --target clipboard-test \
+  --env TOOLS_API_URL=envvault://gemini-openai/dev/base-url \
+  --env TOOLS_API_TOKEN=envvault://gemini-openai/dev/token \
+  -- codex
+```
+
+Replace the path, branch, and profile with your existing setup. The launched
+tool must use both injected values for API requests; these application
+variables do not configure Codex's own model provider. Exiting revokes the
+lease but does not remove the sandbox. MCP OAuth and enforced egress are not
+part of this adapter.
+
+The [standalone bridge prototype](/agent-infra-bridge) remains available as an
+example plugin controller pinned to stock agent-infra 0.9.13.
+
 ## Original-URL Outbound Sandbox Example
 
 - [Gemini AI SDK outbound sandbox app](/examples/gemini-ai-sdk-outbound-app)

@@ -8,6 +8,17 @@ credential remains in the OS credential store and trusted EnvVault gateway.
 This interface is experimental and currently supports HTTP provider-proxy
 profiles.
 
+For an EnvVault-owned launch command, see
+[`envvault sandbox exec`](/sandbox-exec). It uses the same broker in-process
+and delegates execution to a versioned external runtime interface. You do not
+need to start this plugin process separately when using that command.
+
+For the earlier standalone controller prototype, see the
+[agent-infra bridge](/agent-infra-bridge). It delivers temporary API outputs
+to an existing Docker Desktop sandbox while retaining macOS image paste, but
+depends on stock agent-infra 0.9.13 private modules. The native `sandbox exec`
+adapter uses the versioned session contract instead.
+
 ## Start the plugin
 
 For a host process that can reach loopback:

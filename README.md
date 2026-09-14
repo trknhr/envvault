@@ -9,6 +9,9 @@ For tools that require a credential file under the user's home directory, it
 can instead create an isolated temporary home containing only the requested
 resolved files. An experimental Docker command can run a process with proxy
 capabilities while keeping the upstream credential on the host.
+For an existing agent-infra sandbox, an experimental `sandbox exec` command
+delegates execution and clipboard handling to agent-infra while EnvVault
+manages temporary API access.
 
 Links: [Documentation](https://trknhr.github.io/envvault/) |
 [Homebrew tap](https://github.com/trknhr/homebrew-tap)
@@ -240,6 +243,42 @@ The legacy profile translator supports bearer late binding; provider-specific
 Gemini, Kaggle, signed-request, and OAuth adapters are follow-up work. See
 [RFC 0003](docs/rfcs/0003-url-preserving-outbound-broker.md).
 
+## Existing agent-infra Sandboxes
+
+Use `envvault sandbox exec` to launch a fresh process with selected provider
+proxies in an already-running agent-infra sandbox. agent-infra keeps ownership
+of containers, worktrees, terminals, and image paste. EnvVault owns the API
+access policy, temporary tokens, and revocation.
+
+This first integration requires macOS, local Docker Desktop, a build of this
+EnvVault checkout, and a **locally modified, session-capable agent-infra build**.
+Stock agent-infra 0.9.13 does not support the new interface. See the
+[build and setup instructions](docs/sandbox-exec.md#build-and-check-the-local-integration)
+before using this command; the extension is not an upstream release.
+
+From the host project that owns the sandbox, using an existing provider-proxy
+profile from `envvault proxy list`:
+
+```bash
+envvault sandbox exec \
+  --runtime agent-infra \
+  --runtime-command /absolute/path/to/modified/agent-infra/dist/bin/cli.js \
+  --target clipboard-test \
+  --env TOOLS_API_URL=envvault://gemini-openai/dev/base-url \
+  --env TOOLS_API_TOKEN=envvault://gemini-openai/dev/token \
+  -- codex
+```
+
+Replace the path, branch, and example profile name. Interactive terminal and
+image paste are enabled by default; use `--non-interactive` for scripts or
+`-- bash -i` for a fresh shell. Exiting revokes access without removing the
+sandbox. These variables configure application API access, not Codex's own
+model provider or login. MCP/freee OAuth and default-deny egress are not included.
+
+See [External Sandbox Sessions](docs/sandbox-exec.md) for env files,
+troubleshooting, and the runtime contract. No standalone bridge script or
+manually started plugin process is needed.
+
 ## External Agent Sandbox Plugin
 
 Existing agent-sandbox control planes can use EnvVault as a connection provider
@@ -263,6 +302,9 @@ stdin/stdout handles must not be exposed inside the sandbox. EnvVault reports
 enforced the returned network policy. See
 [External Sandbox Plugin](docs/sandbox-plugin.md) for the wire flow and trust
 boundary.
+
+This is the integration protocol for controller authors. For an end-user
+launch command, use [`sandbox exec`](docs/sandbox-exec.md).
 
 ## Security Limitations
 
@@ -297,6 +339,9 @@ does not yet enforce default-deny egress.
 - The external sandbox plugin returns short-lived capabilities to a trusted
   control plane. Protocol responses must not be logged or exposed to unrelated
   sandboxes.
+- External sandbox sessions trust the selected host runtime executable, leave
+  existing native auth mounts unchanged, and do not enforce network isolation.
+  Selected temporary tokens are readable by the launched process.
 - The experimental Docker bridge can still reach the internet and may reach
   host services. Do not interpret `brokered` as network isolation.
 
@@ -308,7 +353,8 @@ resolution, isolated home-file injection, optional provider proxies, process
 environment construction, read-only raw-credential inspection, metadata-only
 audit records, reset/doctor support, runnable examples, and acceptance fixtures.
 It also contains an experimental Docker sandbox runtime, an external sandbox
-plugin contract, an HTTP connection adapter, and a Codex native-auth adapter.
+plugin contract, an HTTP connection adapter, a Codex native-auth adapter, and
+an agent-infra session adapter requiring a local runtime extension.
 Enforced egress remains future work.
 
 Local archive packaging is available through
@@ -325,6 +371,7 @@ publishes tagged release archives and updates the Homebrew tap.
 - [Agent skill](docs/agent-skill.md)
 - [Proxies](docs/proxies.md)
 - [Experimental Docker Sandbox](docs/sandbox.md)
+- [External Sandbox Sessions](docs/sandbox-exec.md)
 - [External Sandbox Plugin](docs/sandbox-plugin.md)
 - [Threat model](docs/threat-model.md)
 - [Uninstall](docs/uninstall.md)

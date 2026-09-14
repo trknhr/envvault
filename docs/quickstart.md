@@ -263,7 +263,39 @@ matching the allowlist.
 Proxy mode reduces raw-secret exposure, but it also requires separate local
 environment variables for the provider base URL.
 
-## 8. Experimental Docker Sandbox
+## 8. Choose a Sandbox Workflow
+
+### Use an existing agent-infra sandbox
+
+`sandbox exec` attaches temporary API access to a fresh process without
+creating or removing the sandbox. This experimental path requires macOS,
+local Docker Desktop, and local builds of EnvVault and a modified agent-infra
+checkout. **Stock agent-infra 0.9.13 does not support it.** Follow the
+[local build checks](/sandbox-exec#build-and-check-the-local-integration) first.
+
+From the host project that owns an already-running branch sandbox, reuse the
+provider-proxy references from step 7:
+
+```bash
+envvault sandbox exec \
+  --runtime agent-infra \
+  --runtime-command /absolute/path/to/modified/agent-infra/dist/bin/cli.js \
+  --target clipboard-test \
+  --env-file .env \
+  -- bash -i
+```
+
+Replace the runtime path and branch. The env file must contain only proxy
+output references, including both `base-url` and `token` for each profile; use
+a separate `.env.sandbox` if your normal `.env` also contains literal settings
+or direct credentials. Run your tools inside this fresh shell. Terminal and
+image paste use agent-infra's integration; exiting revokes API access while
+leaving the sandbox running. This does not change native agent login, configure
+MCP OAuth, or enforce network isolation. See
+[External Sandbox Sessions](/sandbox-exec) for direct-command examples and
+troubleshooting.
+
+### Create an EnvVault-managed Docker container
 
 Reuse the proxy references inside an experimental Docker sandbox:
 

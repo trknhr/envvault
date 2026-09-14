@@ -11,7 +11,7 @@ EnvVault protects long-lived local credential material from routine project and
 - Local proxy bearer tokens while the child process is running.
 - URL-preserving outbound proxy capabilities and ephemeral CA private keys
   while a sandbox lease is active.
-- External sandbox plugin capabilities while a sandbox lease is active.
+- External sandbox plugin and session capabilities while a lease is active.
 - Persistent native agent OAuth state stored under EnvVault's private data
   directory.
 - EnvVault config policy and project-binding approvals.
@@ -37,6 +37,9 @@ EnvVault protects long-lived local credential material from routine project and
   agent home containing OAuth tokens and persistent agent configuration.
 - External sandbox control plane: trusted to own the plugin stdin/stdout,
   inject selected capability values, apply egress policy, and revoke leases.
+- External session runtime: the host executable selected by `sandbox exec` is
+  trusted to report project/container identity, revalidate the target, and
+  inject temporary capabilities into only the requested process.
 - External agent sandbox: untrusted; receives selected gateway capabilities but
   never the plugin control channel or upstream credential.
 - Docker daemon: trusted host component that creates, starts, stops, and removes
@@ -61,7 +64,8 @@ EnvVault protects long-lived local credential material from routine project and
   mounted workspace.
 - Application containers explicitly granted a native agent auth profile that
   inspect or modify that persistent profile.
-- Existing agent sandboxes integrated through a trusted host-side plugin.
+- Existing agent sandboxes integrated through a trusted host-side plugin or
+  session runtime.
 
 ## Out of Scope
 
@@ -84,6 +88,9 @@ EnvVault protects long-lived local credential material from routine project and
 - Docker daemon compromise or container escape.
 - A malicious or compromised external sandbox control plane. It owns the
   temporary capabilities and is part of the trusted computing base.
+- A malicious external session runtime or native credentials and mounts
+  already provided by agent-infra. `sandbox exec` does not remove or isolate
+  that existing state.
 - Default-deny enforcement by a third-party sandbox platform. The generic
   plugin reports only `brokered`.
 
@@ -147,6 +154,15 @@ EnvVault protects long-lived local credential material from routine project and
   rejects direct credential outputs and duplicate environment mappings, binds
   connection grants to the supplied sandbox identity, and revokes every lease
   on `close`, EOF, or process cancellation.
+- External sandbox sessions accept only explicitly selected provider-proxy
+  output references and reject raw credentials and host-control variables.
+  The agent-infra adapter requires a versioned, bounded preparation descriptor,
+  matches the host project identity, and pins execution to a full container ID.
+- Session capability values pass through the trusted runtime child's
+  environment, not command arguments, token files, or container creation
+  metadata. Exit, cancellation, launch failure, and expiry revoke the lease
+  without stopping or deleting the existing sandbox. There is no automatic
+  renewal.
 
 ## Residual Risk
 
@@ -198,3 +214,13 @@ sandboxes, exposes the plugin pipes to the sandbox, or fails to apply the
 returned egress restrictions weakens the boundary. Process EOF performs
 best-effort cleanup, but an uncatchable process or host failure may leave a
 gateway alive until its short TTL expires.
+
+External sandbox sessions report `brokered`, not network-enforced isolation.
+The launched process and trusted host runtime can read the temporary token;
+host/container process inspection or application logging may expose it.
+The agent-infra adapter binds an ephemeral gateway to `0.0.0.0`, advertised as
+`host.docker.internal`, so its token-protected listener is not loopback-only.
+Use a trusted host/network and do not publish it externally. Existing native
+auth mounts and egress remain unchanged. Detached processes may survive the
+session, but revoked capabilities no longer grant API access. See
+[External Sandbox Sessions](/sandbox-exec) for supported platforms and limits.

@@ -29,7 +29,9 @@ export default defineConfig({
           { text: 'Agent Skill', link: '/agent-skill' },
           { text: 'Proxies', link: '/proxies' },
           { text: 'Docker Sandbox', link: '/sandbox' },
-          { text: 'Sandbox Plugin', link: '/sandbox-plugin' }
+          { text: 'External Sandbox Sessions', link: '/sandbox-exec' },
+          { text: 'Sandbox Plugin', link: '/sandbox-plugin' },
+          { text: 'agent-infra Bridge Prototype', link: '/agent-infra-bridge' }
         ]
       },
       {
