@@ -33,24 +33,9 @@ type EnvInput struct {
 }
 
 func BuildEnv(ctx context.Context, input EnvInput, profiles ProfileResolver, tokenIssuer issuer.Issuer) (map[string]string, error) {
-	env := environToMap(input.Parent)
-
-	for _, path := range input.EnvFiles {
-		values, err := readDotenvFile(path)
-		if err != nil {
-			return nil, err
-		}
-		for key, value := range values {
-			env[key] = value
-		}
-	}
-
-	for _, assignment := range input.InlineEnv {
-		key, value, err := parseAssignment(assignment)
-		if err != nil {
-			return nil, err
-		}
-		env[key] = value
+	env, err := ReadEnv(input)
+	if err != nil {
+		return nil, err
 	}
 
 	cache := map[string]string{}
@@ -84,6 +69,30 @@ func BuildEnv(ctx context.Context, input EnvInput, profiles ProfileResolver, tok
 	}
 	removeAuthorityEnv(env)
 
+	return env, nil
+}
+
+// ReadEnv loads dotenv files and inline assignments without resolving any
+// reference or stripping names. Callers can validate a complete configuration
+// before obtaining credentials. Later files and inline assignments take priority.
+func ReadEnv(input EnvInput) (map[string]string, error) {
+	env := environToMap(input.Parent)
+	for _, path := range input.EnvFiles {
+		values, err := readDotenvFile(path)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range values {
+			env[key] = value
+		}
+	}
+	for _, assignment := range input.InlineEnv {
+		key, value, err := parseAssignment(assignment)
+		if err != nil {
+			return nil, err
+		}
+		env[key] = value
+	}
 	return env, nil
 }
 

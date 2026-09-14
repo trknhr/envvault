@@ -36,6 +36,8 @@ import (
 	resetpkg "github.com/trknhr/envvault/internal/reset"
 	"github.com/trknhr/envvault/internal/sandbox"
 	sandboxdocker "github.com/trknhr/envvault/internal/sandbox/docker"
+	"github.com/trknhr/envvault/internal/sandboxsession"
+	sessionagentinfra "github.com/trknhr/envvault/internal/sandboxsession/agentinfra"
 	tokenout "github.com/trknhr/envvault/internal/token"
 )
 
@@ -118,6 +120,7 @@ type Options struct {
 	StdoutIsTerminal        func() bool
 	Now                     func() time.Time
 	SandboxRuntimes         map[string]sandbox.Runtime
+	SandboxSessionRuntimes  map[string]sandboxsession.Runtime
 }
 
 type App struct {
@@ -144,6 +147,7 @@ type App struct {
 	stdoutIsTerminal        func() bool
 	now                     func() time.Time
 	sandboxRuntimes         map[string]sandbox.Runtime
+	sandboxSessionRuntimes  map[string]sandboxsession.Runtime
 }
 
 func New(options Options) App {
@@ -171,6 +175,7 @@ func New(options Options) App {
 		stdoutIsTerminal:        options.StdoutIsTerminal,
 		now:                     options.Now,
 		sandboxRuntimes:         cloneSandboxRuntimes(options.SandboxRuntimes),
+		sandboxSessionRuntimes:  cloneSandboxSessionRuntimes(options.SandboxSessionRuntimes),
 	}
 }
 
@@ -204,6 +209,9 @@ func defaultOptions(paths config.Paths) Options {
 		Doctor:           doctorpkg.Checker{Paths: paths, Secrets: secrets},
 		SandboxRuntimes: map[string]sandbox.Runtime{
 			"docker": sandboxdocker.New(sandboxdocker.Options{}),
+		},
+		SandboxSessionRuntimes: map[string]sandboxsession.Runtime{
+			"agent-infra": sessionagentinfra.Runtime{},
 		},
 	}
 }

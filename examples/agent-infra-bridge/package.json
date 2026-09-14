@@ -1,0 +1,7 @@
+{
+  "name": "envvault-agent-infra-bridge-example",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.9.0" },
+  "scripts": { "test": "node --test test/*.test.mjs" }
+}

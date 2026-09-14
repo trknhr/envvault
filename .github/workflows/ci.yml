@@ -46,6 +46,32 @@ jobs:
       - name: Run binary-safe secret canary scan
         run: go run ./cmd/envvault-ci secret-scan .
 
+  agent-infra-bridge:
+    name: Agent-infra bridge protocol tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build in-memory mock plugin
+        run: go build -o "$RUNNER_TEMP/envvault-bridge-mock-plugin" ./examples/agent-infra-bridge/testdata/mock-plugin
+
+      - name: Test bridge and real broker without provider credentials
+        env:
+          ENVVAULT_BRIDGE_TEST_PLUGIN: ${{ runner.temp }}/envvault-bridge-mock-plugin
+        run: node --test examples/agent-infra-bridge/test/*.test.mjs
+
   docs:
     name: Build docs
     runs-on: ubuntu-latest

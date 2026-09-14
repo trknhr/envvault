@@ -11,11 +11,12 @@ func (a App) newSandboxCommand(execution *commandExecution) *cobra.Command {
 	command := newCommandGroup(
 		"sandbox",
 		"Integrate EnvVault with experimental sandboxes",
-		"envvault: usage: envvault sandbox <run|plugin>",
+		"envvault: usage: envvault sandbox <run|exec|plugin>",
 		execution,
 	)
 	command.AddCommand(
 		a.newSandboxRunCommand(execution),
+		a.newSandboxExecCommand(execution),
 		a.newSandboxPluginCommand(execution),
 	)
 	return command

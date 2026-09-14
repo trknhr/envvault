@@ -48,6 +48,7 @@ func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 			"envvault inspect --path .",
 			"envvault exec --env KEY=envvault://<credential> -- <command>",
 			"envvault sandbox run --runtime docker --image IMAGE -- <command>",
+			"envvault sandbox exec --runtime agent-infra --target BRANCH --env-file .env.sandbox -- codex",
 			"envvault sandbox plugin serve",
 			"envvault proxy list",
 			"envvault skills get core",
