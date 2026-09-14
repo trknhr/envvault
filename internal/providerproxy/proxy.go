@@ -257,17 +257,18 @@ type ServerOptions struct {
 }
 
 type Server struct {
-	profile profile.Profile
-	apiKey  []byte
-	token   []byte
-	expires time.Time
-	client  *http.Client
-	now     func() time.Time
-	server  *http.Server
-	addr    string
-	closeMu sync.Mutex
-	valueMu sync.RWMutex
-	closed  bool
+	profile  profile.Profile
+	apiKey   []byte
+	token    []byte
+	expires  time.Time
+	client   *http.Client
+	now      func() time.Time
+	server   *http.Server
+	listener net.Listener
+	addr     string
+	closeMu  sync.Mutex
+	valueMu  sync.RWMutex
+	closed   bool
 }
 
 func Start(ctx context.Context, options ServerOptions) (*Server, error) {
@@ -299,13 +300,14 @@ func Start(ctx context.Context, options ServerOptions) (*Server, error) {
 	}
 
 	s := &Server{
-		profile: options.Profile,
-		apiKey:  apiKey,
-		token:   []byte(options.Token),
-		expires: options.Expires,
-		client:  options.HTTP,
-		now:     options.Now,
-		addr:    listener.Addr().String(),
+		profile:  options.Profile,
+		apiKey:   apiKey,
+		token:    []byte(options.Token),
+		expires:  options.Expires,
+		client:   options.HTTP,
+		now:      options.Now,
+		listener: listener,
+		addr:     listener.Addr().String(),
 	}
 	if s.client == nil {
 		s.client = http.DefaultClient
@@ -340,6 +342,14 @@ func (s *Server) Close(ctx context.Context) error {
 	err := s.server.Shutdown(shutdownCtx)
 	if err != nil {
 		_ = s.server.Close()
+	}
+	// Shutdown only closes listeners already registered by Serve. Start returns
+	// before that goroutine necessarily runs, so retain and close our listener
+	// as well to guarantee the gateway is unreachable when Close returns.
+	if s.listener != nil {
+		if closeErr := s.listener.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
+			err = errors.Join(err, closeErr)
+		}
 	}
 	s.valueMu.Lock()
 	zero(s.apiKey)
