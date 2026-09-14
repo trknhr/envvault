@@ -90,6 +90,28 @@ docker build \
 The image pins Codex CLI by default. Override `CODEX_VERSION` with a build
 argument when deliberately upgrading it.
 
+### Develop EnvVault itself
+
+The minimal Codex image is suitable for Node.js work and the application
+examples. To develop this Go repository inside the sandbox, build the
+Go-enabled variant instead:
+
+```bash
+docker build \
+  --tag envvault-codex-go:local \
+  examples/codex-sandbox-go
+
+envvault sandbox run -it \
+  --runtime docker \
+  --image envvault-codex-go:local \
+  -- codex
+```
+
+The image pins the Go version declared by `go.mod`, includes the native build
+toolchain used by race-enabled tests, and keeps Go and npm caches in the
+ignored `.envvault-cache/` workspace directory. It does not mount a Docker
+socket; run Docker integration tests only in a separate trusted environment.
+
 ### Codex with an API-key proxy
 
 ```bash

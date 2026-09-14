@@ -170,6 +170,13 @@ envvault sandbox run -it \
   -- codex
 ```
 
+To develop EnvVault itself, use the Go-enabled variant in
+[`examples/codex-sandbox-go`](examples/codex-sandbox-go):
+
+```bash
+docker build --tag envvault-codex-go:local examples/codex-sandbox-go
+```
+
 Use `--agent-auth <profile>` when multiple compatible profiles exist, or
 `--no-agent-auth` to disable automatic attachment. The container receives a
 temporary capability and invocation-scoped Codex provider settings, not the

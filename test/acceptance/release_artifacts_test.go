@@ -307,6 +307,19 @@ func TestReleaseDocsCoverCredentialHomeFileAndProxyFlows(t *testing.T) {
 func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	requiredFiles := map[string][]string{
+		"examples/codex-sandbox-go/Dockerfile": {
+			"FROM golang:${GO_VERSION}-bookworm AS go-toolchain",
+			"GOCACHE=/workspace/.envvault-cache/go-build",
+			"build-essential",
+			"@openai/codex@${CODEX_VERSION}",
+			"CMD [\"codex\"]",
+		},
+		"examples/codex-sandbox-go/README.md": {
+			"# Codex Sandbox for EnvVault Development",
+			"envvault-codex-go:local",
+			"go test ./...",
+			"npm run docs:build",
+		},
 		"examples/env-app/README.md": {
 			"# Env App Example",
 			"envvault credential set database/dev",
@@ -500,6 +513,8 @@ func TestSpecLayoutIncludesCurrentExamplesAndFakeKeyringFixture(t *testing.T) {
 		},
 		"docs/sandbox.md": {
 			"# Experimental Docker Sandbox",
+			"examples/codex-sandbox-go",
+			"envvault-codex-go:local",
 			"--agent-auth native",
 			"--outbound-profile <profile>",
 			"sandbox run --all",
