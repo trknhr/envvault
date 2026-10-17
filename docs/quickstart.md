@@ -71,6 +71,17 @@ when a profile still references the credential.
 `envvault credential delete app/dev --cascade` removes both the credential and
 every dependent profile.
 
+To move these secrets to another computer, export one encrypted file and import
+it there. macOS login-keychain items are not synced through iCloud Keychain.
+Both commands prompt for a passphrase with echo disabled:
+
+```bash
+envvault export secrets.envault
+envvault import secrets.envault
+```
+
+See [Export and import](/export).
+
 Inventory potential raw credentials before replacing them with EnvVault
 references:
 

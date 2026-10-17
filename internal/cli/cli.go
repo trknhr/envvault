@@ -39,6 +39,7 @@ import (
 	"github.com/trknhr/envvault/internal/sandboxsession"
 	sessionagentinfra "github.com/trknhr/envvault/internal/sandboxsession/agentinfra"
 	tokenout "github.com/trknhr/envvault/internal/token"
+	"github.com/trknhr/envvault/internal/transfer"
 )
 
 const (
@@ -106,6 +107,8 @@ type Options struct {
 	Secrets                 keyring.Store
 	Stdin                   io.Reader
 	CredentialReader        CredentialReader
+	PassphraseReader        PassphraseReader
+	ExportKDF               transfer.KDFParams
 	ConfigSaver             ConfigSaver
 	ParentEnv               []string
 	ProjectStartDir         string
@@ -133,6 +136,8 @@ type App struct {
 	secrets                 keyring.Store
 	stdin                   io.Reader
 	credentialReader        CredentialReader
+	passphraseReader        PassphraseReader
+	exportKDF               transfer.KDFParams
 	configSaver             ConfigSaver
 	parentEnv               []string
 	projectStartDir         string
@@ -161,6 +166,8 @@ func New(options Options) App {
 		secrets:                 options.Secrets,
 		stdin:                   options.Stdin,
 		credentialReader:        options.CredentialReader,
+		passphraseReader:        options.PassphraseReader,
+		exportKDF:               options.ExportKDF,
 		configSaver:             options.ConfigSaver,
 		parentEnv:               append([]string(nil), options.ParentEnv...),
 		projectStartDir:         options.ProjectStartDir,
@@ -193,6 +200,7 @@ func defaultOptions(paths config.Paths) Options {
 		Initializer:       managedTalos,
 		Secrets:           secrets,
 		CredentialReader:  terminalCredentialReader(os.Stdin),
+		PassphraseReader:  terminalPassphraseReader(os.Stdin),
 		Profiles:          profiles,
 		Issuer:            tokenIssuer,
 		Runner:            process.Runner{},

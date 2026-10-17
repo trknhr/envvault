@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/trknhr/envvault/internal/clerr"
@@ -53,6 +54,20 @@ func TestOSStoreMapsDriverErrorsWithoutLeakingSecret(t *testing.T) {
 	}
 	if bytes.Contains([]byte(err.Error()), []byte("parent-secret")) {
 		t.Fatalf("error leaked secret: %q", err.Error())
+	}
+}
+
+func TestOSStoreReportsMissingItemWithoutCallingItUnavailable(t *testing.T) {
+	store := newOSStore("envvault-test", &fakeDriver{err: ErrNotFound})
+	_, err := store.Get(context.Background(), CredentialValue("database/dev"))
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get() error = %v, want ErrNotFound", err)
+	}
+	if code, _ := clerr.CodeOf(err); code != clerr.KeyringUnavailable {
+		t.Fatalf("CodeOf(error) = %q, want %q", code, clerr.KeyringUnavailable)
+	}
+	if strings.Contains(err.Error(), "parent-secret") {
+		t.Fatalf("error leaked secret material: %q", err.Error())
 	}
 }
 

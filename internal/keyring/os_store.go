@@ -2,6 +2,7 @@ package keyring
 
 import (
 	"context"
+	"errors"
 
 	"github.com/trknhr/envvault/internal/clerr"
 )
@@ -27,15 +28,18 @@ func newOSStore(service string, driver driver) Store {
 	return osStore{service: service, driver: driver}
 }
 
+// Get reports a missing item as ErrNotFound. A locked or failing store still
+// uses the generic unavailable error so import does not treat it as empty.
 func (s osStore) Get(ctx context.Context, key Key) ([]byte, error) {
-	var value string
-	err := s.call(ctx, func() error {
-		var getErr error
-		value, getErr = s.driver.Get(s.service, string(key))
-		return getErr
-	})
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	value, err := s.driver.Get(s.service, string(key))
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, missingKeyError(key)
+		}
+		return nil, keyringUnavailable()
 	}
 	return []byte(value), nil
 }

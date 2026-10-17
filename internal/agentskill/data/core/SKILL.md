@@ -14,6 +14,9 @@ repository-safe `envvault://` references only when launching a child process.
 - Set credential interactively: `envvault credential set <credential-name>`
 - Set credential from stdin: `printf 'secret\n' | envvault credential set <credential-name> --value-stdin`
 - Delete credential: `envvault credential delete <credential-name>`
+- Export credentials to an encrypted file: `envvault export <file>`
+- Import credentials from that file: `envvault import <file>`
+- Replace existing names during import: `envvault import <file> --overwrite`
 - Add proxy: `envvault proxy add <proxy-name> --credential <credential-name> --provider generic --target <url> --allow-path <path> --allow-method <method>`
 - List state: `envvault credential list`, `envvault proxy list`
 - Launch app: `envvault exec --env KEY=envvault://<credential> -- <command>` or `envvault exec --env-file .env -- <command>`
@@ -25,8 +28,13 @@ repository-safe `envvault://` references only when launching a child process.
   `--all` instead of explicit outbound profiles
 - Inspect state: `envvault doctor`, `envvault admin status`, `envvault reset --dry-run`
 
+Prompt for an export or import passphrase, or pass `--passphrase-stdin` and one
+stdin line. Never put the passphrase in a command-line flag or print it.
+Export does not include Talos signing keys or profile parent keys.
+
 For local credential workflows, stay within the admin, credential, proxy, exec,
-doctor, and reset commands.
+doctor, and reset commands. Use `export` and `import` when a credential has to
+move to another machine.
 
 ## Reference Forms
 

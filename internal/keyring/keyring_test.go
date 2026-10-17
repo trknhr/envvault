@@ -3,6 +3,7 @@ package keyring_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/trknhr/envvault/internal/clerr"
@@ -55,6 +56,16 @@ func TestMemoryStoreCopiesSecretsOnPutAndGet(t *testing.T) {
 	}
 	if !bytes.Equal(gotAgain, []byte("parent-secret")) {
 		t.Fatalf("Get() second = %q, want parent-secret", gotAgain)
+	}
+}
+
+func TestMemoryStoreMissingSecretWrapsNotFound(t *testing.T) {
+	_, err := keyring.NewMemoryStore().Get(context.Background(), keyring.CredentialValue("database/dev"))
+	if !errors.Is(err, keyring.ErrNotFound) {
+		t.Fatalf("Get() error = %v, want ErrNotFound", err)
+	}
+	if code, _ := clerr.CodeOf(err); code != clerr.KeyringUnavailable {
+		t.Fatalf("CodeOf(error) = %q, want %q", code, clerr.KeyringUnavailable)
 	}
 }
 

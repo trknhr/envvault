@@ -46,6 +46,7 @@ export default defineConfig({
       {
         text: 'Operations',
         items: [
+          { text: 'Export and Import', link: '/export' },
           { text: 'Recovery', link: '/recovery' },
           { text: 'Uninstall', link: '/uninstall' }
         ]

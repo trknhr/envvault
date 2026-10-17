@@ -3,6 +3,7 @@ package keyring
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -49,9 +50,18 @@ func (d darwinSecurityDriver) Get(service, account string) (string, error) {
 	args := []string{"find-generic-password", "-s", service, "-wa", account, keychain}
 	out, err := d.runner.CombinedOutput(args, "")
 	if err != nil {
+		if darwinItemNotFound(err) {
+			return "", ErrNotFound
+		}
 		return "", err
 	}
 	return decodeDarwinPassword(string(out))
+}
+
+// security exits 44 (errSecItemNotFound) when the generic password is absent.
+func darwinItemNotFound(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 44
 }
 
 func (d darwinSecurityDriver) Set(service, account, password string) error {
