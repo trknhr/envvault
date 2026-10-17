@@ -15,6 +15,7 @@ EnvVault protects long-lived local credential material from routine project and
 - Persistent native agent OAuth state stored under EnvVault's private data
   directory.
 - EnvVault config policy and project-binding approvals.
+- Encrypted export files, which contain credential values and profile metadata.
 
 ## Trust Boundaries
 
@@ -46,6 +47,9 @@ EnvVault protects long-lived local credential material from routine project and
   the application container.
 - Third-party provider API: receives the real provider API key from the child
   process or proxy.
+- Export file: a passphrase-encrypted copy of credential values and profile
+  policy. It is a normal file, not an OS credential-store item, and macOS does
+  not sync it through iCloud Keychain.
 
 ## In Scope
 
@@ -66,6 +70,8 @@ EnvVault protects long-lived local credential material from routine project and
   inspect or modify that persistent profile.
 - Existing agent sandboxes integrated through a trusted host-side plugin or
   session runtime.
+- Moving credentials to another machine the operator controls without writing
+  plaintext secrets into the export file.
 
 ## Out of Scope
 
@@ -91,6 +97,8 @@ EnvVault protects long-lived local credential material from routine project and
 - A malicious external session runtime or native credentials and mounts
   already provided by agent-infra. `sandbox exec` does not remove or isolate
   that existing state.
+- Offline guessing of a weak export passphrase by someone who already has the
+  export file.
 - Default-deny enforcement by a third-party sandbox platform. The generic
   plugin reports only `brokered`.
 
@@ -163,6 +171,13 @@ EnvVault protects long-lived local credential material from routine project and
   metadata. Exit, cancellation, launch failure, and expiry revoke the lease
   without stopping or deleting the existing sandbox. There is no automatic
   renewal.
+- `envvault export` seals credential values and profile metadata with Argon2id
+  and AES-256-GCM. The passphrase is read without echo, or as one stdin line
+  via `--passphrase-stdin`; it is never a flag value. The file mode is `0600`.
+  A header verifier distinguishes a wrong passphrase from ciphertext tampering.
+  Import skips existing names unless `--overwrite` is set, and secret values
+  are wiped with `keyring.Zero` after use. Talos signing keys and profile
+  parent keys are not included.
 
 ## Residual Risk
 
@@ -214,6 +229,16 @@ sandboxes, exposes the plugin pipes to the sandbox, or fails to apply the
 returned egress restrictions weakens the boundary. Process EOF performs
 best-effort cleanup, but an uncatchable process or host failure may leave a
 gateway alive until its short TTL expires.
+
+Anyone who obtains an export file and its passphrase can read the exported
+credential values. A weak passphrase is guessable offline. Argon2id makes that
+guessing expensive, and import refuses KDF parameters outside a fixed range, but
+it does not make a short or reused passphrase strong. macOS login-keychain items
+created with `security add-generic-password` are not iCloud Keychain items, so
+the export file is the supported way to move them. Process and browser profiles
+are copied as policy, but their parent keys stay on the source machine, so
+leased-token issuance still requires local setup on the destination. Copied
+project-binding path hashes may not match the destination checkout.
 
 External sandbox sessions report `brokered`, not network-enforced isolation.
 The launched process and trusted host runtime can read the temporary token;

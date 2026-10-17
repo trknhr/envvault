@@ -60,6 +60,8 @@ func TestRunHelpWritesUsageWithoutServices(t *testing.T) {
 		"envvault credential set <name> --value-stdin",
 		"envvault credential delete <name>",
 		"envvault credential list",
+		"envvault export <file>",
+		"envvault import <file>",
 		"envvault inspect --path .",
 		"envvault proxy list",
 		"envvault exec --env KEY=envvault://<credential> -- <command>",
@@ -392,7 +394,7 @@ func TestRunCompletionListsVisibleCommands(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("Run() code = %d, want 0; stderr=%q", code, stderr.String())
 	}
-	for _, want := range []string{"admin", "completion", "credential", "doctor", "exec", "proxy", "version"} {
+	for _, want := range []string{"admin", "completion", "credential", "doctor", "exec", "export", "import", "proxy", "version"} {
 		if !strings.Contains(stdout.String(), want+"\t") {
 			t.Fatalf("stdout = %q, want command %q", stdout.String(), want)
 		}

@@ -46,6 +46,10 @@ Remove an unused credential with `envvault credential delete app/dev`. If
 profiles still reference it, deletion fails unless `--cascade` is supplied to
 remove those dependent profiles too.
 
+Move the same credentials to another computer with `envvault export` and
+`envvault import`. The macOS login keychain does not sync these items through
+iCloud Keychain. See [Export and import](/export).
+
 To find plaintext credentials that still need review, scan current local files:
 
 ```bash

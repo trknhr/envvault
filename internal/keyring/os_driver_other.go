@@ -2,12 +2,20 @@
 
 package keyring
 
-import oskeyring "github.com/zalando/go-keyring"
+import (
+	"errors"
+
+	oskeyring "github.com/zalando/go-keyring"
+)
 
 type platformDriver struct{}
 
 func (platformDriver) Get(service, account string) (string, error) {
-	return oskeyring.Get(service, account)
+	value, err := oskeyring.Get(service, account)
+	if errors.Is(err, oskeyring.ErrNotFound) {
+		return "", ErrNotFound
+	}
+	return value, err
 }
 
 func (platformDriver) Set(service, account, password string) error {

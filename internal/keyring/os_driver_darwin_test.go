@@ -3,6 +3,7 @@ package keyring
 import (
 	"encoding/base64"
 	"errors"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -74,6 +75,26 @@ func TestDarwinSecurityDriverGetUsesExplicitDefaultKeychainAndDecodesValue(t *te
 	}
 	if got := runner.calls[1].args; !reflect.DeepEqual(got, wantArgs) {
 		t.Fatalf("find args = %#v, want %#v", got, wantArgs)
+	}
+}
+
+func TestDarwinSecurityDriverGetMapsItemNotFound(t *testing.T) {
+	missing := exec.Command("sh", "-c", "exit 44")
+	err := missing.Run()
+	if err == nil {
+		t.Fatal("exit 44 error = nil")
+	}
+	runner := &fakeDarwinSecurityRunner{
+		results: []fakeDarwinSecurityResult{
+			{out: []byte("\"/Users/me/Library/Keychains/login.keychain-db\"\n")},
+			{err: err},
+		},
+	}
+	driver := newDarwinSecurityDriver(runner)
+
+	_, got := driver.Get("envvault", "envvault/credential/missing/value")
+	if !errors.Is(got, ErrNotFound) {
+		t.Fatalf("Get() error = %v, want ErrNotFound", got)
 	}
 }
 

@@ -18,6 +18,21 @@ Actions:
 3. Re-add affected credentials if the platform credential store entry is missing.
 4. Do not store credentials in repository files as a fallback.
 
+## Move or Restore Secrets
+
+Use an encrypted export when secrets have to move to another machine, or when a
+local credential store has to be rebuilt.
+
+```bash
+envvault export secrets.envault
+envvault import secrets.envault
+```
+
+Import skips names that already exist unless `--overwrite` is set. The file
+does not contain Talos signing keys or profile parent keys, so process and
+browser profiles still need those keys created on the destination. See
+[Export and import](/export).
+
 ## Corrupt or Missing Local State
 
 Symptoms:

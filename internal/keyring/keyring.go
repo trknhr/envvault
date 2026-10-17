@@ -2,11 +2,16 @@ package keyring
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 
 	"github.com/trknhr/envvault/internal/clerr"
 )
+
+// ErrNotFound is wrapped by Get when the named item is absent. The returned
+// error text stays generic and does not include the missing value.
+var ErrNotFound = errors.New("keyring item not found")
 
 type Key string
 
@@ -88,9 +93,9 @@ func (UnavailableStore) Delete(context.Context, Key) error {
 
 func missingKeyError(key Key) error {
 	if strings.HasSuffix(string(key), "/parent-key") {
-		return clerr.New(clerr.ParentKeyMissing, "parent key missing")
+		return clerr.Wrap(clerr.ParentKeyMissing, "parent key missing", ErrNotFound)
 	}
-	return clerr.New(clerr.KeyringUnavailable, "secret missing")
+	return clerr.Wrap(clerr.KeyringUnavailable, "secret missing", ErrNotFound)
 }
 
 func unavailable() error {

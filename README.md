@@ -61,6 +61,8 @@ envvault admin start
 envvault credential set app/dev
 envvault credential delete app/dev
 envvault credential list
+envvault export secrets.envault
+envvault import secrets.envault
 envvault inspect --path .
 envvault proxy list
 envvault exec --env APP_SECRET=envvault://app/dev -- npm run dev
@@ -77,6 +79,16 @@ needed. For non-interactive scripts, add `--value-stdin` to the same command.
 credential store and local metadata. It refuses to delete credentials used by a
 profile; pass `--cascade` only when the dependent profiles should be deleted
 too.
+
+`envvault export <file>` writes those credential values and the profile
+configuration that uses them into one encrypted file. `envvault import <file>`
+loads that file into another machine's OS credential store. This is the
+supported way to move secrets between Macs: the macOS driver stores items in
+the local login keychain with `security add-generic-password`, and iCloud
+Keychain does not sync those items. Both commands prompt for a passphrase with
+echo disabled. `--passphrase-stdin` reads one line from stdin instead; there is
+no passphrase flag. Import leaves existing names unchanged unless `--overwrite`
+is set. See [Export and import](docs/export.md).
 
 `envvault admin start` starts the local browser UI for adding credentials and
 creating optional proxies. The printed URL includes a per-run local admin token.
@@ -333,6 +345,9 @@ does not yet enforce default-deny egress.
 - A process running as the same OS user can use the same OS credential store
   permissions as the user.
 - If the OS credential store is compromised, stored credentials are compromised.
+- An export file is encrypted, but anyone who has both the file and its
+  passphrase can read the credential values. The file is not an iCloud Keychain
+  item.
 - EnvVault does not redact prompts, stdout, stderr, HTTP bodies, shell history,
   or application logs outside its own outputs.
 - Direct `envvault://<credential>` references resolve to raw credential values.
@@ -380,6 +395,7 @@ publishes tagged release archives and updates the Homebrew tap.
 - [Experimental Docker Sandbox](docs/sandbox.md)
 - [External Sandbox Sessions](docs/sandbox-exec.md)
 - [External Sandbox Plugin](docs/sandbox-plugin.md)
+- [Export and import](docs/export.md)
 - [Threat model](docs/threat-model.md)
 - [Uninstall](docs/uninstall.md)
 - [Recovery](docs/recovery.md)
