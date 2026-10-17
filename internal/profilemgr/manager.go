@@ -66,7 +66,7 @@ func (m *Manager) AddProcess(ctx context.Context, request ProcessRequest) (profi
 		Claims:         cloneStringMap(request.Claims),
 		TokenTTL:       config.Duration(request.TokenTTL),
 		MaxTokenTTL:    config.Duration(request.MaxTokenTTL),
-		ProjectBinding: toConfigProjectBinding(request.ProjectBinding),
+		ProjectBinding: config.ProjectBindingFrom(request.ProjectBinding),
 	}
 	return m.addProfile(ctx, request.Name, stored)
 }
@@ -84,7 +84,7 @@ func (m *Manager) AddBrowserSession(ctx context.Context, request BrowserSessionR
 		CompleteURL:       request.CompleteURL,
 		PostLoginURL:      request.PostLoginURL,
 		AllowedHosts:      append([]string(nil), request.AllowedHosts...),
-		ProjectBinding:    toConfigProjectBinding(request.ProjectBinding),
+		ProjectBinding:    config.ProjectBindingFrom(request.ProjectBinding),
 	}
 	return m.addProfile(ctx, request.Name, stored)
 }
@@ -123,15 +123,15 @@ func (m *Manager) addProfile(ctx context.Context, name string, stored config.Pro
 	}
 
 	parentSecret := []byte(parent.Secret)
-	defer zero(parentSecret)
+	defer keyring.Zero(parentSecret)
 	if err := m.secrets.Put(ctx, keyring.ProfileParentKey(resolved.Name), parentSecret); err != nil {
 		return profile.Profile{}, err
 	}
 
-	if cfg.Profiles == nil {
-		cfg.Profiles = map[string]config.Profile{}
+	if err := cfg.AddProfile(name, stored); err != nil {
+		_ = m.secrets.Delete(ctx, keyring.ProfileParentKey(resolved.Name))
+		return profile.Profile{}, err
 	}
-	cfg.Profiles[name] = stored
 	if err := config.Save(m.configPath, cfg); err != nil {
 		_ = m.secrets.Delete(ctx, keyring.ProfileParentKey(resolved.Name))
 		return profile.Profile{}, err
@@ -149,19 +149,4 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
-}
-
-func toConfigProjectBinding(binding profile.ProjectBinding) config.ProjectBinding {
-	return config.ProjectBinding{
-		Mode:      binding.Mode,
-		PathHash:  binding.PathHash,
-		GitRoot:   binding.GitRoot,
-		GitRemote: binding.GitRemote,
-	}
-}
-
-func zero(value []byte) {
-	for i := range value {
-		value[i] = 0
-	}
 }

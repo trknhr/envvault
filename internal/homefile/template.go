@@ -52,7 +52,7 @@ func (r *contentResolver) renderTemplate(ctx context.Context, sourceDir string, 
 	if err != nil {
 		return nil, err
 	}
-	defer zero(body)
+	defer keyring.Zero(body)
 	if !utf8.Valid(body) {
 		return nil, clerr.New(clerr.ConfigInvalid, "home file template is not valid UTF-8")
 	}
@@ -96,7 +96,7 @@ func readTemplateSource(sourceDir, source string) ([]byte, error) {
 		return nil, readErr
 	}
 	if closeErr != nil {
-		zero(body)
+		keyring.Zero(body)
 		return nil, clerr.Wrap(clerr.CleanupFailed, "close home file template source directory", closeErr)
 	}
 	return body, nil
@@ -134,15 +134,15 @@ func readTemplateFile(root *os.Root, source string) ([]byte, error) {
 	body, readErr := io.ReadAll(io.LimitReader(file, maxTemplateBytes+1))
 	closeErr := file.Close()
 	if readErr != nil {
-		zero(body)
+		keyring.Zero(body)
 		return nil, clerr.Wrap(clerr.ConfigInvalid, "read home file template", readErr)
 	}
 	if closeErr != nil {
-		zero(body)
+		keyring.Zero(body)
 		return nil, clerr.Wrap(clerr.CleanupFailed, "close home file template", closeErr)
 	}
 	if len(body) > maxTemplateBytes {
-		zero(body)
+		keyring.Zero(body)
 		return nil, clerr.New(clerr.ConfigInvalid, "home file template exceeds 4 MiB")
 	}
 	return body, nil
@@ -228,7 +228,7 @@ func (r *contentResolver) credential(ctx context.Context, name string) ([]byte, 
 
 func (r *contentResolver) Close() {
 	for name, secret := range r.cache {
-		zero(secret)
+		keyring.Zero(secret)
 		delete(r.cache, name)
 	}
 }
@@ -236,12 +236,12 @@ func (r *contentResolver) Close() {
 func copyWithTrailingNewline(rendered []byte) []byte {
 	if len(rendered) > 0 && rendered[len(rendered)-1] == '\n' {
 		output := append([]byte(nil), rendered...)
-		zero(rendered)
+		keyring.Zero(rendered)
 		return output
 	}
 	output := make([]byte, len(rendered)+1)
 	copy(output, rendered)
 	output[len(rendered)] = '\n'
-	zero(rendered)
+	keyring.Zero(rendered)
 	return output
 }

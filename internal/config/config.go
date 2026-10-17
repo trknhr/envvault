@@ -212,6 +212,28 @@ func (f *File) AddCredential(name string) {
 	f.Credentials = normalizeCredentialNames(f.Credentials)
 }
 
+// AddProfile records a profile that is not already present. The caller saves
+// the file after any related credential-store updates succeed.
+func (f *File) AddProfile(name string, stored Profile) error {
+	if f.Profiles == nil {
+		f.Profiles = map[string]Profile{}
+	}
+	if _, exists := f.Profiles[name]; exists {
+		return clerr.New(clerr.ConfigInvalid, "profile already exists")
+	}
+	f.Profiles[name] = stored
+	return nil
+}
+
+func ProjectBindingFrom(binding profile.ProjectBinding) ProjectBinding {
+	return ProjectBinding{
+		Mode:      binding.Mode,
+		PathHash:  binding.PathHash,
+		GitRoot:   binding.GitRoot,
+		GitRemote: binding.GitRemote,
+	}
+}
+
 func (f *File) RemoveCredential(name string) bool {
 	name = strings.TrimSpace(name)
 	names := f.CredentialNames()

@@ -52,7 +52,7 @@ func (i *Issuer) Issue(ctx context.Context, requested issuer.Grant) (issuer.Cred
 	if err != nil {
 		return issuer.Credential{}, err
 	}
-	defer zero(parentKey)
+	defer keyring.Zero(parentKey)
 
 	credential, err := i.talos.DeriveJWT(ctx, string(parentKey), grant)
 	if err != nil {
@@ -225,10 +225,4 @@ func newSessionID() (string, error) {
 		return "", clerr.Wrap(clerr.IssueFailed, "generate session id", err)
 	}
 	return "hex:" + hex.EncodeToString(bytes[:]), nil
-}
-
-func zero(value []byte) {
-	for i := range value {
-		value[i] = 0
-	}
 }

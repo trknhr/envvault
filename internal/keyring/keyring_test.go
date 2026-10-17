@@ -84,6 +84,15 @@ func TestUnavailableStoreFailsClosed(t *testing.T) {
 	}
 }
 
+func TestZeroOverwritesSecretBytes(t *testing.T) {
+	value := []byte("parent-secret")
+	keyring.Zero(value)
+	if !bytes.Equal(value, make([]byte, len("parent-secret"))) {
+		t.Fatalf("Zero() = %v, want all zeros", value)
+	}
+	keyring.Zero(nil)
+}
+
 func codeOf(err error) clerr.Code {
 	code, _ := clerr.CodeOf(err)
 	return code

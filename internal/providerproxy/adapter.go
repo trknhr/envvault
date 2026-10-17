@@ -12,6 +12,7 @@ import (
 
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/connection"
+	"github.com/trknhr/envvault/internal/keyring"
 	"github.com/trknhr/envvault/internal/profile"
 )
 
@@ -188,7 +189,7 @@ func (l *HTTPAdapterLease) Close(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
-	zero(l.token)
+	keyring.Zero(l.token)
 	l.token = nil
 	return errors.Join(errs...)
 }

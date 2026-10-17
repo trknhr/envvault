@@ -127,12 +127,12 @@ func (m *managedTalos) runtimeForInstalledArtifact(ctx context.Context, installe
 	if err != nil {
 		return nil, nil, err
 	}
-	defer zero(hmacSecret)
+	defer keyring.Zero(hmacSecret)
 	signingSeed, err := m.secrets.Get(ctx, keyring.TalosSigningKey("current"))
 	if err != nil {
 		return nil, nil, err
 	}
-	defer zero(signingSeed)
+	defer keyring.Zero(signingSeed)
 
 	httpAddress, err := reserveManagedLoopbackAddress()
 	if err != nil {
@@ -433,10 +433,4 @@ func temporaryTalosConfigPath(cacheDir string) (string, error) {
 		return "", clerr.Wrap(clerr.RuntimeUnavailable, "release temporary talos config path", err)
 	}
 	return name, nil
-}
-
-func zero(value []byte) {
-	for i := range value {
-		value[i] = 0
-	}
 }

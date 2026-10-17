@@ -366,7 +366,7 @@ func write(ctx context.Context, root *os.Root, sourceDir string, resolver *conte
 	if err != nil {
 		return closeFile(err, file)
 	}
-	defer zero(contents)
+	defer keyring.Zero(contents)
 
 	writeErr := writeAll(file, contents)
 	closeErr := file.Close()
@@ -500,10 +500,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func zero(value []byte) {
-	for i := range value {
-		value[i] = 0
-	}
 }

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/connection"
@@ -41,58 +40,35 @@ type sandboxRunArgs struct {
 }
 
 func (a App) runSandbox(ctx context.Context, parsed sandboxRunArgs, stdout, stderr io.Writer) int {
-	if parsed.allOutboundProfiles && len(parsed.outboundProfiles) > 0 {
-		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "--all and --outbound-profile cannot be used together"))
-		return 1
-	}
-	for _, assignment := range parsed.inlineEnv {
-		if err := validateEnvAssignment(assignment); err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
-		}
+	if err := validateSandboxRunArgs(parsed); err != nil {
+		return exitError(stderr, err)
 	}
 	agentBinding, err := a.selectSandboxAgentAuth(parsed)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
-	runtimeName := strings.TrimSpace(parsed.runtime)
-	runtime := a.sandboxRuntimes[runtimeName]
+	runtime := a.sandboxRuntimes[strings.TrimSpace(parsed.runtime)]
 	if runtime == nil {
-		fmt.Fprintln(stderr, clerr.New(clerr.RuntimeUnavailable, "sandbox runtime is not configured"))
-		return 1
+		return exitError(stderr, clerr.New(clerr.RuntimeUnavailable, "sandbox runtime is not configured"))
 	}
-	publications := make([]sandbox.PortPublication, 0, len(parsed.publish))
-	for _, rawPort := range parsed.publish {
-		port, err := strconv.ParseUint(rawPort, 10, 16)
-		if err != nil || port == 0 {
-			fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "published port must be between 1 and 65535"))
-			return 1
-		}
-		publications = append(publications, sandbox.PortPublication{ContainerPort: uint16(port)})
+	publications, err := sandboxPublications(parsed.publish)
+	if err != nil {
+		return exitError(stderr, err)
 	}
 	workspace, err := a.sandboxWorkspace()
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if err := runtime.Check(ctx); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
-	var egressAttacher sandbox.EgressAttacher
-	if parsed.allOutboundProfiles || len(parsed.outboundProfiles) > 0 {
-		var ok bool
-		egressAttacher, ok = runtime.(sandbox.EgressAttacher)
-		if !ok {
-			fmt.Fprintln(stderr, clerr.New(clerr.RuntimeIncompatible, "sandbox runtime does not support outbound profile attachment"))
-			return 1
-		}
+	egressAttacher, err := sandboxEgressAttacher(runtime, parsed)
+	if err != nil {
+		return exitError(stderr, err)
 	}
 	identity, err := a.detectProjectIdentity(ctx)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	parsed.outboundProfiles, err = a.selectSandboxOutboundProfiles(
 		parsed.outboundProfiles,
@@ -100,92 +76,33 @@ func (a App) runSandbox(ctx context.Context, parsed sandboxRunArgs, stdout, stde
 		identity,
 	)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
-	access := sandbox.GatewayAccess{ListenAddress: "127.0.0.1:0"}
-	if accessor, ok := runtime.(sandbox.GatewayAccessor); ok {
-		access = accessor.GatewayAccess()
-	}
-	resolver := &providerproxy.EnvResolver{
-		Profiles:      a.profiles,
-		Secrets:       a.secrets,
-		ListenAddress: access.ListenAddress,
-		AdvertiseHost: access.AdvertiseHost,
-	}
-	defer func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = resolver.Close(cleanupCtx)
-	}()
-	var outboundLease connection.EgressLease
-	var outboundConfig connection.EgressClientConfig
-	if len(parsed.outboundProfiles) > 0 {
-		outboundResolver := providerproxy.OutboundResolver{
-			Profiles:      a.profiles,
-			Secrets:       a.secrets,
-			ListenAddress: access.ListenAddress,
-			AdvertiseHost: access.AdvertiseHost,
-		}
-		outboundLease, err = outboundResolver.Open(ctx, parsed.outboundProfiles, identity, "sandbox-run")
-		if err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
-		}
-		defer func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = outboundLease.Close(cleanupCtx)
-		}()
-		outboundConfig = outboundLease.ClientConfig()
-	}
-	references := &sandboxReferenceResolver{
-		delegate:          resolver,
-		allowMaterialized: parsed.allowMaterializedSecrets,
-		lateBound:         referenceSet(outboundConfig.CredentialReferences),
-	}
-	environment, err := process.BuildEnv(ctx, process.EnvInput{
-		EnvFiles:          append([]string(nil), parsed.envFiles...),
-		InlineEnv:         append([]string(nil), parsed.inlineEnv...),
-		ProjectIdentity:   identity,
-		ReferenceResolver: references,
-	}, a.profiles, a.issuer)
+	launch, err := a.openSandboxLaunch(ctx, runtime, parsed, identity)
+	defer launch.Close()
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
-	sandboxCommand := append([]string(nil), parsed.command...)
-	var mounts []sandbox.Mount
-	if agentBinding != nil {
-		switch agentBinding.mode {
-		case sandboxAgentAuthBrokered:
-			sandboxCommand, err = attachSandboxAgentAuth(ctx, *agentBinding, identity, references, environment, sandboxCommand)
-		case sandboxAgentAuthNative:
-			var mount sandbox.Mount
-			sandboxCommand, mount, err = a.attachSandboxNativeAgentAuth(*agentBinding, environment, sandboxCommand)
-			mounts = append(mounts, mount)
-		default:
-			err = clerr.New(clerr.ConfigInvalid, "unsupported sandbox agent auth mode")
-		}
-		if err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
-		}
+	environment, references, err := a.resolveSandboxEnvironment(ctx, parsed, identity, launch)
+	if err != nil {
+		return exitError(stderr, err)
 	}
-	resources := []sandbox.Resource{resolver}
+	sandboxCommand, mounts, err := a.applySandboxAgentAuth(ctx, agentBinding, identity, references, environment, append([]string(nil), parsed.command...))
+	if err != nil {
+		return exitError(stderr, err)
+	}
+	resources := []sandbox.Resource{launch.resolver}
 	var egressMode sandbox.EgressMode
-	if outboundLease != nil {
-		attachment, attachErr := egressAttacher.AttachEgress(ctx, outboundConfig)
+	if launch.outbound != nil {
+		attachment, attachErr := egressAttacher.AttachEgress(ctx, launch.outboundConfig)
 		if attachErr != nil {
-			fmt.Fprintln(stderr, attachErr)
-			return 1
+			return exitError(stderr, attachErr)
 		}
 		if mergeErr := mergeEgressAttachment(environment, &mounts, attachment, references.gateway); mergeErr != nil {
-			fmt.Fprintln(stderr, errors.Join(mergeErr, closeSandboxResources(attachment.Resources)))
-			return 1
+			return exitError(stderr, errors.Join(mergeErr, closeSandboxResources(attachment.Resources)))
 		}
 		resources = append(resources, attachment.Resources...)
-		resources = append(resources, outboundLease)
+		resources = append(resources, launch.outbound)
 		egressMode = attachment.Mode
 	}
 	level := connection.SecurityBrokered
@@ -229,29 +146,8 @@ func (a App) runSandbox(ctx context.Context, parsed sandboxRunArgs, stdout, stde
 		},
 		Signals:   signals,
 		Resources: resources,
-		OnCreated: func(id string, securityLevel connection.SecurityLevel) {
-			fmt.Fprintf(stderr, "sandbox: %s\n", id)
-			fmt.Fprintf(stderr, "security: %s (experimental; direct egress is not blocked)\n", securityLevel)
-			if agentBinding != nil {
-				switch agentBinding.mode {
-				case sandboxAgentAuthBrokered:
-					fmt.Fprintf(stderr, "agent-auth: %s via %s\n", agentBinding.agent, agentBinding.profile.Name)
-				case sandboxAgentAuthNative:
-					fmt.Fprintf(stderr, "agent-auth: %s native (profile %s)\n", agentBinding.agent, agentBinding.native.Profile)
-				}
-			}
-			if egressMode != "" {
-				fmt.Fprintf(stderr, "outbound: %s via %s (URL-preserving prototype)\n", egressMode, strings.Join(parsed.outboundProfiles, ", "))
-			}
-			if securityLevel == connection.SecurityMaterializedStatic {
-				fmt.Fprintln(stderr, "warning: raw credentials are available inside the sandbox")
-			}
-		},
-		OnStarted: func(_ string, ports []sandbox.PublishedPort) {
-			for _, port := range ports {
-				fmt.Fprintf(stderr, "app: http://%s (container port %d)\n", port.HostAddress, port.ContainerPort)
-			}
-		},
+		OnCreated: reportSandboxCreated(stderr, agentBinding, egressMode, parsed.outboundProfiles),
+		OnStarted: reportSandboxStarted(stderr),
 	})
 	if runErr != nil {
 		fmt.Fprintln(stderr, runErr)
@@ -261,6 +157,155 @@ func (a App) runSandbox(ctx context.Context, parsed sandboxRunArgs, stdout, stde
 		return 1
 	}
 	return result.ExitCode
+}
+
+func validateSandboxRunArgs(parsed sandboxRunArgs) error {
+	if parsed.allOutboundProfiles && len(parsed.outboundProfiles) > 0 {
+		return clerr.New(clerr.ConfigInvalid, "--all and --outbound-profile cannot be used together")
+	}
+	for _, assignment := range parsed.inlineEnv {
+		if err := validateEnvAssignment(assignment); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sandboxPublications(rawPorts []string) ([]sandbox.PortPublication, error) {
+	publications := make([]sandbox.PortPublication, 0, len(rawPorts))
+	for _, rawPort := range rawPorts {
+		port, err := strconv.ParseUint(rawPort, 10, 16)
+		if err != nil || port == 0 {
+			return nil, clerr.New(clerr.ConfigInvalid, "published port must be between 1 and 65535")
+		}
+		publications = append(publications, sandbox.PortPublication{ContainerPort: uint16(port)})
+	}
+	return publications, nil
+}
+
+func sandboxEgressAttacher(runtime sandbox.Runtime, parsed sandboxRunArgs) (sandbox.EgressAttacher, error) {
+	if !parsed.allOutboundProfiles && len(parsed.outboundProfiles) == 0 {
+		return nil, nil
+	}
+	attacher, ok := runtime.(sandbox.EgressAttacher)
+	if !ok {
+		return nil, clerr.New(clerr.RuntimeIncompatible, "sandbox runtime does not support outbound profile attachment")
+	}
+	return attacher, nil
+}
+
+type sandboxLaunch struct {
+	resolver       *providerproxy.EnvResolver
+	outbound       connection.EgressLease
+	outboundConfig connection.EgressClientConfig
+}
+
+func (s sandboxLaunch) Close() {
+	if s.resolver != nil {
+		defer closeQuietly(s.resolver.Close)
+	}
+	if s.outbound != nil {
+		defer closeQuietly(s.outbound.Close)
+	}
+}
+
+func (a App) openSandboxLaunch(ctx context.Context, runtime sandbox.Runtime, parsed sandboxRunArgs, identity projectbinding.Identity) (sandboxLaunch, error) {
+	access := sandbox.GatewayAccess{ListenAddress: "127.0.0.1:0"}
+	if accessor, ok := runtime.(sandbox.GatewayAccessor); ok {
+		access = accessor.GatewayAccess()
+	}
+	launch := sandboxLaunch{
+		resolver: &providerproxy.EnvResolver{
+			Profiles:      a.profiles,
+			Secrets:       a.secrets,
+			ListenAddress: access.ListenAddress,
+			AdvertiseHost: access.AdvertiseHost,
+		},
+	}
+	if len(parsed.outboundProfiles) == 0 {
+		return launch, nil
+	}
+	lease, err := (providerproxy.OutboundResolver{
+		Profiles:      a.profiles,
+		Secrets:       a.secrets,
+		ListenAddress: access.ListenAddress,
+		AdvertiseHost: access.AdvertiseHost,
+	}).Open(ctx, parsed.outboundProfiles, identity, "sandbox-run")
+	if err != nil {
+		return launch, err
+	}
+	launch.outbound = lease
+	launch.outboundConfig = lease.ClientConfig()
+	return launch, nil
+}
+
+func (a App) resolveSandboxEnvironment(ctx context.Context, parsed sandboxRunArgs, identity projectbinding.Identity, launch sandboxLaunch) (map[string]string, *sandboxReferenceResolver, error) {
+	references := &sandboxReferenceResolver{
+		delegate:          launch.resolver,
+		allowMaterialized: parsed.allowMaterializedSecrets,
+		lateBound:         referenceSet(launch.outboundConfig.CredentialReferences),
+	}
+	environment, err := process.BuildEnv(ctx, process.EnvInput{
+		EnvFiles:          append([]string(nil), parsed.envFiles...),
+		InlineEnv:         append([]string(nil), parsed.inlineEnv...),
+		ProjectIdentity:   identity,
+		ReferenceResolver: references,
+	}, a.profiles, a.issuer)
+	if err != nil {
+		return nil, nil, err
+	}
+	return environment, references, nil
+}
+
+func (a App) applySandboxAgentAuth(ctx context.Context, agentBinding *sandboxAgentBinding, identity projectbinding.Identity, references *sandboxReferenceResolver, environment map[string]string, command []string) ([]string, []sandbox.Mount, error) {
+	if agentBinding == nil {
+		return command, nil, nil
+	}
+	var mounts []sandbox.Mount
+	var err error
+	switch agentBinding.mode {
+	case sandboxAgentAuthBrokered:
+		command, err = attachSandboxAgentAuth(ctx, *agentBinding, identity, references, environment, command)
+	case sandboxAgentAuthNative:
+		var mount sandbox.Mount
+		command, mount, err = a.attachSandboxNativeAgentAuth(*agentBinding, environment, command)
+		mounts = append(mounts, mount)
+	default:
+		err = clerr.New(clerr.ConfigInvalid, "unsupported sandbox agent auth mode")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return command, mounts, nil
+}
+
+func reportSandboxCreated(stderr io.Writer, agentBinding *sandboxAgentBinding, egressMode sandbox.EgressMode, outboundProfiles []string) func(string, connection.SecurityLevel) {
+	return func(id string, securityLevel connection.SecurityLevel) {
+		fmt.Fprintf(stderr, "sandbox: %s\n", id)
+		fmt.Fprintf(stderr, "security: %s (experimental; direct egress is not blocked)\n", securityLevel)
+		if agentBinding != nil {
+			switch agentBinding.mode {
+			case sandboxAgentAuthBrokered:
+				fmt.Fprintf(stderr, "agent-auth: %s via %s\n", agentBinding.agent, agentBinding.profile.Name)
+			case sandboxAgentAuthNative:
+				fmt.Fprintf(stderr, "agent-auth: %s native (profile %s)\n", agentBinding.agent, agentBinding.native.Profile)
+			}
+		}
+		if egressMode != "" {
+			fmt.Fprintf(stderr, "outbound: %s via %s (URL-preserving prototype)\n", egressMode, strings.Join(outboundProfiles, ", "))
+		}
+		if securityLevel == connection.SecurityMaterializedStatic {
+			fmt.Fprintln(stderr, "warning: raw credentials are available inside the sandbox")
+		}
+	}
+}
+
+func reportSandboxStarted(stderr io.Writer) func(string, []sandbox.PublishedPort) {
+	return func(_ string, ports []sandbox.PublishedPort) {
+		for _, port := range ports {
+			fmt.Fprintf(stderr, "app: http://%s (container port %d)\n", port.HostAddress, port.ContainerPort)
+		}
+	}
 }
 
 func mergeEgressAttachment(environment map[string]string, mounts *[]sandbox.Mount, attachment sandbox.EgressAttachment, gateway connection.Endpoint) error {
@@ -324,7 +369,7 @@ func splitCommaList(raw string) []string {
 }
 
 func closeSandboxResources(resources []sandbox.Resource) error {
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), resourceCleanupTimeout)
 	defer cancel()
 	var errs []error
 	for index := len(resources) - 1; index >= 0; index-- {
@@ -339,19 +384,7 @@ func closeSandboxResources(resources []sandbox.Resource) error {
 }
 
 func (a App) sandboxWorkspace() (string, error) {
-	workspace := a.projectStartDir
-	if workspace == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", clerr.Wrap(clerr.ConfigInvalid, "get sandbox workspace", err)
-		}
-		workspace = cwd
-	}
-	absolute, err := filepath.Abs(workspace)
-	if err != nil {
-		return "", clerr.Wrap(clerr.ConfigInvalid, "resolve sandbox workspace", err)
-	}
-	return filepath.Clean(absolute), nil
+	return a.absoluteInvocationDir("get sandbox workspace", "resolve sandbox workspace")
 }
 
 type sandboxReferenceResolver struct {

@@ -65,7 +65,7 @@ func (b OutboundBroker) Start(ctx context.Context, request connection.EgressBrok
 			_ = request.Credentials.Revoke(context.Background(), credentialLeases[i])
 		}
 		for i := range routes {
-			zero(routes[i].credential)
+			keyring.Zero(routes[i].credential)
 		}
 	}
 
@@ -750,7 +750,7 @@ func (s *outboundProxyServer) forwardInjected(w http.ResponseWriter, r *http.Req
 	}
 	credential := append([]byte(nil), route.credential...)
 	s.mu.Unlock()
-	defer zero(credential)
+	defer keyring.Zero(credential)
 	request.Header.Set(httpPolicy.Auth.Header, "Bearer "+string(credential))
 	request.Host = ""
 	response, err := s.client.Do(request)
@@ -1076,10 +1076,10 @@ func (s *outboundProxyServer) Close(ctx context.Context) error {
 		connections = append(connections, connection)
 	}
 	s.hijackedConnections = nil
-	zero(s.token)
+	keyring.Zero(s.token)
 	s.token = nil
 	for i := range s.routes {
-		zero(s.routes[i].credential)
+		keyring.Zero(s.routes[i].credential)
 		s.routes[i].credential = nil
 	}
 	s.caKey = nil
