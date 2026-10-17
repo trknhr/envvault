@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -26,21 +25,16 @@ func (a App) runSandboxPluginServe(ctx context.Context, parsed sandboxPluginServ
 		AdvertiseHost: parsed.gatewayHost,
 	}
 	if err := broker.Validate(); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
-	input := a.stdin
-	if input == nil {
-		input = os.Stdin
-	}
+	input := a.commandStdin()
 	serveCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := (sandboxplugin.Server{Broker: broker}).Serve(serveCtx, input, stdout); err != nil {
 		if errors.Is(err, context.Canceled) && serveCtx.Err() != nil {
 			return 0
 		}
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	return 0
 }

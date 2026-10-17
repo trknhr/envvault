@@ -121,12 +121,12 @@ func (i Initializer) Init(ctx context.Context) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	defer zero(hmacSecret)
+	defer keyring.Zero(hmacSecret)
 	signingSecret, err := i.randomBytes(defaultSigningBytes)
 	if err != nil {
 		return Result{}, err
 	}
-	defer zero(signingSecret)
+	defer keyring.Zero(signingSecret)
 
 	if err := i.Secrets.Put(ctx, keyring.TalosHMACKey(), hmacSecret); err != nil {
 		return Result{}, err
@@ -250,10 +250,4 @@ func isConfigMissing(err error) bool {
 
 func isUninitializedConfig(cfg config.File) bool {
 	return cfg.Runtime.Talos.Version == "uninitialized"
-}
-
-func zero(value []byte) {
-	for i := range value {
-		value[i] = 0
-	}
 }

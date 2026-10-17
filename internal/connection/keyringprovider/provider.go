@@ -53,7 +53,7 @@ func (p Provider) Acquire(ctx context.Context, request connection.CredentialRequ
 	}
 	id, err := newLeaseID()
 	if err != nil {
-		zero(value)
+		keyring.Zero(value)
 		return nil, err
 	}
 	now := p.now()
@@ -119,7 +119,7 @@ func (l *lease) WithValue(ctx context.Context, use func([]byte) error) error {
 	}
 	value := append([]byte(nil), l.value...)
 	l.mu.Unlock()
-	defer zero(value)
+	defer keyring.Zero(value)
 	return use(value)
 }
 
@@ -134,7 +134,7 @@ func (l *lease) GoString() string {
 func (l *lease) revoke() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	zero(l.value)
+	keyring.Zero(l.value)
 	l.value = nil
 	l.revoked = true
 }
@@ -145,12 +145,6 @@ func newLeaseID() (string, error) {
 		return "", clerr.Wrap(clerr.IssueFailed, "generate credential lease id", err)
 	}
 	return "cred_" + hex.EncodeToString(raw[:]), nil
-}
-
-func zero(value []byte) {
-	for i := range value {
-		value[i] = 0
-	}
 }
 
 func configInvalid(message string) error {

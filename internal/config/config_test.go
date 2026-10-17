@@ -13,6 +13,34 @@ import (
 	"github.com/trknhr/envvault/internal/profile"
 )
 
+func TestAddProfileRejectsDuplicates(t *testing.T) {
+	var cfg config.File
+	stored := config.Profile{
+		Kind:           profile.KindInject,
+		CredentialName: "database/dev",
+		ProjectBinding: config.ProjectBindingFrom(profile.ProjectBinding{
+			Mode:      profile.ProjectBindingGitRemoteAndRoot,
+			PathHash:  "sha256:test",
+			GitRoot:   "/work/app",
+			GitRemote: "git@example.com:team/app.git",
+		}),
+	}
+	if err := cfg.AddProfile("database/dev", stored); err != nil {
+		t.Fatalf("AddProfile() error = %v", err)
+	}
+	got := cfg.Profiles["database/dev"].ProjectBinding
+	if got.Mode != profile.ProjectBindingGitRemoteAndRoot || got.GitRoot != "/work/app" || got.GitRemote != "git@example.com:team/app.git" || got.PathHash != "sha256:test" {
+		t.Fatalf("ProjectBinding = %+v", got)
+	}
+	err := cfg.AddProfile("database/dev", stored)
+	if code, _ := clerr.CodeOf(err); code != clerr.ConfigInvalid || err.Error() != "ENVVAULT_CONFIG_INVALID: profile already exists" {
+		t.Fatalf("AddProfile(duplicate) = %v", err)
+	}
+	if len(cfg.Profiles) != 1 {
+		t.Fatalf("profiles = %d, want 1", len(cfg.Profiles))
+	}
+}
+
 func TestRemoveCredential(t *testing.T) {
 	cfg, err := config.DefaultFile()
 	if err != nil {

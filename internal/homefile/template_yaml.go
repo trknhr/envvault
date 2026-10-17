@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/keyring"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,7 +39,7 @@ func (r *contentResolver) renderYAML(ctx context.Context, body []byte) ([]byte, 
 		return nil, clerr.Wrap(clerr.ConfigInvalid, "render home file YAML template", err)
 	}
 	if err := encoder.Close(); err != nil {
-		zero(output.Bytes())
+		keyring.Zero(output.Bytes())
 		return nil, clerr.Wrap(clerr.CleanupFailed, "close home file YAML encoder", err)
 	}
 	return copyWithTrailingNewline(output.Bytes()), nil

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/keyring"
 	"golang.org/x/term"
 )
 
@@ -28,7 +29,7 @@ func terminalCredentialReader(input *os.File) CredentialReader {
 			return nil, clerr.Wrap(clerr.ConfigInvalid, "read credential from terminal", err)
 		}
 		if newlineErr != nil {
-			zero(value)
+			keyring.Zero(value)
 			return nil, clerr.Wrap(clerr.ConfigInvalid, "write credential prompt", newlineErr)
 		}
 		return value, nil

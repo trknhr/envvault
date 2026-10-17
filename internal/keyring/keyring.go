@@ -94,7 +94,14 @@ func missingKeyError(key Key) error {
 }
 
 func unavailable() error {
-	return clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable")
+	return keyringUnavailable()
+}
+
+// Zero overwrites a secret buffer. A nil or empty slice is a no-op.
+func Zero(value []byte) {
+	for i := range value {
+		value[i] = 0
+	}
 }
 
 func cloneBytes(value []byte) []byte {

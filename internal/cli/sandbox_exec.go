@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -36,7 +35,7 @@ func cloneSandboxSessionRuntimes(in map[string]sandboxsession.Runtime) map[strin
 }
 
 func (a App) runSandboxExec(ctx context.Context, options sandboxExecArgs, stdout, stderr io.Writer) int {
-	fail := func(err error) int { fmt.Fprintln(stderr, err); return 1 }
+	fail := func(err error) int { return exitError(stderr, err) }
 	if options.target == "" || strings.HasPrefix(options.target, "-") || len(options.target) > 255 || strings.ContainsAny(options.target, "\x00\r\n") {
 		return fail(clerr.New(clerr.ConfigInvalid, "--target must name an existing sandbox branch"))
 	}

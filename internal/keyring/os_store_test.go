@@ -56,15 +56,63 @@ func TestOSStoreMapsDriverErrorsWithoutLeakingSecret(t *testing.T) {
 	}
 }
 
+func TestOSStoreMapsGetAndDeleteErrorsWithoutLeakingSecret(t *testing.T) {
+	key := CredentialValue("database/dev")
+	secret := []byte("parent-secret")
+
+	getStore := newOSStore("envvault-test", &fakeDriver{err: errors.New("backend returned parent-secret")})
+	_, err := getStore.Get(context.Background(), key)
+	assertKeyringUnavailable(t, err, secret)
+
+	deleteStore := newOSStore("envvault-test", &fakeDriver{err: errors.New("backend returned parent-secret")})
+	assertKeyringUnavailable(t, deleteStore.Delete(context.Background(), key), secret)
+}
+
+func TestOSStoreStopsBeforeDriverWhenContextIsCanceled(t *testing.T) {
+	driver := &fakeDriver{}
+	store := newOSStore("envvault-test", driver)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	key := CredentialValue("database/dev")
+
+	if _, err := store.Get(ctx, key); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Get() error = %v, want context.Canceled", err)
+	}
+	if err := store.Put(ctx, key, []byte("parent-secret")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Put() error = %v, want context.Canceled", err)
+	}
+	if err := store.Delete(ctx, key); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Delete() error = %v, want context.Canceled", err)
+	}
+	if driver.calls != 0 {
+		t.Fatalf("driver calls = %d, want 0", driver.calls)
+	}
+}
+
+func assertKeyringUnavailable(t *testing.T, err error, secret []byte) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("error = nil, want error")
+	}
+	if code, _ := clerr.CodeOf(err); code != clerr.KeyringUnavailable {
+		t.Fatalf("CodeOf(error) = %q, want %q", code, clerr.KeyringUnavailable)
+	}
+	if bytes.Contains([]byte(err.Error()), secret) {
+		t.Fatalf("error leaked secret: %q", err.Error())
+	}
+}
+
 type fakeDriver struct {
 	service  string
 	account  string
 	password string
 	deleted  string
 	err      error
+	calls    int
 }
 
 func (d *fakeDriver) Get(service, account string) (string, error) {
+	d.calls++
 	d.service = service
 	d.account = account
 	if d.err != nil {
@@ -74,6 +122,7 @@ func (d *fakeDriver) Get(service, account string) (string, error) {
 }
 
 func (d *fakeDriver) Set(service, account, password string) error {
+	d.calls++
 	d.service = service
 	d.account = account
 	d.password = password
@@ -81,6 +130,7 @@ func (d *fakeDriver) Set(service, account, password string) error {
 }
 
 func (d *fakeDriver) Delete(service, account string) error {
+	d.calls++
 	d.service = service
 	d.account = account
 	d.deleted = account

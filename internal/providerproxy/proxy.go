@@ -74,7 +74,7 @@ func (r *EnvResolver) ResolveReference(ctx context.Context, ref envref.Reference
 		if err != nil {
 			return "", err
 		}
-		defer zero(secret)
+		defer keyring.Zero(secret)
 		return string(secret), nil
 	default:
 		return "", clerr.New(clerr.ReferenceInvalid, "unknown reference part")
@@ -286,7 +286,7 @@ func Start(ctx context.Context, options ServerOptions) (*Server, error) {
 		return nil, clerr.New(clerr.KeyringUnavailable, "provider api key missing")
 	}
 	if options.Token == "" {
-		zero(apiKey)
+		keyring.Zero(apiKey)
 		return nil, clerr.New(clerr.IssueFailed, "local proxy token missing")
 	}
 	listenAddress := options.ListenAddress
@@ -295,7 +295,7 @@ func Start(ctx context.Context, options ServerOptions) (*Server, error) {
 	}
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
-		zero(apiKey)
+		keyring.Zero(apiKey)
 		return nil, clerr.Wrap(clerr.RuntimeUnavailable, "start provider proxy listener", err)
 	}
 
@@ -352,8 +352,8 @@ func (s *Server) Close(ctx context.Context) error {
 		}
 	}
 	s.valueMu.Lock()
-	zero(s.apiKey)
-	zero(s.token)
+	keyring.Zero(s.apiKey)
+	keyring.Zero(s.token)
 	s.apiKey = nil
 	s.token = nil
 	s.valueMu.Unlock()
@@ -546,10 +546,4 @@ func advertiseBaseURL(baseURL, host string) (string, error) {
 	}
 	u.Host = net.JoinHostPort(host, u.Port())
 	return u.String(), nil
-}
-
-func zero(value []byte) {
-	for i := range value {
-		value[i] = 0
-	}
 }

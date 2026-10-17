@@ -475,9 +475,18 @@ func newListLeaf(use, short string, execution *commandExecution, list func(io.Wr
 	}
 }
 
+func exitError(w io.Writer, err error) int {
+	fmt.Fprintln(w, err)
+	return 1
+}
+
+func exitUnimplemented(w io.Writer, command string) int {
+	fmt.Fprintf(w, "envvault: command %q is not implemented yet\n", command)
+	return 2
+}
+
 func failCommand(execution *commandExecution, cmd *cobra.Command, err error) {
-	fmt.Fprintln(cmd.ErrOrStderr(), err)
-	execution.exitCode = 1
+	execution.exitCode = exitError(cmd.ErrOrStderr(), err)
 }
 
 func commandExamples(examples ...string) string {

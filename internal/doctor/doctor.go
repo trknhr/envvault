@@ -156,83 +156,76 @@ func (c Checker) checkRuntime(result *Result, cfg config.File, configOK bool) {
 }
 
 func (c Checker) checkSQLite(ctx context.Context, result *Result) {
-	path := filepath.Join(c.Paths.DataDir, sqliteFilename)
-	info, err := os.Stat(path)
+	c.checkSQLiteDatabase(ctx, result, sqliteDatabaseCheck{
+		name:          "sqlite",
+		label:         "sqlite",
+		path:          filepath.Join(c.Paths.DataDir, sqliteFilename),
+		requireSchema: true,
+	})
+}
+
+func (c Checker) checkTalosSQLite(ctx context.Context, result *Result) {
+	c.checkSQLiteDatabase(ctx, result, sqliteDatabaseCheck{
+		name:  "talos-sqlite",
+		label: "talos sqlite",
+		path:  filepath.Join(c.Paths.DataDir, talosSQLiteFilename),
+	})
+}
+
+type sqliteDatabaseCheck struct {
+	name          string
+	label         string
+	path          string
+	requireSchema bool
+}
+
+func (c Checker) checkSQLiteDatabase(ctx context.Context, result *Result, check sqliteDatabaseCheck) {
+	unavailable := check.label + " database is unavailable"
+	info, err := os.Stat(check.path)
 	if err != nil {
-		addError(result, "sqlite", clerr.Wrap(clerr.ConfigInvalid, "inspect sqlite database", err), "sqlite database is unavailable")
+		addError(result, check.name, clerr.Wrap(clerr.ConfigInvalid, "inspect "+check.label+" database", err), unavailable)
 		return
 	}
 	if info.IsDir() {
-		addError(result, "sqlite", clerr.New(clerr.ConfigInvalid, "sqlite path is a directory"), "sqlite database is unavailable")
+		addError(result, check.name, clerr.New(clerr.ConfigInvalid, check.label+" path is a directory"), unavailable)
 		return
 	}
 
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", check.path)
 	if err != nil {
-		addError(result, "sqlite", clerr.Wrap(clerr.ConfigInvalid, "open sqlite database", err), "sqlite database is unavailable")
+		addError(result, check.name, clerr.Wrap(clerr.ConfigInvalid, "open "+check.label+" database", err), unavailable)
 		return
 	}
 	defer db.Close()
 	if err := db.PingContext(ctx); err != nil {
-		addError(result, "sqlite", clerr.Wrap(clerr.ConfigInvalid, "ping sqlite database", err), "sqlite database is unavailable")
+		addError(result, check.name, clerr.Wrap(clerr.ConfigInvalid, "ping "+check.label+" database", err), unavailable)
 		return
 	}
 
 	var integrity string
 	if err := db.QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&integrity); err != nil {
-		addError(result, "sqlite", clerr.Wrap(clerr.ConfigInvalid, "run sqlite integrity check", err), "sqlite integrity check failed")
+		addError(result, check.name, clerr.Wrap(clerr.ConfigInvalid, "run "+check.label+" integrity check", err), check.label+" integrity check failed")
 		return
 	}
 	if integrity != "ok" {
-		addError(result, "sqlite", clerr.New(clerr.ConfigInvalid, "sqlite integrity check failed"), "sqlite integrity check failed")
+		addError(result, check.name, clerr.New(clerr.ConfigInvalid, check.label+" integrity check failed"), check.label+" integrity check failed")
+		return
+	}
+	if !check.requireSchema {
+		addOK(result, check.name, "integrity ok")
 		return
 	}
 
 	var version int
 	if err := db.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
-		addError(result, "sqlite", clerr.Wrap(clerr.ConfigInvalid, "read sqlite migration version", err), "sqlite schema is invalid")
+		addError(result, check.name, clerr.Wrap(clerr.ConfigInvalid, "read sqlite migration version", err), "sqlite schema is invalid")
 		return
 	}
 	if version < 1 {
-		addError(result, "sqlite", clerr.New(clerr.ConfigInvalid, "sqlite schema is not migrated"), "sqlite schema is invalid")
+		addError(result, check.name, clerr.New(clerr.ConfigInvalid, "sqlite schema is not migrated"), "sqlite schema is invalid")
 		return
 	}
-	addOK(result, "sqlite", fmt.Sprintf("integrity ok; schema version %d", version))
-}
-
-func (c Checker) checkTalosSQLite(ctx context.Context, result *Result) {
-	path := filepath.Join(c.Paths.DataDir, talosSQLiteFilename)
-	info, err := os.Stat(path)
-	if err != nil {
-		addError(result, "talos-sqlite", clerr.Wrap(clerr.ConfigInvalid, "inspect talos sqlite database", err), "talos sqlite database is unavailable")
-		return
-	}
-	if info.IsDir() {
-		addError(result, "talos-sqlite", clerr.New(clerr.ConfigInvalid, "talos sqlite path is a directory"), "talos sqlite database is unavailable")
-		return
-	}
-
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		addError(result, "talos-sqlite", clerr.Wrap(clerr.ConfigInvalid, "open talos sqlite database", err), "talos sqlite database is unavailable")
-		return
-	}
-	defer db.Close()
-	if err := db.PingContext(ctx); err != nil {
-		addError(result, "talos-sqlite", clerr.Wrap(clerr.ConfigInvalid, "ping talos sqlite database", err), "talos sqlite database is unavailable")
-		return
-	}
-
-	var integrity string
-	if err := db.QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&integrity); err != nil {
-		addError(result, "talos-sqlite", clerr.Wrap(clerr.ConfigInvalid, "run talos sqlite integrity check", err), "talos sqlite integrity check failed")
-		return
-	}
-	if integrity != "ok" {
-		addError(result, "talos-sqlite", clerr.New(clerr.ConfigInvalid, "talos sqlite integrity check failed"), "talos sqlite integrity check failed")
-		return
-	}
-	addOK(result, "talos-sqlite", "integrity ok")
+	addOK(result, check.name, fmt.Sprintf("integrity ok; schema version %d", version))
 }
 
 func (c Checker) checkJWKS(result *Result) {
@@ -277,7 +270,7 @@ func (c Checker) checkKeyring(ctx context.Context, result *Result, cfg config.Fi
 			addError(result, "keyring", err, "required keyring entry unavailable: "+string(key))
 			return
 		}
-		zero(value)
+		keyring.Zero(value)
 	}
 	addOK(result, "keyring", fmt.Sprintf("%d required entr%s present", len(keys), pluralY(len(keys))))
 }
@@ -747,10 +740,4 @@ func pluralS(count int) string {
 		return ""
 	}
 	return "s"
-}
-
-func zero(value []byte) {
-	for i := range value {
-		value[i] = 0
-	}
 }

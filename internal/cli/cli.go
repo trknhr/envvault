@@ -42,8 +42,9 @@ import (
 )
 
 const (
-	defaultJWKSFilename  = "envvault-jwks.json"
-	defaultAuditFilename = "audit.jsonl"
+	defaultJWKSFilename    = "envvault-jwks.json"
+	defaultAuditFilename   = "audit.jsonl"
+	resourceCleanupTimeout = 5 * time.Second
 )
 
 type ChildRunner interface {
@@ -230,8 +231,7 @@ func cloneSandboxRuntimes(in map[string]sandbox.Runtime) map[string]sandbox.Runt
 func Run(args []string, stdout, stderr io.Writer) int {
 	paths, err := config.DefaultPaths()
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	options := defaultOptions(paths)
 	options.Stdin = os.Stdin
@@ -247,20 +247,17 @@ func (a App) Run(ctx context.Context, args []string, stdout, stderr io.Writer) i
 
 func (a App) runInit(ctx context.Context, stderr io.Writer) int {
 	if a.initializer == nil {
-		fmt.Fprintln(stderr, "envvault: command \"init\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "init")
 	}
 	if _, err := a.initializer.Init(ctx); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	return 0
 }
 
 func (a App) runReset(ctx context.Context, options resetpkg.Options, confirmed bool, stdout, stderr io.Writer) int {
 	if a.resetter == nil {
-		fmt.Fprintln(stderr, "envvault: command \"reset\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "reset")
 	}
 	if !options.DryRun && !confirmed {
 		fmt.Fprintln(stderr, "envvault: reset requires --yes or use --dry-run")
@@ -268,8 +265,7 @@ func (a App) runReset(ctx context.Context, options resetpkg.Options, confirmed b
 	}
 	result, err := a.resetter.Reset(ctx, options)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if options.DryRun {
 		writeResetPlan(stdout, result)
@@ -279,24 +275,21 @@ func (a App) runReset(ctx context.Context, options resetpkg.Options, confirmed b
 
 func (a App) runDoctor(ctx context.Context, repair bool, stdout, stderr io.Writer) int {
 	if a.doctor == nil {
-		fmt.Fprintln(stderr, "envvault: command \"doctor\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "doctor")
 	}
 	var result doctorpkg.Result
 	var err error
 	if repair {
 		repairer, ok := a.doctor.(DoctorRepairer)
 		if !ok {
-			fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "doctor repair is unavailable"))
-			return 1
+			return exitError(stderr, clerr.New(clerr.ConfigInvalid, "doctor repair is unavailable"))
 		}
 		result, err = repairer.Repair(ctx)
 	} else {
 		result, err = a.doctor.Check(ctx)
 	}
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	writeDoctorResult(stdout, result)
 	if result.HasErrors() {
@@ -306,163 +299,136 @@ func (a App) runDoctor(ctx context.Context, repair bool, stdout, stderr io.Write
 }
 
 func (a App) runProfileAddProcess(ctx context.Context, request profilemgr.ProcessRequest, stderr io.Writer) int {
-	if a.profileManager == nil {
-		fmt.Fprintln(stderr, "envvault: command \"profile\" is not implemented yet")
-		return 2
-	}
-	binding, err := a.approveProjectBinding(ctx, request.ProjectBinding.Mode)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	request.ProjectBinding = binding
-	if _, err := a.profileManager.AddProcess(ctx, request); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	return 0
+	return a.addApprovedProfile(ctx, request.ProjectBinding.Mode, stderr, func(binding profile.ProjectBinding) error {
+		request.ProjectBinding = binding
+		_, err := a.profileManager.AddProcess(ctx, request)
+		return err
+	})
 }
 
 func (a App) runProfileAddBrowserSession(ctx context.Context, request profilemgr.BrowserSessionRequest, stderr io.Writer) int {
+	return a.addApprovedProfile(ctx, request.ProjectBinding.Mode, stderr, func(binding profile.ProjectBinding) error {
+		request.ProjectBinding = binding
+		_, err := a.profileManager.AddBrowserSession(ctx, request)
+		return err
+	})
+}
+
+func (a App) addApprovedProfile(ctx context.Context, mode profile.ProjectBindingMode, stderr io.Writer, add func(profile.ProjectBinding) error) int {
 	if a.profileManager == nil {
-		fmt.Fprintln(stderr, "envvault: command \"profile\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "profile")
 	}
-	binding, err := a.approveProjectBinding(ctx, request.ProjectBinding.Mode)
+	binding, err := a.approveProjectBinding(ctx, mode)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
-	request.ProjectBinding = binding
-	if _, err := a.profileManager.AddBrowserSession(ctx, request); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+	if err := add(binding); err != nil {
+		return exitError(stderr, err)
 	}
 	return 0
 }
 
 func (a App) runSecretAdd(ctx context.Context, name string, stderr io.Writer) int {
-	if a.secrets == nil {
-		fmt.Fprintln(stderr, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable"))
-		return 1
+	if err := a.requireSecrets(); err != nil {
+		return exitError(stderr, err)
 	}
-	input := a.stdin
-	if input == nil {
-		input = os.Stdin
-	}
-	raw, err := io.ReadAll(input)
+	raw, err := io.ReadAll(a.commandStdin())
 	if err != nil {
-		fmt.Fprintln(stderr, clerr.Wrap(clerr.ConfigInvalid, "read api key from stdin", err))
-		return 1
+		return exitError(stderr, clerr.Wrap(clerr.ConfigInvalid, "read api key from stdin", err))
 	}
 	apiKey := strings.TrimSpace(string(raw))
-	if strings.TrimSpace(apiKey) == "" {
-		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "api key is required"))
-		return 1
+	if apiKey == "" {
+		return exitError(stderr, clerr.New(clerr.ConfigInvalid, "api key is required"))
 	}
 	secret := []byte(apiKey)
-	defer zero(secret)
-	if err := a.secrets.Put(ctx, keyring.CredentialValue(name), secret); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	if err := a.recordCredentialName(name); err != nil {
-		_ = a.secrets.Delete(ctx, keyring.CredentialValue(name))
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	return 0
+	defer keyring.Zero(secret)
+	return a.storeCredential(ctx, name, secret, stderr)
 }
 
 func (a App) runCredentialSetFromStdin(ctx context.Context, name string, stderr io.Writer) int {
-	if a.secrets == nil {
-		fmt.Fprintln(stderr, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable"))
-		return 1
+	if err := a.requireSecrets(); err != nil {
+		return exitError(stderr, err)
 	}
-	input := a.stdin
-	if input == nil {
-		input = os.Stdin
-	}
-	raw, err := io.ReadAll(input)
+	raw, err := io.ReadAll(a.commandStdin())
 	if err != nil {
-		fmt.Fprintln(stderr, clerr.Wrap(clerr.ConfigInvalid, "read credential from stdin", err))
-		return 1
+		return exitError(stderr, clerr.Wrap(clerr.ConfigInvalid, "read credential from stdin", err))
 	}
-	defer zero(raw)
+	defer keyring.Zero(raw)
 	value := bytes.TrimSpace(raw)
 	if len(value) == 0 {
-		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "credential value is required"))
-		return 1
+		return exitError(stderr, clerr.New(clerr.ConfigInvalid, "credential value is required"))
 	}
 	return a.storeCredential(ctx, name, value, stderr)
 }
 
 func (a App) runCredentialSetInteractive(ctx context.Context, name string, stderr io.Writer) int {
-	if a.secrets == nil {
-		fmt.Fprintln(stderr, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable"))
-		return 1
+	if err := a.requireSecrets(); err != nil {
+		return exitError(stderr, err)
 	}
 	if a.credentialReader == nil {
-		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "interactive credential input unavailable; use envvault credential set <name> --value-stdin"))
-		return 1
+		return exitError(stderr, clerr.New(clerr.ConfigInvalid, "interactive credential input unavailable; use envvault credential set <name> --value-stdin"))
 	}
 	raw, err := a.credentialReader(stderr)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
-	defer zero(raw)
+	defer keyring.Zero(raw)
 	value := bytes.TrimSpace(raw)
 	if len(value) == 0 {
-		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "credential value is required"))
-		return 1
+		return exitError(stderr, clerr.New(clerr.ConfigInvalid, "credential value is required"))
 	}
 	return a.storeCredential(ctx, name, value, stderr)
 }
 
+func (a App) requireSecrets() error {
+	if a.secrets == nil {
+		return clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable")
+	}
+	return nil
+}
+
+func (a App) commandStdin() io.Reader {
+	if a.stdin != nil {
+		return a.stdin
+	}
+	return os.Stdin
+}
+
 func (a App) storeCredential(ctx context.Context, name string, value []byte, stderr io.Writer) int {
 	if err := a.secrets.Put(ctx, keyring.CredentialValue(name), value); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if err := a.recordCredentialName(name); err != nil {
 		_ = a.secrets.Delete(ctx, keyring.CredentialValue(name))
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	return 0
 }
 
 func (a App) runCredentialDelete(ctx context.Context, name string, cascade bool, stderr io.Writer) int {
-	if a.secrets == nil {
-		fmt.Fprintln(stderr, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable"))
-		return 1
+	if err := a.requireSecrets(); err != nil {
+		return exitError(stderr, err)
 	}
 	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	name = strings.TrimSpace(name)
 	if !cfg.RemoveCredential(name) {
-		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "credential not found"))
-		return 1
+		return exitError(stderr, clerr.New(clerr.ConfigInvalid, "credential not found"))
 	}
 	referencingProfiles := profilesUsingCredential(cfg, name)
 	if len(referencingProfiles) > 0 && !cascade {
-		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "credential is used by profiles: "+strings.Join(referencingProfiles, ", ")+"; pass --cascade to delete them too"))
-		return 1
+		return exitError(stderr, clerr.New(clerr.ConfigInvalid, "credential is used by profiles: "+strings.Join(referencingProfiles, ", ")+"; pass --cascade to delete them too"))
 	}
 
 	value, err := a.secrets.Get(ctx, keyring.CredentialValue(name))
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
-	defer zero(value)
+	defer keyring.Zero(value)
 	if err := a.secrets.Delete(ctx, keyring.CredentialValue(name)); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	for _, profileName := range referencingProfiles {
 		delete(cfg.Profiles, profileName)
@@ -475,8 +441,7 @@ func (a App) runCredentialDelete(ctx context.Context, name string, cascade bool,
 		if restoreErr := a.secrets.Put(context.WithoutCancel(ctx), keyring.CredentialValue(name), value); restoreErr != nil {
 			fmt.Fprintln(stderr, clerr.Wrap(clerr.CleanupFailed, "restore credential after config update failed", restoreErr))
 		}
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	return 0
 }
@@ -495,35 +460,47 @@ func profilesUsingCredential(cfg config.File, credentialName string) []string {
 func (a App) runCredentialList(stdout, stderr io.Writer) int {
 	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	rows := make([][]string, 0, len(cfg.CredentialNames()))
 	for _, name := range cfg.CredentialNames() {
 		rows = append(rows, []string{name})
 	}
 	if err := writeTable(stdout, []string{"NAME"}, rows); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	return 0
 }
 
 func (a App) runProfileList(stdout, stderr io.Writer) int {
-	return a.writeProfileList(stdout, stderr, nil, []string{"NAME", "KIND", "CREDENTIAL", "TARGET", "BINDING"})
+	return a.writeProfileList(stdout, stderr, nil, []string{"NAME", "KIND", "CREDENTIAL", "TARGET", "BINDING"}, func(name string, stored config.Profile) []string {
+		return []string{
+			name,
+			string(stored.Kind),
+			stored.CredentialName,
+			listTarget(stored),
+			listProjectBinding(stored.ProjectBinding.Mode),
+		}
+	})
 }
 
 func (a App) runProxyList(stdout, stderr io.Writer) int {
 	return a.writeProfileList(stdout, stderr, func(stored config.Profile) bool {
 		return stored.Kind == profile.KindProviderProxy
-	}, []string{"NAME", "CREDENTIAL", "TARGET", "BINDING"})
+	}, []string{"NAME", "CREDENTIAL", "TARGET", "BINDING"}, func(name string, stored config.Profile) []string {
+		return []string{
+			name,
+			stored.CredentialName,
+			listTarget(stored),
+			listProjectBinding(stored.ProjectBinding.Mode),
+		}
+	})
 }
 
-func (a App) writeProfileList(stdout, stderr io.Writer, include func(config.Profile) bool, header []string) int {
+func (a App) writeProfileList(stdout, stderr io.Writer, include func(config.Profile) bool, header []string, row func(string, config.Profile) []string) int {
 	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	names := make([]string, 0, len(cfg.Profiles))
 	for name := range cfg.Profiles {
@@ -537,26 +514,10 @@ func (a App) writeProfileList(stdout, stderr io.Writer, include func(config.Prof
 		if include != nil && !include(stored) {
 			continue
 		}
-		if len(header) == 4 {
-			rows = append(rows, []string{
-				name,
-				stored.CredentialName,
-				listTarget(stored),
-				listProjectBinding(stored.ProjectBinding.Mode),
-			})
-			continue
-		}
-		rows = append(rows, []string{
-			name,
-			string(stored.Kind),
-			stored.CredentialName,
-			listTarget(stored),
-			listProjectBinding(stored.ProjectBinding.Mode),
-		})
+		rows = append(rows, row(name, stored))
 	}
 	if err := writeTable(stdout, header, rows); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	return 0
 }
@@ -587,21 +548,10 @@ func listProjectBinding(mode profile.ProjectBindingMode) string {
 func (a App) runProxyAdd(ctx context.Context, request proxyAddRequest, stdout, stderr io.Writer) int {
 	binding, err := a.approveProjectBinding(ctx, request.ProjectBinding.Mode)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	request.ProjectBinding = binding
-
-	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	if _, exists := cfg.Profiles[request.Name]; exists {
-		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "profile already exists"))
-		return 1
-	}
-	stored := config.Profile{
+	if err := a.saveNewProfile(request.Name, config.Profile{
 		Kind:           profile.KindProviderProxy,
 		CredentialName: request.CredentialName,
 		AuthMode:       request.AuthMode,
@@ -610,15 +560,9 @@ func (a App) runProxyAdd(ctx context.Context, request proxyAddRequest, stdout, s
 		AllowedPaths:   append([]string(nil), request.AllowedPaths...),
 		AllowedMethods: append([]string(nil), request.AllowedMethods...),
 		LocalTokenTTL:  config.Duration(request.LocalTokenTTL),
-		ProjectBinding: toConfigProjectBinding(request.ProjectBinding),
-	}
-	if cfg.Profiles == nil {
-		cfg.Profiles = map[string]config.Profile{}
-	}
-	cfg.Profiles[request.Name] = stored
-	if err := config.Save(a.paths.ConfigFile, cfg); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		ProjectBinding: config.ProjectBindingFrom(request.ProjectBinding),
+	}); err != nil {
+		return exitError(stderr, err)
 	}
 	fmt.Fprintln(stdout, "Add this to your .env:")
 	fmt.Fprint(stdout, envref.ProxyDotenv(request.Name))
@@ -628,33 +572,28 @@ func (a App) runProxyAdd(ctx context.Context, request proxyAddRequest, stdout, s
 func (a App) runInjectAdd(ctx context.Context, request injectAddRequest, stderr io.Writer) int {
 	binding, err := a.approveProjectBinding(ctx, request.ProjectBinding.Mode)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	request.ProjectBinding = binding
-
-	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	if _, exists := cfg.Profiles[request.Name]; exists {
-		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "profile already exists"))
-		return 1
-	}
-	if cfg.Profiles == nil {
-		cfg.Profiles = map[string]config.Profile{}
-	}
-	cfg.Profiles[request.Name] = config.Profile{
+	if err := a.saveNewProfile(request.Name, config.Profile{
 		Kind:           profile.KindInject,
 		CredentialName: request.CredentialName,
-		ProjectBinding: toConfigProjectBinding(request.ProjectBinding),
-	}
-	if err := config.Save(a.paths.ConfigFile, cfg); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		ProjectBinding: config.ProjectBindingFrom(request.ProjectBinding),
+	}); err != nil {
+		return exitError(stderr, err)
 	}
 	return 0
+}
+
+func (a App) saveNewProfile(name string, stored config.Profile) error {
+	cfg, err := config.LoadOrDefault(a.paths.ConfigFile)
+	if err != nil {
+		return err
+	}
+	if err := cfg.AddProfile(name, stored); err != nil {
+		return err
+	}
+	return config.Save(a.paths.ConfigFile, cfg)
 }
 
 func (a App) recordCredentialName(name string) error {
@@ -671,14 +610,12 @@ func (a App) recordCredentialName(name string) error {
 
 func (a App) runAdminServe(ctx context.Context, request admin.ServeRequest, stdout, stderr io.Writer) int {
 	if a.adminServer == nil {
-		fmt.Fprintln(stderr, "envvault: command \"admin\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "admin")
 	}
 	if request.Token == "" && request.TokenEnv != "" {
 		request.Token = strings.TrimSpace(os.Getenv(request.TokenEnv))
 		if request.Token == "" {
-			fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "admin token env is empty"))
-			return 1
+			return exitError(stderr, clerr.New(clerr.ConfigInvalid, "admin token env is empty"))
 		}
 	}
 	if request.Token == "" {
@@ -688,28 +625,24 @@ func (a App) runAdminServe(ctx context.Context, request admin.ServeRequest, stdo
 		}
 		token, err := tokenSource()
 		if err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
+			return exitError(stderr, err)
 		}
 		request.Token = token
 	}
 	request.Stdout = stdout
 	if err := a.adminServer.Serve(ctx, request); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	return 0
 }
 
 func (a App) runAdminStart(ctx context.Context, request admin.StartRequest, stdout, stderr io.Writer) int {
 	if a.adminController == nil {
-		fmt.Fprintln(stderr, "envvault: command \"admin\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "admin")
 	}
 	state, err := a.adminController.Start(ctx, request)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	fmt.Fprintf(stdout, "EnvVault admin: %s\n", state.URL)
 	return 0
@@ -717,13 +650,11 @@ func (a App) runAdminStart(ctx context.Context, request admin.StartRequest, stdo
 
 func (a App) runAdminStatus(ctx context.Context, stdout, stderr io.Writer) int {
 	if a.adminController == nil {
-		fmt.Fprintln(stderr, "envvault: command \"admin\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "admin")
 	}
 	status, err := a.adminController.Status(ctx)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if !status.Running {
 		fmt.Fprintln(stdout, "stopped")
@@ -735,13 +666,11 @@ func (a App) runAdminStatus(ctx context.Context, stdout, stderr io.Writer) int {
 
 func (a App) runAdminStop(ctx context.Context, stdout, stderr io.Writer) int {
 	if a.adminController == nil {
-		fmt.Fprintln(stderr, "envvault: command \"admin\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "admin")
 	}
 	state, err := a.adminController.Stop(ctx)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if state.PID == 0 {
 		fmt.Fprintln(stdout, "stopped")
@@ -778,35 +707,28 @@ func (a App) confirmProjectBinding(ctx context.Context, mode profile.ProjectBind
 
 func (a App) runToken(ctx context.Context, parsed tokenArgs, stdout, stderr io.Writer) int {
 	if !a.tokenConfigured() {
-		fmt.Fprintln(stderr, "envvault: command \"token\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "token")
 	}
 	if a.tokenOutputToTerminal() && !parsed.allowTTY && !parsed.quiet {
-		fmt.Fprintln(stderr, clerr.New(clerr.ConfigInvalid, "token output to a terminal requires --allow-tty or --quiet"))
-		return 1
+		return exitError(stderr, clerr.New(clerr.ConfigInvalid, "token output to a terminal requires --allow-tty or --quiet"))
 	}
 	p, err := a.profiles.Profile(parsed.profile)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if p.Kind != profile.KindProcess {
-		fmt.Fprintln(stderr, clerr.New(clerr.ProfileKindMismatch, p.Name))
-		return 1
+		return exitError(stderr, clerr.New(clerr.ProfileKindMismatch, p.Name))
 	}
 	projectIdentity, err := a.detectProjectIdentity(ctx)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if err := projectbinding.Check(p.ProjectBinding, projectIdentity); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	claims, err := process.ProcessClaims(p, projectIdentity)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 
 	credential, err := a.issuer.Issue(ctx, issuer.Grant{
@@ -817,8 +739,7 @@ func (a App) runToken(ctx context.Context, parsed tokenArgs, stdout, stderr io.W
 		Claims:   claims,
 	})
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if a.tokenOutputToTerminal() && parsed.allowTTY && !parsed.quiet {
 		fmt.Fprintln(stderr, "warning: writing a leased token to a terminal")
@@ -830,8 +751,7 @@ func (a App) runToken(ctx context.Context, parsed tokenArgs, stdout, stderr io.W
 		Resource:   p.Resource,
 		Now:        a.nowTime(),
 	}); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	return 0
 }
@@ -854,13 +774,11 @@ func (a App) nowTime() time.Time {
 func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Writer) int {
 	for _, assignment := range parsed.inlineEnv {
 		if err := validateEnvAssignment(assignment); err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
+			return exitError(stderr, err)
 		}
 	}
 	if !a.execConfigured() {
-		fmt.Fprintln(stderr, "envvault: command \"exec\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "exec")
 	}
 	parentEnvironment := a.parentEnvironment()
 	homeFileSourceDir := ""
@@ -868,24 +786,18 @@ func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Wri
 	if homefile.RequiresSourceDir(parsed.homeFiles) {
 		homeFileSourceDir, err = a.homeFileSourceDir()
 		if err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
+			return exitError(stderr, err)
 		}
 	}
 	projectIdentity, err := a.detectProjectIdentity(ctx)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	refResolver := &providerproxy.EnvResolver{
 		Profiles: a.profiles,
 		Secrets:  a.secrets,
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = refResolver.Close(shutdownCtx)
-	}()
+	defer closeQuietly(refResolver.Close)
 	env, err := process.BuildEnv(ctx, process.EnvInput{
 		Parent:            parentEnvironment,
 		EnvFiles:          parsed.envFiles,
@@ -894,8 +806,7 @@ func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Wri
 		ReferenceResolver: refResolver,
 	}, a.profiles, a.issuer)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	var homeWorkspace *homefile.Workspace
 	if len(parsed.homeFiles) > 0 {
@@ -906,8 +817,7 @@ func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Wri
 			Secrets:   a.secrets,
 		})
 		if err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
+			return exitError(stderr, err)
 		}
 		homeWorkspace.ApplyEnvironment(env)
 		defer homeWorkspace.Close()
@@ -944,55 +854,63 @@ func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Wri
 }
 
 func (a App) homeFileSourceDir() (string, error) {
-	start := a.projectStartDir
-	if start == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", clerr.Wrap(clerr.ConfigInvalid, "get current directory for --home-file", err)
-		}
-		start = cwd
-	}
-	absolute, err := filepath.Abs(start)
-	if err != nil {
-		return "", clerr.Wrap(clerr.ConfigInvalid, "resolve current directory for --home-file", err)
-	}
-	return filepath.Clean(absolute), nil
+	return a.absoluteInvocationDir("get current directory for --home-file", "resolve current directory for --home-file")
 }
 
 func (a App) detectProjectIdentity(ctx context.Context) (projectbinding.Identity, error) {
-	start := a.projectStartDir
-	if start == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return projectbinding.Identity{}, clerr.Wrap(clerr.ConfigInvalid, "get current directory", err)
-		}
-		start = cwd
+	start, err := a.invocationDir("get current directory")
+	if err != nil {
+		return projectbinding.Identity{}, err
 	}
 	return projectbinding.Detect(ctx, start)
 }
 
+func (a App) invocationDir(missingDetail string) (string, error) {
+	if a.projectStartDir != "" {
+		return a.projectStartDir, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", clerr.Wrap(clerr.ConfigInvalid, missingDetail, err)
+	}
+	return cwd, nil
+}
+
+func (a App) absoluteInvocationDir(getDetail, resolveDetail string) (string, error) {
+	start, err := a.invocationDir(getDetail)
+	if err != nil {
+		return "", err
+	}
+	absolute, err := filepath.Abs(start)
+	if err != nil {
+		return "", clerr.Wrap(clerr.ConfigInvalid, resolveDetail, err)
+	}
+	return filepath.Clean(absolute), nil
+}
+
+func closeQuietly(close func(context.Context) error) {
+	ctx, cancel := context.WithTimeout(context.Background(), resourceCleanupTimeout)
+	defer cancel()
+	_ = close(ctx)
+}
+
 func (a App) runOpen(ctx context.Context, parsed openArgs, stdout, stderr io.Writer) int {
 	if !a.openConfigured() {
-		fmt.Fprintln(stderr, "envvault: command \"open\" is not implemented yet")
-		return 2
+		return exitUnimplemented(stderr, "open")
 	}
 	p, err := a.profiles.Profile(parsed.profile)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if p.Kind != profile.KindBrowserSession {
-		fmt.Fprintln(stderr, clerr.New(clerr.ProfileKindMismatch, p.Name))
-		return 1
+		return exitError(stderr, clerr.New(clerr.ProfileKindMismatch, p.Name))
 	}
 	projectIdentity, err := a.detectProjectIdentity(ctx)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if err := projectbinding.Check(p.ProjectBinding, projectIdentity); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 
 	result, err := a.browser.Open(ctx, browser.OpenRequest{
@@ -1002,8 +920,7 @@ func (a App) runOpen(ctx context.Context, parsed openArgs, stdout, stderr io.Wri
 		ProjectIdentity: projectIdentity,
 	})
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	if parsed.printURL {
 		fmt.Fprintln(stdout, result.LaunchURL)
@@ -1030,15 +947,6 @@ type autoProjectBindingConfirmer struct{}
 
 func (autoProjectBindingConfirmer) ConfirmProjectBinding(context.Context, ProjectBindingConfirmation) error {
 	return nil
-}
-
-func toConfigProjectBinding(binding profile.ProjectBinding) config.ProjectBinding {
-	return config.ProjectBinding{
-		Mode:      binding.Mode,
-		PathHash:  binding.PathHash,
-		GitRoot:   binding.GitRoot,
-		GitRemote: binding.GitRemote,
-	}
 }
 
 type ttyProjectBindingConfirmer struct {
@@ -1105,17 +1013,14 @@ func outputIsTerminal(writer io.Writer) bool {
 func (a App) runJWKSShow(stdout, stderr io.Writer) int {
 	body, err := os.ReadFile(a.jwksPath())
 	if err != nil {
-		fmt.Fprintln(stderr, clerr.Wrap(clerr.ConfigInvalid, "read jwks file", err))
-		return 1
+		return exitError(stderr, clerr.Wrap(clerr.ConfigInvalid, "read jwks file", err))
 	}
 	if _, err := stdout.Write(body); err != nil {
-		fmt.Fprintln(stderr, clerr.Wrap(clerr.ConfigInvalid, "write jwks", err))
-		return 1
+		return exitError(stderr, clerr.Wrap(clerr.ConfigInvalid, "write jwks", err))
 	}
 	if len(body) == 0 || body[len(body)-1] != '\n' {
 		if _, err := fmt.Fprintln(stdout); err != nil {
-			fmt.Fprintln(stderr, clerr.Wrap(clerr.ConfigInvalid, "write jwks newline", err))
-			return 1
+			return exitError(stderr, clerr.Wrap(clerr.ConfigInvalid, "write jwks newline", err))
 		}
 	}
 	return 0
@@ -1124,12 +1029,10 @@ func (a App) runJWKSShow(stdout, stderr io.Writer) int {
 func (a App) runJWKSExport(output string, stderr io.Writer) int {
 	body, err := os.ReadFile(a.jwksPath())
 	if err != nil {
-		fmt.Fprintln(stderr, clerr.Wrap(clerr.ConfigInvalid, "read jwks file", err))
-		return 1
+		return exitError(stderr, clerr.Wrap(clerr.ConfigInvalid, "read jwks file", err))
 	}
 	if err := jwks.Export(output, body); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	return 0
 }
@@ -1137,8 +1040,7 @@ func (a App) runJWKSExport(output string, stderr io.Writer) int {
 func (a App) runIssuerShow(stdout, stderr io.Writer) int {
 	cfg, err := config.Load(a.paths.ConfigFile)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		return exitError(stderr, err)
 	}
 	fmt.Fprintf(stdout, "envvault-local:%s\n", cfg.Installation.ID)
 	return 0
