@@ -137,6 +137,27 @@ func TestHTTPAdapterStartsExistingProxyBehaviorAndClosesLease(t *testing.T) {
 	}
 }
 
+func TestHTTPAdapterRejectsEmptyCredentialBeforeOpeningGateway(t *testing.T) {
+	ctx := context.Background()
+	policy, err := compatprofile.FromProviderProxyProfile(providerProfile("https://api.example.com/v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := keyring.NewMemoryStore()
+	if err := store.Put(ctx, keyring.CredentialValue("openai/dev"), nil); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := (providerproxy.HTTPAdapter{}).Start(ctx, connection.AdapterStartRequest{
+		Policy: policy, Grant: adapterGrant(policy, time.Now()), Credentials: keyringprovider.Provider{Store: store},
+	})
+	if lease != nil {
+		defer lease.Close(ctx)
+	}
+	if err == nil || lease != nil {
+		t.Fatal("empty credential opened a provider gateway")
+	}
+}
+
 func adapterGrant(policy connection.Policy, now time.Time) connection.Grant {
 	return connection.Grant{
 		ID:             "grant-1",
