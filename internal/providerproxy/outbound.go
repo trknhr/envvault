@@ -115,15 +115,16 @@ func (b OutboundBroker) Start(ctx context.Context, request connection.EgressBrok
 			return nil, err
 		}
 		credentialLeases = append(credentialLeases, credentialLease)
-		var value []byte
 		if err := credentialLease.WithValue(ctx, func(raw []byte) error {
-			value = append([]byte(nil), raw...)
+			if len(raw) == 0 {
+				return errors.New("credential is empty")
+			}
 			return nil
 		}); err != nil {
 			cleanupCredentials()
 			return nil, err
 		}
-		routes = append(routes, outboundRoute{policy: candidate.Policy, grant: candidate.Grant, credential: value})
+		routes = append(routes, outboundRoute{policy: candidate.Policy, grant: candidate.Grant, lease: credentialLease})
 	}
 
 	server, err := startOutboundProxy(ctx, outboundProxyOptions{
@@ -138,13 +139,15 @@ func (b OutboundBroker) Start(ctx context.Context, request connection.EgressBrok
 		cleanupCredentials()
 		return nil, err
 	}
-	return &outboundBrokerLease{
+	lease := &outboundBrokerLease{
 		server:               server,
 		credentials:          request.Credentials,
 		leases:               credentialLeases,
 		expiresAt:            expiresAt,
 		credentialReferences: credentialReferences,
-	}, nil
+	}
+	go watchCredentialValidity(ctx, server, credentialLeases)
+	return lease, nil
 }
 
 func (b OutboundBroker) now() time.Time {
@@ -326,6 +329,7 @@ type outboundRoute struct {
 	policy     connection.Policy
 	grant      connection.Grant
 	credential []byte
+	lease      connection.CredentialLease
 }
 
 func outboundRouteKey(policy connection.Policy) string {
@@ -727,6 +731,9 @@ func (s *outboundProxyServer) forwardInjected(w http.ResponseWriter, r *http.Req
 	}
 	httpPolicy := route.policy.Protocol.HTTP
 	if !routeCredentialReferenceAllowed(r, route) {
+		if connection.IsGitHTTPSRequest(r, route.policy.Destination.Host) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="EnvVault"`)
+		}
 		http.Error(w, "outbound credential reference rejected", http.StatusUnauthorized)
 		return
 	}
@@ -751,9 +758,23 @@ func (s *outboundProxyServer) forwardInjected(w http.ResponseWriter, r *http.Req
 	credential := append([]byte(nil), route.credential...)
 	s.mu.Unlock()
 	defer keyring.Zero(credential)
-	request.Header.Set(httpPolicy.Auth.Header, "Bearer "+string(credential))
 	request.Host = ""
-	response, err := s.client.Do(request)
+	var response *http.Response
+	use := func(value []byte) error {
+		if connection.IsGitHTTPSRequest(r, route.policy.Destination.Host) {
+			request.SetBasicAuth("x-access-token", string(value))
+		} else {
+			request.Header.Set(httpPolicy.Auth.Header, "Bearer "+string(value))
+		}
+		var err error
+		response, err = s.client.Do(request)
+		return err
+	}
+	if route.lease != nil {
+		err = route.lease.WithValue(r.Context(), use)
+	} else {
+		err = use(credential)
+	}
 	if err != nil {
 		http.Error(w, "provider request failed", http.StatusBadGateway)
 		return
@@ -764,10 +785,37 @@ func (s *outboundProxyServer) forwardInjected(w http.ResponseWriter, r *http.Req
 	_, _ = io.Copy(w, response.Body)
 }
 
+func watchCredentialValidity(ctx context.Context, server *outboundProxyServer, leases []connection.CredentialLease) {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		server.mu.Lock()
+		closed := server.closed
+		server.mu.Unlock()
+		if closed {
+			return
+		}
+		for _, lease := range leases {
+			if check, ok := lease.(interface{ Valid(context.Context) error }); ok && check.Valid(ctx) != nil {
+				_ = server.Close(context.Background())
+				return
+			}
+		}
+	}
+}
+
 func routeCredentialReferenceAllowed(request *http.Request, route *outboundRoute) bool {
 	httpPolicy := route.policy.Protocol.HTTP
+	if connection.IsGitHTTPSRequest(request, route.policy.Destination.Host) {
+		return connection.GitHTTPSReference(request, route.policy.Destination.Host, route.policy.Authentication.Credential.Ref, httpPolicy.AllowedMethods, httpPolicy.AllowedPaths)
+	}
 	parts := strings.Fields(request.Header.Get(httpPolicy.Auth.Header))
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") && !strings.EqualFold(parts[0], "token") {
 		return false
 	}
 	expected := route.policy.Authentication.Credential.Ref

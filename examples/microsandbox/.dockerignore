@@ -1,0 +1,4 @@
+*
+!Dockerfile
+!agent-entrypoint
+!git-credential-envvault

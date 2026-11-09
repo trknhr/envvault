@@ -97,7 +97,7 @@ func (a App) runExport(ctx context.Context, path string, passphraseStdin bool, s
 		}
 		return exitError(stderr, err)
 	}
-	bundle, err := transfer.Collect(ctx, a.secrets, cfg)
+	bundle, err := transfer.CollectWithAuth(ctx, a.secrets, cfg, a.authStore())
 	if err != nil {
 		return exitError(stderr, err)
 	}
@@ -116,6 +116,9 @@ func (a App) runExport(ctx context.Context, path string, passphraseStdin bool, s
 	if err := writeNameLines(stdout, "exported profile", profileNamesOf(bundle)); err != nil {
 		return exitError(stderr, err)
 	}
+	for _, profile := range bundle.AuthProfiles {
+		fmt.Fprintln(stdout, "exported authentication profile", profile.Metadata.Name)
+	}
 	return 0
 }
 
@@ -129,7 +132,7 @@ func (a App) runImport(ctx context.Context, path string, passphraseStdin, overwr
 	}
 	defer keyring.Zero(passphrase)
 
-	cfg, err := config.Load(a.paths.ConfigFile)
+	_, err = config.Load(a.paths.ConfigFile)
 	if err != nil {
 		if configFileMissing(err) {
 			return exitError(stderr, clerr.New(clerr.ConfigInvalid, "run envvault init before import"))
@@ -146,7 +149,16 @@ func (a App) runImport(ctx context.Context, path string, passphraseStdin, overwr
 		return exitError(stderr, err)
 	}
 	defer bundle.Zero()
-	result, err := transfer.Apply(ctx, a.secrets, cfg, bundle, overwrite, a.saveConfigFile)
+	var result transfer.Result
+	err = a.authStore().WithLock(ctx, "registry", func() error {
+		// Reload under the same registry lock used by auth import/login/logout.
+		latest, err := config.Load(a.paths.ConfigFile)
+		if err != nil {
+			return err
+		}
+		result, err = transfer.ApplyWithAuth(ctx, a.secrets, latest, bundle, a.authStore(), overwrite, a.saveConfigFile)
+		return err
+	})
 	if err != nil {
 		return exitError(stderr, err)
 	}
@@ -234,6 +246,9 @@ func writeImportResult(stdout io.Writer, result transfer.Result) error {
 		{prefix: "imported profile", names: result.ImportedProfiles},
 		{prefix: "replaced profile", names: result.ReplacedProfiles},
 		{prefix: "skipped profile", names: result.SkippedProfiles},
+		{prefix: "imported authentication profile", names: result.ImportedAuthProfiles},
+		{prefix: "replaced authentication profile", names: result.ReplacedAuthProfiles},
+		{prefix: "skipped authentication profile", names: result.SkippedAuthProfiles},
 	}
 	for _, group := range groups {
 		if err := writeNameLines(stdout, group.prefix, group.names); err != nil {

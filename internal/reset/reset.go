@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/trknhr/envvault/internal/authstate"
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/config"
 	"github.com/trknhr/envvault/internal/keyring"
@@ -74,6 +75,7 @@ func (p Planner) plan() (Result, error) {
 		filepath.Join(p.Paths.DataDir, jwksFilename),
 		filepath.Join(p.Paths.DataDir, auditFilename),
 		filepath.Join(p.Paths.DataDir, nativeAgentAuthDir),
+		filepath.Join(p.Paths.DataDir, "auth-profiles"),
 		p.Paths.CacheDir,
 	}
 	keys := []string{
@@ -82,14 +84,34 @@ func (p Planner) plan() (Result, error) {
 	}
 	for name, stored := range cfg.Profiles {
 		if stored.Kind == profile.KindProviderProxy || stored.Kind == profile.KindInject {
-			keys = append(keys, string(keyring.CredentialValue(credentialName(stored, name))))
+			credential := credentialName(stored, name)
+			if _, managed := cfg.AuthProfiles[credential]; !managed {
+				keys = append(keys, string(keyring.CredentialValue(credential)))
+			}
 			continue
 		}
 		keys = append(keys, string(keyring.ProfileParentKey(name)))
 	}
+	for _, name := range cfg.CredentialNames() {
+		keys = append(keys, string(keyring.CredentialValue(name)))
+	}
+	for _, id := range cfg.AuthProfiles {
+		keys = append(keys, string(authstate.EncryptionKey(id)))
+	}
 	sort.Strings(files)
 	sort.Strings(keys)
+	keys = compactKeys(keys)
 	return Result{Files: files, KeyringKeys: keys}, nil
+}
+
+func compactKeys(keys []string) []string {
+	result := keys[:0]
+	for _, key := range keys {
+		if len(result) == 0 || result[len(result)-1] != key {
+			result = append(result, key)
+		}
+	}
+	return result
 }
 
 func credentialName(stored config.Profile, fallback string) string {

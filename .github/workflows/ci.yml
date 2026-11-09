@@ -72,6 +72,48 @@ jobs:
           ENVVAULT_BRIDGE_TEST_PLUGIN: ${{ runner.temp }}/envvault-bridge-mock-plugin
         run: node --test examples/agent-infra-bridge/test/*.test.mjs
 
+  microsandbox:
+    name: Microsandbox host proxy tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/microsandbox
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: examples/microsandbox/go.mod
+          cache-dependency-path: examples/microsandbox/go.sum
+
+      - name: Test host proxy and credential boundaries without a VM
+        run: go test -race ./...
+
+      - name: Run static analysis
+        run: go vet ./...
+
+  sandbox-scripts:
+    name: Sandbox script syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check experimental launchers and public credential helper
+        run: |
+          node --check examples/gondolin/codex.mjs
+          node --check examples/gondolin/smoke.mjs
+          node --check examples/microsandbox/git-credential-envvault
+          sh -n examples/microsandbox/agent
+          sh -n examples/microsandbox/agent-entrypoint
+
   docs:
     name: Build docs
     runs-on: ubuntu-latest

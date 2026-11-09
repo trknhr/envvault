@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+# Only the host runtime invokes this as root. No setuid bit: the agent cannot
+# use this entrypoint to move itself out of its process-limited cgroup.
+printf '%s\n' "$$" > /sys/fs/cgroup/envvault-agent/cgroup.procs
+exec /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups \
+  --bounding-set=-all --inh-caps=-all --ambient-caps=-all --no-new-privs -- "$@"

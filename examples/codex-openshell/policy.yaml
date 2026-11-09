@@ -1,0 +1,50 @@
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /bin
+    - /usr
+    - /lib
+    - /proc
+    - /etc
+    - /opt/codex
+    - /dev/urandom
+    - /var/log
+  read_write:
+    - /workspace
+    - /home/node
+    - /tmp
+    - /dev/null
+
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  codex:
+    name: codex
+    endpoints:
+      - host: auth.openai.com
+        port: 443
+      - host: chatgpt.com
+        port: 443
+    binaries:
+      - path: /opt/codex/bin/codex
+  go_modules:
+    name: go_modules
+    endpoints:
+      - host: proxy.golang.org
+        port: 443
+      - host: sum.golang.org
+        port: 443
+      - host: storage.googleapis.com
+        port: 443
+    binaries:
+      - path: /usr/local/go/bin/go
+  npm_packages:
+    name: npm_packages
+    endpoints:
+      - host: registry.npmjs.org
+        port: 443
+    binaries:
+      - path: /usr/local/bin/node

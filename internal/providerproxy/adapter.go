@@ -89,13 +89,13 @@ func (a HTTPAdapter) Start(ctx context.Context, request connection.AdapterStartR
 	err = credential.WithValue(ctx, func(value []byte) error {
 		var startErr error
 		server, startErr = Start(ctx, ServerOptions{
-			Profile:       legacyProfile,
-			APIKeyBytes:   value,
-			Token:         token,
-			Expires:       request.Grant.ExpiresAt,
-			HTTP:          a.HTTP,
-			Now:           a.Now,
-			ListenAddress: a.ListenAddress,
+			Profile:         legacyProfile,
+			CredentialLease: credential,
+			Token:           token,
+			Expires:         request.Grant.ExpiresAt,
+			HTTP:            a.HTTP,
+			Now:             a.Now,
+			ListenAddress:   a.ListenAddress,
 		})
 		return startErr
 	})

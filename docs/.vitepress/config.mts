@@ -28,7 +28,9 @@ export default defineConfig({
           { text: 'Quickstart', link: '/quickstart' },
           { text: 'Agent Skill', link: '/agent-skill' },
           { text: 'Proxies', link: '/proxies' },
+          { text: 'Host Auth Profiles', link: '/auth-profiles' },
           { text: 'Docker Sandbox', link: '/sandbox' },
+          { text: 'Docker Sandboxes Credentials', link: '/docker-sandboxes' },
           { text: 'External Sandbox Sessions', link: '/sandbox-exec' },
           { text: 'Sandbox Plugin', link: '/sandbox-plugin' },
           { text: 'agent-infra Bridge Prototype', link: '/agent-infra-bridge' }

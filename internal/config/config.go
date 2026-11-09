@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/envref"
 	"github.com/trknhr/envvault/internal/profile"
 	"gopkg.in/yaml.v3"
 )
@@ -44,6 +45,7 @@ type File struct {
 	Runtime      Runtime            `yaml:"runtime"`
 	Defaults     Defaults           `yaml:"defaults"`
 	Credentials  []string           `yaml:"credentials,omitempty"`
+	AuthProfiles map[string]string  `yaml:"auth_profiles,omitempty"`
 	Profiles     map[string]Profile `yaml:"profiles"`
 }
 
@@ -251,8 +253,23 @@ func (f *File) RemoveCredential(name string) bool {
 }
 
 func (f File) Validate() error {
-	if f.Version != 1 {
-		return clerr.New(clerr.ConfigInvalid, "config version must be 1")
+	if f.Version != 1 && f.Version != 2 {
+		return clerr.New(clerr.ConfigInvalid, "unsupported config version")
+	}
+	if len(f.AuthProfiles) > 0 && f.Version != 2 {
+		return clerr.New(clerr.ConfigInvalid, "authentication profiles require config version 2")
+	}
+	for name, id := range f.AuthProfiles {
+		decoded, err := hex.DecodeString(id)
+		ref, recognized, parseErr := envref.ParseValue(envref.Format(name, envref.PartDefault))
+		if parseErr != nil || !recognized || ref.Part != envref.PartDefault || ref.Profile != name || strings.TrimSpace(name) != name || name == "" || strings.ContainsAny(name, "\r\n\x00") || err != nil || len(decoded) != 16 || hex.EncodeToString(decoded) != id {
+			return clerr.New(clerr.ConfigInvalid, "invalid authentication profile metadata")
+		}
+		for _, credential := range f.Credentials {
+			if credential == name {
+				return clerr.New(clerr.ConfigInvalid, "authentication profile collides with a credential name")
+			}
+		}
 	}
 	if f.Installation.ID == "" {
 		return clerr.New(clerr.ConfigInvalid, "installation id is required")
