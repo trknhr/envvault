@@ -654,7 +654,7 @@ func TestCIWorkflowRunsReleaseGateDocsAndSecretScan(t *testing.T) {
 		"ubuntu-latest",
 		"ubuntu-24.04",
 		"macos-latest",
-		"macos-14",
+		"macos-15-intel",
 		"go test ./...",
 		"go vet ./...",
 		"go test -race ./...",

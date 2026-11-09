@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/trknhr/envvault/internal/clerr"
+	"github.com/trknhr/envvault/internal/connection"
 	"github.com/trknhr/envvault/internal/profile"
 	"github.com/trknhr/envvault/internal/profilemgr"
 )
@@ -139,12 +140,13 @@ func (a App) newCredentialCommand(execution *commandExecution) *cobra.Command {
 	credentialCommand := newCommandGroup(
 		"credential",
 		"Manage raw credentials",
-		"envvault: usage: envvault credential <set|delete|list> [options]",
+		"envvault: usage: envvault credential <set|delete|list|resolve> [options]",
 		execution,
 	)
 	credentialCommand.AddCommand(
 		a.newCredentialSetCommand(execution),
 		a.newCredentialDeleteCommand(execution),
+		a.newCredentialResolveCommand(execution),
 		newListLeaf("list", "List credential names", execution, a.runCredentialList),
 	)
 	return credentialCommand
@@ -218,14 +220,16 @@ func (a App) newSecretAddCommand(execution *commandExecution) *cobra.Command {
 }
 
 type proxyOptions struct {
-	credentialName string
-	authMode       string
-	provider       string
-	targetURL      string
-	allowedPaths   []string
-	allowedMethods []string
-	localTokenTTL  time.Duration
-	projectBinding string
+	gitRepositories []string
+	gitWrite        bool
+	credentialName  string
+	authMode        string
+	provider        string
+	targetURL       string
+	allowedPaths    []string
+	allowedMethods  []string
+	localTokenTTL   time.Duration
+	projectBinding  string
 }
 
 func (a App) newProxyCommand(execution *commandExecution) *cobra.Command {
@@ -263,6 +267,8 @@ func (a App) newProxyAddCommand(execution *commandExecution) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&options.credentialName, "credential", "", "Stored credential name (defaults to profile name)")
+	cmd.Flags().StringArrayVar(&options.gitRepositories, "git-repository", nil, "GitHub owner/repository for exact Git HTTPS read endpoints (repeatable)")
+	cmd.Flags().BoolVar(&options.gitWrite, "git-write", false, "Also authorize Git receive-pack for the selected repositories")
 	cmd.Flags().StringVar(&options.authMode, "auth", options.authMode, "Upstream authentication mode")
 	cmd.Flags().StringVar(&options.provider, "provider", options.provider, "generic or openai-compatible")
 	cmd.Flags().StringVar(&options.targetURL, "target", "", "Provider base URL")
@@ -274,6 +280,25 @@ func (a App) newProxyAddCommand(execution *commandExecution) *cobra.Command {
 }
 
 func (options proxyOptions) request(name string) (proxyAddRequest, error) {
+	if options.gitWrite && len(options.gitRepositories) == 0 {
+		return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "--git-write requires --git-repository")
+	}
+	if len(options.gitRepositories) > 0 {
+		if options.targetURL == "" {
+			options.targetURL = "https://github.com"
+		}
+		if options.targetURL != "https://github.com" && options.targetURL != "https://github.com/" || len(options.allowedPaths) != 0 || len(options.allowedMethods) != 0 {
+			return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "Git repository rules require https://github.com and cannot mix explicit paths or methods")
+		}
+		for _, repository := range options.gitRepositories {
+			paths, valid := connection.GitHTTPSPaths(repository, options.gitWrite)
+			if !valid {
+				return proxyAddRequest{}, clerr.New(clerr.ConfigInvalid, "invalid GitHub repository")
+			}
+			options.allowedPaths = append(options.allowedPaths, paths...)
+		}
+		options.allowedMethods = []string{"GET", "POST"}
+	}
 	provider := options.provider
 	if provider == "" {
 		provider = "generic"

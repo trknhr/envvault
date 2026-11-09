@@ -1,5 +1,12 @@
 # EnvVault
 
+Host-only JSON/YAML authentication profiles are available in this checkout:
+`envvault auth login github --name github/work` or `envvault auth import`.
+Attach their references through saved proxy rules; token rotation and supported
+GitHub OAuth refresh stay on the host. See [Host authentication profiles](docs/auth-profiles.md)
+for setup, sandbox attachment, Git repository permissions, and configuration
+version compatibility.
+
 Keep real secrets out of project `.env` files and coding-agent prompts.
 
 EnvVault replaces plaintext `.env` secrets with repository-safe `envvault://`
@@ -144,7 +151,20 @@ is unlimited. The default output reports only the skipped-path count; add
 `--verbose` to list every skipped path. Migration and source-file deletion are
 intentionally separate steps.
 
+## Experimental Microsandbox agent
+
+For the separate Microsandbox microVM trial, see the
+[Codex launcher](examples/microsandbox/README.md). It supports live host network
+rules, process/thread limits, and automatic EnvVault credential discovery with
+saved destination rules. It runs
+as an example module with `./examples/microsandbox/agent codex`.
+
 ## Experimental Docker Sandbox
+
+For Docker's own Sandboxes CLI (`sbx`), use EnvVault as a host-side dynamic
+secret helper with `envvault credential resolve envvault://<credential>`.
+See [Docker Sandboxes credentials](docs/docker-sandboxes.md) for registration,
+placeholder handling, and the validation scope.
 
 When `.env` contains provider-proxy output references, run a command in Docker
 without delivering the upstream credential:

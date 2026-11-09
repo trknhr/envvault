@@ -217,6 +217,17 @@ func (r *EnvResolver) profile(name string) (profile.Profile, error) {
 }
 
 func (r *EnvResolver) secret(ctx context.Context, name string) ([]byte, error) {
+	if provider, ok := r.Credentials.(interface {
+		HostOnly(context.Context, string) (bool, error)
+	}); ok {
+		managed, err := provider.HostOnly(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if managed {
+			return nil, clerr.New(clerr.ReferenceInvalid, "host authentication profiles require proxy delivery")
+		}
+	}
 	if r.Secrets == nil {
 		return nil, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable")
 	}
@@ -246,29 +257,32 @@ func (Lease) GoString() string {
 }
 
 type ServerOptions struct {
-	Profile       profile.Profile
-	APIKey        string
-	APIKeyBytes   []byte
-	Token         string
-	Expires       time.Time
-	HTTP          *http.Client
-	Now           func() time.Time
-	ListenAddress string
+	CredentialLease connection.CredentialLease
+	Profile         profile.Profile
+	APIKey          string
+	APIKeyBytes     []byte
+	Token           string
+	Expires         time.Time
+	HTTP            *http.Client
+	Now             func() time.Time
+	ListenAddress   string
 }
 
 type Server struct {
-	profile  profile.Profile
-	apiKey   []byte
-	token    []byte
-	expires  time.Time
-	client   *http.Client
-	now      func() time.Time
-	server   *http.Server
-	listener net.Listener
-	addr     string
-	closeMu  sync.Mutex
-	valueMu  sync.RWMutex
-	closed   bool
+	credentialLease connection.CredentialLease
+	profile         profile.Profile
+	apiKey          []byte
+	token           []byte
+	expires         time.Time
+	client          *http.Client
+	now             func() time.Time
+	server          *http.Server
+	listener        net.Listener
+	addr            string
+	closeMu         sync.Mutex
+	valueMu         sync.RWMutex
+	closed          bool
+	done            chan struct{}
 }
 
 func Start(ctx context.Context, options ServerOptions) (*Server, error) {
@@ -282,7 +296,7 @@ func Start(ctx context.Context, options ServerOptions) (*Server, error) {
 	if len(apiKey) == 0 {
 		apiKey = []byte(options.APIKey)
 	}
-	if len(apiKey) == 0 {
+	if len(apiKey) == 0 && options.CredentialLease == nil {
 		return nil, clerr.New(clerr.KeyringUnavailable, "provider api key missing")
 	}
 	if options.Token == "" {
@@ -300,14 +314,16 @@ func Start(ctx context.Context, options ServerOptions) (*Server, error) {
 	}
 
 	s := &Server{
-		profile:  options.Profile,
-		apiKey:   apiKey,
-		token:    []byte(options.Token),
-		expires:  options.Expires,
-		client:   options.HTTP,
-		now:      options.Now,
-		listener: listener,
-		addr:     listener.Addr().String(),
+		done:            make(chan struct{}),
+		credentialLease: options.CredentialLease,
+		profile:         options.Profile,
+		apiKey:          apiKey,
+		token:           []byte(options.Token),
+		expires:         options.Expires,
+		client:          options.HTTP,
+		now:             options.Now,
+		listener:        listener,
+		addr:            listener.Addr().String(),
 	}
 	if s.client == nil {
 		s.client = http.DefaultClient
@@ -322,6 +338,23 @@ func Start(ctx context.Context, options ServerOptions) (*Server, error) {
 			// Errors are returned to clients while running; startup succeeded after Listen.
 		}
 	}()
+	if validator, ok := options.CredentialLease.(interface{ Valid(context.Context) error }); ok {
+		go func() {
+			ticker := time.NewTicker(250 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-s.done:
+					return
+				case <-ticker.C:
+					if validator.Valid(context.Background()) != nil {
+						_ = s.Close(context.Background())
+						return
+					}
+				}
+			}
+		}()
+	}
 	return s, nil
 }
 
@@ -335,15 +368,9 @@ func (s *Server) Close(ctx context.Context) error {
 	if s.server == nil || s.closed {
 		return nil
 	}
-	shutdownCtx := ctx
-	if shutdownCtx == nil {
-		shutdownCtx = context.Background()
-	}
-	err := s.server.Shutdown(shutdownCtx)
-	if err != nil {
-		_ = s.server.Close()
-	}
-	// Shutdown only closes listeners already registered by Serve. Start returns
+	// Lease closure is revocation: terminate active requests and streams now.
+	err := s.server.Close()
+	// Close only closes listeners already registered by Serve. Start returns
 	// before that goroutine necessarily runs, so retain and close our listener
 	// as well to guarantee the gateway is unreachable when Close returns.
 	if s.listener != nil {
@@ -358,6 +385,9 @@ func (s *Server) Close(ctx context.Context) error {
 	s.token = nil
 	s.valueMu.Unlock()
 	s.closed = true
+	if s.done != nil {
+		close(s.done)
+	}
 	return err
 }
 
@@ -456,10 +486,19 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, proxyPath strin
 	s.valueMu.RLock()
 	apiKey := string(s.apiKey)
 	s.valueMu.RUnlock()
-	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Host = ""
-
-	resp, err := s.client.Do(req)
+	var resp *http.Response
+	use := func(value []byte) error {
+		req.Header.Set("Authorization", "Bearer "+string(value))
+		var err error
+		resp, err = s.client.Do(req)
+		return err
+	}
+	if s.credentialLease != nil {
+		err = s.credentialLease.WithValue(r.Context(), use)
+	} else {
+		err = use([]byte(apiKey))
+	}
 	if err != nil {
 		http.Error(w, "provider request failed", http.StatusBadGateway)
 		return
@@ -468,7 +507,17 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, proxyPath strin
 
 	copyHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	_, _ = io.Copy(flushingResponse{w}, resp.Body)
+}
+
+type flushingResponse struct{ http.ResponseWriter }
+
+func (w flushingResponse) Write(body []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(body)
+	if err == nil {
+		_ = http.NewResponseController(w.ResponseWriter).Flush()
+	}
+	return n, err
 }
 
 func (s *Server) targetURL(proxyPath, rawQuery string) (string, error) {

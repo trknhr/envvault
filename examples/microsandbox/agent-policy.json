@@ -1,0 +1,16 @@
+{
+  "https_hosts": [
+    "auth.openai.com",
+    "chatgpt.com",
+    "api.openai.com",
+    "registry.npmjs.org",
+    "proxy.golang.org",
+    "sum.golang.org",
+    "storage.googleapis.com"
+  ],
+  "max_processes": 512,
+  "envvault": true,
+  "envvault_scope": "profiles",
+  "native_auth_hosts": [],
+  "credentials": []
+}

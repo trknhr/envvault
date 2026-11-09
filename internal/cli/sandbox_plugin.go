@@ -20,6 +20,7 @@ func (a App) runSandboxPluginServe(ctx context.Context, parsed sandboxPluginServ
 	broker := &sandboxplugin.Broker{
 		Profiles:      a.profiles,
 		Secrets:       a.secrets,
+		Credentials:   a.credentialProvider(),
 		Now:           a.now,
 		ListenAddress: parsed.gatewayListen,
 		AdvertiseHost: parsed.gatewayHost,

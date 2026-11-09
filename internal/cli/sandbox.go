@@ -218,6 +218,7 @@ func (a App) openSandboxLaunch(ctx context.Context, runtime sandbox.Runtime, par
 		resolver: &providerproxy.EnvResolver{
 			Profiles:      a.profiles,
 			Secrets:       a.secrets,
+			Credentials:   a.credentialProvider(),
 			ListenAddress: access.ListenAddress,
 			AdvertiseHost: access.AdvertiseHost,
 		},
@@ -228,6 +229,7 @@ func (a App) openSandboxLaunch(ctx context.Context, runtime sandbox.Runtime, par
 	lease, err := (providerproxy.OutboundResolver{
 		Profiles:      a.profiles,
 		Secrets:       a.secrets,
+		Credentials:   a.credentialProvider(),
 		ListenAddress: access.ListenAddress,
 		AdvertiseHost: access.AdvertiseHost,
 	}).Open(ctx, parsed.outboundProfiles, identity, "sandbox-run")

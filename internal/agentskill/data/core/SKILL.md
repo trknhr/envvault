@@ -10,10 +10,26 @@ repository-safe `envvault://` references only when launching a child process.
 
 ## Commands
 
+- Host-only structured auth: `envvault auth import <name> --file <json-or-yaml> --token-field /access_token`
+- Host GitHub login: `envvault auth login github --name <name>` (isolated host gh); use an owned app's `--client-id` for supported OAuth refresh.
+- Inspect/remove managed auth: `envvault auth list`, `envvault auth status <name>`, `envvault auth logout <name>`.
+- Authorize Git HTTPS reads: `envvault proxy add <rule> --credential <auth-name> --git-repository owner/repo`; add `--git-write` explicitly for push.
+
+Managed authentication documents stay encrypted on the host, with per-record
+keys in the OS credential store. Use their names in saved proxy rules and send
+only `envvault://<name>` from the sandbox. Never copy the document into a guest
+home or inspect it by printing. The first managed profile upgrades configuration
+to version 2, which requires the updated CLI. Existing native guest logins are
+retained until an explicit migration. Logout revokes local broker access, not the
+provider's upstream grant. Automatic refresh currently supports GitHub token
+pairs issued to the supplied client ID; the isolated gh fallback stores its
+current access token and requires another host login when unusable.
+
 - Start UI: `envvault admin start`
 - Set credential interactively: `envvault credential set <credential-name>`
 - Set credential from stdin: `printf 'secret\n' | envvault credential set <credential-name> --value-stdin`
 - Delete credential: `envvault credential delete <credential-name>`
+- Supply a direct credential to a host-side secret consumer: `envvault credential resolve envvault://<credential>`
 - Export credentials to an encrypted file: `envvault export <file>`
 - Import credentials from that file: `envvault import <file>`
 - Replace existing names during import: `envvault import <file> --overwrite`
@@ -160,6 +176,20 @@ values. Avoid `echo "$API_KEY"`, `printenv`, `env`, `set`,
 `echo "$HTTP_PROXY"`, or similar commands in a child process that may contain
 secrets or proxy capabilities. Check presence only, print fixed strings like
 `OK`, or make a provider request through the app instead.
+
+## Docker Sandboxes host-side helper
+
+For Docker Sandboxes (`sbx`), register an absolute installed EnvVault binary
+outside sandbox-writable mounts using `sbx secret set <service> --command
+'/absolute/path/envvault credential resolve envvault://<credential>'`.
+The resolver intentionally writes the real credential to the consuming host
+process; never run it to inspect a secret or capture its output in logs. It
+refuses terminal output and supports only direct credential references with
+non-empty HTTP header values, without control characters or surrounding
+whitespace. Docker supplies the sandbox placeholder and performs injection;
+`sbx --ref` does not understand `envvault://`. This is separate from EnvVault's
+own `sandbox run` workflow. Docker daemon keychain access and proxy injection
+require a separate end-to-end check.
 
 ## Common Mistakes
 

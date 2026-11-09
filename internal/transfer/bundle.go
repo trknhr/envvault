@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"sort"
 	"strings"
 
+	"github.com/trknhr/envvault/internal/authstate"
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/config"
 	"github.com/trknhr/envvault/internal/keyring"
@@ -23,8 +25,14 @@ type Credential struct {
 // Bundle is the decrypted export: credential values plus the profiles that use them.
 // Talos installation keys and profile parent keys are not included.
 type Bundle struct {
-	Credentials []Credential
-	Profiles    map[string]config.Profile
+	Credentials  []Credential
+	Profiles     map[string]config.Profile
+	AuthProfiles []AuthProfile
+}
+
+type AuthProfile struct {
+	Metadata authstate.Metadata `json:"metadata"`
+	Document []byte             `json:"document"`
 }
 
 func (b *Bundle) Zero() {
@@ -35,12 +43,17 @@ func (b *Bundle) Zero() {
 		keyring.Zero(b.Credentials[i].Value)
 		b.Credentials[i].Value = nil
 	}
+	for i := range b.AuthProfiles {
+		keyring.Zero(b.AuthProfiles[i].Document)
+		b.AuthProfiles[i].Document = nil
+	}
 }
 
 type payload struct {
 	Version      int                 `json:"version"`
 	Credentials  []payloadCredential `json:"credentials"`
 	ProfilesYAML string              `json:"profiles_yaml,omitempty"`
+	AuthProfiles []AuthProfile       `json:"auth_profiles,omitempty"`
 }
 
 type payloadCredential struct {
@@ -50,6 +63,13 @@ type payloadCredential struct {
 
 // Collect reads the credential values named by the config and copies profile metadata.
 func Collect(ctx context.Context, secrets keyring.Store, cfg config.File) (Bundle, error) {
+	if len(cfg.AuthProfiles) > 0 {
+		return Bundle{}, clerr.New(clerr.ConfigInvalid, "authentication profiles require a host authentication store for export")
+	}
+	return collect(ctx, secrets, cfg)
+}
+
+func collect(ctx context.Context, secrets keyring.Store, cfg config.File) (Bundle, error) {
 	if secrets == nil {
 		return Bundle{}, clerr.New(clerr.KeyringUnavailable, "OS credential store unavailable")
 	}
@@ -74,8 +94,30 @@ func Collect(ctx context.Context, secrets keyring.Store, cfg config.File) (Bundl
 		}
 		bundle.Credentials = append(bundle.Credentials, Credential{Name: name, Value: value})
 	}
-	if len(bundle.Credentials) == 0 && len(bundle.Profiles) == 0 {
+	if len(bundle.Credentials) == 0 && len(bundle.Profiles) == 0 && len(cfg.AuthProfiles) == 0 {
 		return Bundle{}, clerr.New(clerr.ConfigInvalid, "nothing to export")
+	}
+	return bundle, nil
+}
+
+func CollectWithAuth(ctx context.Context, secrets keyring.Store, cfg config.File, store authstate.Store) (Bundle, error) {
+	bundle, err := collect(ctx, secrets, cfg)
+	if err != nil {
+		return Bundle{}, err
+	}
+	names := make([]string, 0, len(cfg.AuthProfiles))
+	for name := range cfg.AuthProfiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		record, err := store.Read(ctx, cfg.AuthProfiles[name])
+		if err != nil || record.Metadata.Name != name {
+			record.Zero()
+			bundle.Zero()
+			return Bundle{}, clerr.New(clerr.ConfigInvalid, "authentication export could not read profile")
+		}
+		bundle.AuthProfiles = append(bundle.AuthProfiles, AuthProfile{Metadata: record.Metadata, Document: record.Document})
 	}
 	return bundle, nil
 }
@@ -93,6 +135,9 @@ func credentialNames(cfg config.File) []string {
 		if name != "" {
 			seen[name] = struct{}{}
 		}
+	}
+	for name := range cfg.AuthProfiles {
+		delete(seen, name)
 	}
 	names := make([]string, 0, len(seen))
 	for name := range seen {
@@ -114,7 +159,14 @@ func cloneProfiles(in map[string]config.Profile) map[string]config.Profile {
 }
 
 func (b Bundle) marshal() ([]byte, error) {
+	if err := validateBundle(b); err != nil {
+		return nil, err
+	}
 	body := payload{Version: payloadVersion, Credentials: make([]payloadCredential, 0, len(b.Credentials))}
+	if len(b.AuthProfiles) > 0 {
+		body.Version = 2
+		body.AuthProfiles = b.AuthProfiles
+	}
 	seen := map[string]struct{}{}
 	for _, credential := range b.Credentials {
 		name := strings.TrimSpace(credential.Name)
@@ -148,13 +200,14 @@ func unmarshalBundle(plaintext []byte) (Bundle, error) {
 	decoder := json.NewDecoder(bytes.NewReader(plaintext))
 	decoder.DisallowUnknownFields()
 	var body payload
-	if err := decoder.Decode(&body); err != nil || decoder.More() {
+	if err := decoder.Decode(&body); err != nil || decoder.Decode(new(any)) != io.EOF {
 		return Bundle{}, clerr.New(clerr.ConfigInvalid, "export payload is invalid")
 	}
-	if body.Version != payloadVersion {
+	if body.Version != payloadVersion && body.Version != 2 || body.Version == 1 && len(body.AuthProfiles) > 0 {
 		return Bundle{}, clerr.New(clerr.ConfigInvalid, "unsupported export version")
 	}
 	bundle := Bundle{Credentials: make([]Credential, 0, len(body.Credentials))}
+	bundle.AuthProfiles = body.AuthProfiles
 	seen := map[string]struct{}{}
 	for _, credential := range body.Credentials {
 		name := strings.TrimSpace(credential.Name)
@@ -186,6 +239,10 @@ func unmarshalBundle(plaintext []byte) (Bundle, error) {
 			}
 		}
 		bundle.Profiles = profiles
+	}
+	if err := validateBundle(bundle); err != nil {
+		bundle.Zero()
+		return Bundle{}, err
 	}
 	return bundle, nil
 }

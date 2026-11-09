@@ -1,0 +1,45 @@
+{
+  "codexVersion": "0.166.0",
+  "vm": {
+    "backend": "qemu",
+    "memory": "2G",
+    "cpus": 2,
+    "rootfsSize": "4G"
+  },
+  "filesystem": {
+    "workspace": "/workspace",
+    "workspaceAccess": "read-write",
+    "home": "/home/codex",
+    "hiddenNames": [".env", ".envrc", ".npmrc", ".netrc", ".envvault-cache"],
+    "hiddenPrefixes": [".env."],
+    "ephemeralNames": ["node_modules"]
+  },
+  "network": {
+    "httpsHosts": [
+      "auth.openai.com",
+      "chatgpt.com",
+      "api.openai.com",
+      "registry.npmjs.org",
+      "proxy.golang.org",
+      "sum.golang.org",
+      "storage.googleapis.com"
+    ],
+    "setupHttpsHosts": ["dl-cdn.alpinelinux.org", "registry.npmjs.org"],
+    "blockPrivateAddresses": true,
+    "dns": "synthetic",
+    "webSockets": true,
+    "ssh": false,
+    "rawTcp": false,
+    "ingress": false
+  },
+  "codex": {
+    "sandbox": "danger-full-access",
+    "approval": "on-request",
+    "boundary": "gondolin-vm-and-host-hooks"
+  },
+  "credentials": {
+    "login": "separate-device-auth",
+    "hostAgentHomeMounted": false,
+    "envvaultConnected": false
+  }
+}

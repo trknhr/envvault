@@ -82,6 +82,7 @@ func (a App) runSandboxExec(ctx context.Context, options sandboxExecArgs, stdout
 	}
 	broker := &sandboxplugin.Broker{
 		Profiles: a.profiles, Secrets: a.secrets, Now: a.now,
+		Credentials:   a.credentialProvider(),
 		ListenAddress: prepared.Gateway.ListenAddress, AdvertiseHost: prepared.Gateway.AdvertiseHost,
 	}
 	defer func() {

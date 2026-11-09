@@ -8,11 +8,43 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trknhr/envvault/internal/authstate"
 	"github.com/trknhr/envvault/internal/config"
 	"github.com/trknhr/envvault/internal/keyring"
 	"github.com/trknhr/envvault/internal/profile"
 	"github.com/trknhr/envvault/internal/reset"
 )
+
+func TestResetDeletesManagedAuthenticationKeysAndEncryptedFiles(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	secrets := keyring.NewMemoryStore()
+	store := authstate.Store{Dir: filepath.Join(paths.DataDir, "auth-profiles"), Keys: secrets}
+	metadata, err := store.Put(ctx, authstate.Metadata{Name: "github/work", Provider: "generic", Format: "json", TokenField: "/token"}, []byte(`{"token":"reset-canary"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := config.DefaultFile()
+	cfg.Version, cfg.AuthProfiles = 2, map[string]string{metadata.Name: metadata.ID}
+	if err := config.Save(paths.ConfigFile, cfg); err != nil {
+		t.Fatal(err)
+	}
+	putSecret(t, ctx, secrets, keyring.TalosHMACKey(), "hmac")
+	putSecret(t, ctx, secrets, keyring.TalosSigningKey("current"), "signing")
+	result, err := (reset.Planner{Paths: paths, Secrets: secrets}).Reset(ctx, reset.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(result.KeyringKeys, string(authstate.EncryptionKey(metadata.ID))) {
+		t.Fatal("reset omitted managed authentication key")
+	}
+	if _, err := secrets.Get(ctx, authstate.EncryptionKey(metadata.ID)); err == nil {
+		t.Fatal("reset retained a managed authentication key")
+	}
+	if _, err := os.Stat(store.Dir); !os.IsNotExist(err) {
+		t.Fatal("reset retained encrypted authentication files")
+	}
+}
 
 func TestPlannerDryRunReportsEnvVaultOwnedFilesAndKeyringEntries(t *testing.T) {
 	ctx := context.Background()

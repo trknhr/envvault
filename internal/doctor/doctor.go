@@ -18,10 +18,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trknhr/envvault/internal/authstate"
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/config"
 	"github.com/trknhr/envvault/internal/homefile"
 	"github.com/trknhr/envvault/internal/keyring"
+	"github.com/trknhr/envvault/internal/profile"
 	runtimetalos "github.com/trknhr/envvault/internal/runtime/talos"
 	_ "modernc.org/sqlite"
 )
@@ -260,7 +262,28 @@ func (c Checker) checkKeyring(ctx context.Context, result *Result, cfg config.Fi
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			keys = append(keys, keyring.ProfileParentKey(name))
+			stored := cfg.Profiles[name]
+			if stored.Kind == profile.KindProviderProxy || stored.Kind == profile.KindInject {
+				credential := stored.CredentialName
+				if credential == "" {
+					credential = name
+				}
+				if _, managed := cfg.AuthProfiles[credential]; !managed {
+					keys = append(keys, keyring.CredentialValue(credential))
+				}
+			} else {
+				keys = append(keys, keyring.ProfileParentKey(name))
+			}
+		}
+		store := authstate.Store{Dir: filepath.Join(c.Paths.DataDir, "auth-profiles"), Keys: c.Secrets}
+		for name, id := range cfg.AuthProfiles {
+			record, err := store.Read(ctx, id)
+			valid := err == nil && record.Metadata.Name == name
+			record.Zero()
+			if !valid {
+				addError(result, "keyring", clerr.New(clerr.ConfigInvalid, "host authentication profile unavailable"), "host authentication profile unavailable")
+				return
+			}
 		}
 	}
 

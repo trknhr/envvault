@@ -87,15 +87,18 @@ func (a HTTPAdapter) Start(ctx context.Context, request connection.AdapterStartR
 	legacyProfile := profileFromPolicy(request.Policy)
 	var server *Server
 	err = credential.WithValue(ctx, func(value []byte) error {
+		if len(value) == 0 {
+			return clerr.New(clerr.KeyringUnavailable, "provider api key missing")
+		}
 		var startErr error
 		server, startErr = Start(ctx, ServerOptions{
-			Profile:       legacyProfile,
-			APIKeyBytes:   value,
-			Token:         token,
-			Expires:       request.Grant.ExpiresAt,
-			HTTP:          a.HTTP,
-			Now:           a.Now,
-			ListenAddress: a.ListenAddress,
+			Profile:         legacyProfile,
+			CredentialLease: credential,
+			Token:           token,
+			Expires:         request.Grant.ExpiresAt,
+			HTTP:            a.HTTP,
+			Now:             a.Now,
+			ListenAddress:   a.ListenAddress,
 		})
 		return startErr
 	})

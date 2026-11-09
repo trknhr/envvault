@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -21,6 +22,8 @@ import (
 	"github.com/trknhr/envvault/internal/browser"
 	"github.com/trknhr/envvault/internal/clerr"
 	"github.com/trknhr/envvault/internal/config"
+	"github.com/trknhr/envvault/internal/connection"
+	"github.com/trknhr/envvault/internal/connection/authprovider"
 	doctorpkg "github.com/trknhr/envvault/internal/doctor"
 	"github.com/trknhr/envvault/internal/envref"
 	"github.com/trknhr/envvault/internal/homefile"
@@ -99,6 +102,7 @@ type DoctorRepairer interface {
 type ConfigSaver func(path string, cfg config.File) error
 
 type Options struct {
+	AuthHTTP                *http.Client
 	Paths                   config.Paths
 	AgentSkillHomeDir       string
 	Initializer             Initializer
@@ -128,6 +132,7 @@ type Options struct {
 }
 
 type App struct {
+	authHTTP                *http.Client
 	paths                   config.Paths
 	agentSkillHomeDir       string
 	initializer             Initializer
@@ -158,6 +163,7 @@ type App struct {
 
 func New(options Options) App {
 	return App{
+		authHTTP:                options.AuthHTTP,
 		paths:                   options.Paths,
 		agentSkillHomeDir:       options.AgentSkillHomeDir,
 		initializer:             options.Initializer,
@@ -403,6 +409,11 @@ func (a App) commandStdin() io.Reader {
 }
 
 func (a App) storeCredential(ctx context.Context, name string, value []byte, stderr io.Writer) int {
+	if cfg, err := config.LoadOrDefault(a.paths.ConfigFile); err != nil {
+		return exitError(stderr, err)
+	} else if _, exists := cfg.AuthProfiles[name]; exists {
+		return exitError(stderr, clerr.New(clerr.ConfigInvalid, "name belongs to a host authentication profile"))
+	}
 	if err := a.secrets.Put(ctx, keyring.CredentialValue(name), value); err != nil {
 		return exitError(stderr, err)
 	}
@@ -470,8 +481,13 @@ func (a App) runCredentialList(stdout, stderr io.Writer) int {
 	if err != nil {
 		return exitError(stderr, err)
 	}
-	rows := make([][]string, 0, len(cfg.CredentialNames()))
-	for _, name := range cfg.CredentialNames() {
+	names := cfg.CredentialNames()
+	for name := range cfg.AuthProfiles {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	rows := make([][]string, 0, len(names))
+	for _, name := range names {
 		rows = append(rows, []string{name})
 	}
 	if err := writeTable(stdout, []string{"NAME"}, rows); err != nil {
@@ -802,8 +818,9 @@ func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Wri
 		return exitError(stderr, err)
 	}
 	refResolver := &providerproxy.EnvResolver{
-		Profiles: a.profiles,
-		Secrets:  a.secrets,
+		Profiles:    a.profiles,
+		Secrets:     a.secrets,
+		Credentials: a.credentialProvider(),
 	}
 	defer closeQuietly(refResolver.Close)
 	env, err := process.BuildEnv(ctx, process.EnvInput{
@@ -859,6 +876,10 @@ func (a App) runExec(ctx context.Context, parsed execArgs, stdout, stderr io.Wri
 		}
 	}
 	return code
+}
+
+func (a App) credentialProvider() connection.CredentialProvider {
+	return authprovider.Provider{ConfigPath: a.paths.ConfigFile, DataDir: a.paths.DataDir, Secrets: a.secrets, HTTP: a.authHTTP, Now: a.now}
 }
 
 func (a App) homeFileSourceDir() (string, error) {

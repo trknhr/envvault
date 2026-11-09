@@ -1,0 +1,18 @@
+{
+  "name": "envvault-gondolin-trial",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "codex": "node codex.mjs codex",
+    "codex:setup": "node codex.mjs setup",
+    "codex:login": "node codex.mjs login",
+    "codex:shell": "node codex.mjs shell",
+    "codex:rules": "node codex.mjs rules",
+    "codex:check": "node codex.mjs check",
+    "shell": "gondolin bash --allow-host example.com",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/gondolin": "0.14.0"
+  }
+}

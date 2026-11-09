@@ -75,6 +75,7 @@ func (a App) newRootCommand(execution *commandExecution) *cobra.Command {
 		a.newInspectCommand(execution),
 		a.newProfileCommand(execution),
 		a.newCredentialCommand(execution),
+		a.newAuthCommand(execution),
 		a.newExportCommand(execution),
 		a.newImportCommand(execution),
 		a.newSecretCommand(execution),
