@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,64 +18,56 @@ import (
 )
 
 const agentImage = "envvault-codex-msb:0.166.0-v4"
-const agentHomeVolume = "envvault-msb-codex-home"
 
 var errAgentInterrupted = errors.New("agent session interrupted")
 
 func runAgent(args []string) (resultErr error) {
-	mode := args[0]
-	switch mode {
-	case "codex", "login", "shell", "agent-setup", "agent-check", "rules":
-	default:
-		return errors.New("use ./agent [codex|login|shell|agent-setup|agent-check|rules]")
+	options, err := parseAgentOptions(args)
+	if err != nil {
+		return err
 	}
-	_, source, _, _ := runtime.Caller(0)
-	exampleDir := filepath.Dir(source)
-	repoDir := filepath.Clean(filepath.Join(exampleDir, "../.."))
 	stateDir, err := filepath.Abs(os.Getenv("MSB_HOME"))
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+	if err := protectAgentVaultPath(stateDir, options.workspace); err != nil {
 		return err
 	}
-	resolvedState, err := filepath.EvalSymlinks(stateDir)
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		return err
+	}
+	stateDir, err = filepath.EvalSymlinks(stateDir)
 	if err != nil {
 		return err
 	}
-	resolvedRepo, err := filepath.EvalSymlinks(repoDir)
-	if err != nil {
+	if err := os.Setenv("MSB_HOME", stateDir); err != nil {
 		return err
-	}
-	rel, err := filepath.Rel(resolvedRepo, resolvedState)
-	if err != nil || rel == "." || rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return errors.New("MSB_HOME must be outside the mounted repository")
 	}
 	policyPath := filepath.Join(stateDir, "agent-policy.json")
-	if _, err := os.Stat(policyPath); os.IsNotExist(err) {
-		data, err := os.ReadFile(filepath.Join(exampleDir, "agent-policy.json"))
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	defer func() {
+		if ctx.Err() != nil {
+			resultErr = errors.Join(resultErr, errAgentInterrupted)
+		}
+	}()
+	switch options.mode {
+	case "rules":
+		policy, err := prepareAgentHost(ctx, stateDir, policyPath, "rules")
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(policyPath, data, 0o600); err != nil {
-			return err
-		}
-	}
-	policy, err := readAgentPolicy(policyPath)
-	if err != nil {
-		return err
-	}
-	if mode == "rules" {
 		data, _ := json.MarshalIndent(policy, "", "  ")
-		fmt.Printf("Host policy: %s\n%s\nWorkspace: %s -> /workspace (read/write)\nPersistent home volume: %s -> /home/agent\n", policyPath, data, repoDir, agentHomeVolume)
-		fmt.Println("Only gateway DNS and the host proxy are reachable directly. The host proxy checks each HTTPS request against the listed hosts on port 443.")
+		fmt.Printf("Host policy: %s\n%s\nWorkspace: %s -> /workspace (read/write)\n", policyPath, data, options.workspace)
+		fmt.Println("Session storage: managed per workspace; parallel terminals share that project's sandbox and Codex history.")
+		fmt.Println("Only gateway DNS and the host proxy are reachable directly. Each HTTPS request is checked against the listed hosts on port 443.")
 		fmt.Println("Removed hosts' connections close within the 250ms polling interval, subject to scheduling. The proxy CA private key stays on the host.")
-		fmt.Printf("Agent UID/GID: 1000:1000, no capabilities; live process/thread limit: %d. EnvVault credential values resolve on the host only.\n", policy.MaxProcesses)
+		fmt.Printf("Agent UID/GID: 1000:1000, no capabilities; live process/thread limit for this project's VM: %d. EnvVault credential values resolve on the host only.\n", policy.MaxProcesses)
 		if len(policy.NativeAuthHosts) > 0 {
-			fmt.Printf("Native authentication allowed for: %s. Native login credentials are readable in the guest home.\n", strings.Join(policy.NativeAuthHosts, ", "))
+			fmt.Printf("Native authentication allowed for: %s. Native login credentials are readable in the project sandbox.\n", strings.Join(policy.NativeAuthHosts, ", "))
 		}
 		if policy.EnvVault {
-			vault, err := defaultAgentVault(repoDir)
+			vault, err := defaultAgentVault(options.workspace)
 			if err != nil {
 				return err
 			}
@@ -87,178 +78,117 @@ func runAgent(args []string) (resultErr error) {
 			fmt.Printf("EnvVault: automatic discovery enabled; %d references, scope %s, %d saved destination rules. Guest catalog: %s\n", len(snapshot.references), policy.EnvVaultScope, len(snapshot.routes), agentCatalogPath)
 		}
 		return nil
+	case "agent-setup":
+		_, err := prepareAgentHost(ctx, stateDir, policyPath, options.mode)
+		return err
+	case "agent-check":
+		return runStandaloneAgentCheck(ctx, stateDir, options.workspace, policyPath)
 	}
-	// One writer per Linux home disk. The lock is outside the guest mounts.
-	lock, err := os.OpenFile(filepath.Join(stateDir, "agent.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	project, err := newAgentProject(stateDir, options.workspace)
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return errors.New("another agent session is using this home; exit it first")
-	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	if _, err := m.EnsureRuntime(ctx, m.RuntimeConfig{}, m.InstallOptions{}); err != nil {
+	digest, err := agentHelperDigest()
+	if err != nil {
 		return err
 	}
-	if err := prepareAgentImage(ctx, exampleDir, mode == "agent-setup"); err != nil {
-		return err
-	}
-	if mode == "agent-setup" {
-		return nil
-	}
-	if _, err := m.GetVolume(ctx, agentHomeVolume); err != nil {
-		var typed *m.Error
-		if !errors.As(err, &typed) || typed.Kind != m.ErrVolumeNotFound {
-			return err
-		}
-		if _, err := m.CreateVolume(ctx, agentHomeVolume, m.WithVolumeKind(m.VolumeKindDisk), m.WithVolumeSize(8192)); err != nil {
-			return err
-		}
-	}
-	if mode == "agent-check" {
-		// Test policy transitions without editing the operator's active rules.
-		policy = agentPolicy{HTTPSHosts: []string{"proxy.golang.org", "sum.golang.org", "storage.googleapis.com", agentCheckHost, "api.github.com", "github.com"}, MaxProcesses: 512, EnvVault: true, EnvVaultScope: "profiles"}
-		dir, err := os.MkdirTemp(stateDir, "policy-check-")
+	if options.mode == "agent-serve" {
+		lock, err := inheritedAgentLock(project)
 		if err != nil {
 			return err
 		}
-		defer os.RemoveAll(dir)
-		policyPath = filepath.Join(dir, "policy.json")
-		if err := writeAgentPolicy(policyPath, policy); err != nil {
-			return err
-		}
+		return serveAgentProject(ctx, project, digest, lock, func(lifetime context.Context) (agentSupervisorBackend, error) {
+			if _, err := prepareAgentHost(lifetime, stateDir, policyPath, "codex"); err != nil {
+				return nil, err
+			}
+			if err := removeAgentOrphan(lifetime, project); err != nil {
+				return nil, err
+			}
+			return newAgentRuntime(lifetime, agentRuntimeConfig{workspace: project.Workspace, policyPath: policyPath, name: project.Sandbox(), volume: project.Volume()})
+		}, agentIdleGrace)
 	}
-	var proxy *agentProxy
-	var credentialCheck *agentCredentialCheck
-	if mode == "agent-check" {
-		proxy, credentialCheck, err = startAgentCheckProxy(policyPath)
-	} else {
-		proxy, err = startAgentProxy(policyPath, repoDir)
-	}
+	lease, err := connectAgentLease(ctx, project, digest)
 	if err != nil {
 		return err
 	}
-	defer proxy.Close()
-	if credentialCheck != nil {
-		defer credentialCheck.origin.Close()
+	defer lease.Close()
+	handle, err := m.GetSandbox(lease.ctx, lease.session.Sandbox)
+	if err != nil {
+		return err
 	}
-	proxyURL := fmt.Sprintf("http://host.microsandbox.internal:%d", proxy.port())
-	env := map[string]string{
-		"HOME": "/home/agent", "CODEX_HOME": "/home/agent/.codex",
-		"GOPATH": "/home/agent/go", "GOCACHE": "/home/agent/.cache/go-build",
-		"HTTP_PROXY": proxyURL, "HTTPS_PROXY": proxyURL,
-		"http_proxy": proxyURL, "https_proxy": proxyURL, "NO_PROXY": "", "no_proxy": "",
-		"PATH":                      "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"TERM":                      "xterm-256color",
-		"SSL_CERT_FILE":             "/etc/ssl/certs/ca-certificates.crt",
-		"CODEX_CA_CERTIFICATE":      "/etc/ssl/certs/ca-certificates.crt",
-		"NODE_EXTRA_CA_CERTS":       "/usr/local/share/ca-certificates/envvault-agent.crt",
-		"ENVVAULT_CREDENTIALS_FILE": agentCatalogPath,
-		"GIT_CONFIG_SYSTEM":         "/etc/envvault/gitconfig",
+	sb, err := handle.Connect(lease.ctx)
+	if err != nil {
+		return err
 	}
-	for _, binding := range policy.Credentials {
-		env[binding.Environment] = binding.Reference
+	defer func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		resultErr = errors.Join(resultErr, sb.Detach(cleanup))
+	}()
+	err = runAgentTerminal(lease.ctx, sb, options, lease.session.Environment, project.loginLock())
+	if lease.ctx.Err() != nil && ctx.Err() == nil {
+		return errors.New("project sandbox supervision was lost; this terminal's session stopped")
 	}
-	if mode == "agent-check" {
-		env["ENVVAULT_CHECK_TOKEN"] = "envvault://microsandbox/check"
+	return err
+}
+
+func runStandaloneAgentCheck(ctx context.Context, stateDir, workspace, policyPath string) (resultErr error) {
+	if _, err := prepareAgentHost(ctx, stateDir, policyPath, "codex"); err != nil {
+		return err
 	}
-	name := fmt.Sprintf("envvault-codex-%d", time.Now().UnixNano())
-	fmt.Println("Starting Codex's Microsandbox VM...")
-	sb, err := m.CreateSandbox(ctx, name,
-		m.WithImage(agentImage), m.WithRegistryAnonymous(),
-		m.WithMemory(2048), m.WithCPUs(2), m.WithRootDisk(m.RootDisk.Managed(4096)),
-		m.WithUser("root"), m.WithWorkdir("/workspace"), m.WithEnv(env),
-		m.WithMounts(map[string]m.MountConfig{
-			"/workspace":  m.Mount.Bind(repoDir, m.MountOptions{Owner: &m.MountOwner{UID: 1000, GID: 1000}, Nosuid: true, Nodev: true}),
-			"/home/agent": m.Mount.Named(agentHomeVolume, m.MountOptions{Nosuid: true, Nodev: true}),
-		}),
-		m.WithNetwork(&m.NetworkConfig{
-			DefaultEgress: m.PolicyActionDeny, DefaultIngress: m.PolicyActionDeny,
-			Rules: []m.PolicyRule{
-				m.Rule.AllowDNS(),
-				{Action: m.PolicyActionAllow, Direction: m.PolicyDirectionEgress, Destination: "host", Protocol: m.PolicyProtocolTCP, Port: strconv.Itoa(proxy.port())},
-			},
-		}),
-	)
+	policy := agentPolicy{HTTPSHosts: []string{"proxy.golang.org", "sum.golang.org", "storage.googleapis.com", agentCheckHost, "api.github.com", "github.com"}, MaxProcesses: 512, EnvVault: true, EnvVaultScope: "profiles"}
+	dir, err := os.MkdirTemp(stateDir, "policy-check-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	policyPath = filepath.Join(dir, "policy.json")
+	if err := writeAgentPolicy(policyPath, policy); err != nil {
+		return err
+	}
+	name := fmt.Sprintf("envvault-agent-check-%d", time.Now().UnixNano())
+	volume := name + "-home"
+	r, err := newAgentRuntime(ctx, agentRuntimeConfig{workspace: workspace, policyPath: policyPath, name: name, volume: volume, check: true})
 	if err != nil {
 		return err
 	}
 	defer func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
 		defer stop()
-		resultErr = errors.Join(resultErr, sb.Stop(cleanup), sb.Close(), m.RemoveSandbox(cleanup, name))
+		resultErr = errors.Join(resultErr, r.Close(cleanup), m.RemoveVolume(cleanup, volume))
 	}()
-	if err := sb.FS().Write(ctx, "/usr/local/share/ca-certificates/envvault-agent.crt", proxy.tls.publicPEM); err != nil {
-		return err
-	}
-	if _, err := checkedRootShell(ctx, sb, "update-ca-certificates >/dev/null 2>&1 && mkdir -p /etc/envvault && touch "+agentCatalogPath+" && chmod 0644 "+agentCatalogPath+" && if [ \"$(stat -c %u /home/agent)\" != 1000 ]; then chown -hR 1000:1000 /home/agent; fi"); err != nil {
-		return err
-	}
-	if err := sb.FS().WriteString(ctx, "/etc/envvault/gitconfig", "[credential \"https://github.com\"]\n\tuseHttpPath = true\n\thelper = /usr/local/bin/git-credential-envvault\n"); err != nil {
-		return err
-	}
-	processes, err := startAgentProcessController(ctx, sb, policyPath, cancel)
-	if err != nil {
-		return err
-	}
-	defer func() { resultErr = errors.Join(resultErr, processes.Close()) }()
-	catalog, err := startAgentCatalogController(ctx, sb, proxy, cancel)
-	if err != nil {
-		return err
-	}
-	defer func() { resultErr = errors.Join(resultErr, catalog.Close()) }()
-	if _, err := checkedAgentShell(ctx, sb, "mkdir -p \"$CODEX_HOME\" && git config --global --add safe.directory /workspace"); err != nil {
-		return err
-	}
-	if mode == "agent-check" {
-		return checkAgent(ctx, sb, policyPath, policy, credentialCheck)
-	}
-	attach := func(command string, args ...string) error {
-		code, err := sb.AttachWith(ctx, agentEntrypoint, append([]string{command}, args...), m.WithAttachCwd("/workspace"), m.WithAttachEnv(env))
-		if err != nil {
-			return err
-		}
-		if code == -1 || code == 130 {
-			return errAgentInterrupted
-		}
-		if code != 0 {
-			return fmt.Errorf("agent command exited with code %d", code)
-		}
-		return nil
-	}
-	if mode == "shell" {
-		return attach("/bin/bash", "-l")
-	}
-	codex := "/usr/local/bin/codex"
-	loginArgs := []string{"-c", `cli_auth_credentials_store="file"`, "login", "--device-auth"}
-	if mode == "login" {
-		return attach(codex, loginArgs...)
-	}
-	extra := args[1:]
-	if len(extra) > 0 && extra[0] == "--" {
-		extra = extra[1:]
-	}
-	infoOnly := len(extra) == 1 && (extra[0] == "--version" || extra[0] == "--help" || extra[0] == "-h")
-	if !infoOnly {
-		status, err := sb.Exec(ctx, agentEntrypoint, []string{codex, "-c", `cli_auth_credentials_store="file"`, "login", "status"})
-		if err != nil {
-			return err
-		}
-		if status.ExitCode() != 0 {
-			fmt.Println("Sign in with the URL and device code shown below; Codex will open after login.")
-			if err := attach(codex, loginArgs...); err != nil {
-				return err
-			}
-		}
-	}
-	fmt.Printf("Workspace: /workspace (edits write to your Mac). Host rules: %s\n", policyPath)
-	return attach(codex, append([]string{"--sandbox", "danger-full-access", "--ask-for-approval", "on-request", "-c", `cli_auth_credentials_store="file"`}, extra...)...)
+	return checkAgent(ctx, r.sb, policyPath, policy, r.credentialCheck)
 }
 
-func prepareAgentImage(ctx context.Context, exampleDir string, force bool) error {
+func prepareAgentHost(ctx context.Context, stateDir, policyPath, mode string) (agentPolicy, error) {
+	setup, err := acquireAgentSetup(ctx, stateDir)
+	if err != nil {
+		return agentPolicy{}, err
+	}
+	defer setup.Close()
+	if _, err := os.Stat(policyPath); os.IsNotExist(err) {
+		data, err := agentAssets.ReadFile("agent-policy.json")
+		if err != nil {
+			return agentPolicy{}, err
+		}
+		if err := os.WriteFile(policyPath, data, 0600); err != nil {
+			return agentPolicy{}, err
+		}
+	}
+	policy, err := readAgentPolicy(policyPath)
+	if err != nil || mode == "rules" {
+		return policy, err
+	}
+	if _, err := m.EnsureRuntime(ctx, m.RuntimeConfig{}, m.InstallOptions{}); err != nil {
+		return agentPolicy{}, err
+	}
+	if err := prepareAgentImage(ctx, mode == "agent-setup"); err != nil {
+		return agentPolicy{}, err
+	}
+	return policy, nil
+}
+
+func prepareAgentImage(ctx context.Context, force bool) error {
 	if !force {
 		if _, err := m.Image.Get(ctx, agentImage); err == nil {
 			return nil
@@ -269,6 +199,11 @@ func prepareAgentImage(ctx context.Context, exampleDir string, force bool) error
 			}
 		}
 	}
+	exampleDir, cleanup, err := agentBuildContext()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	fmt.Println("Preparing the Codex image (Docker is needed for this first build)...")
 	build := exec.CommandContext(ctx, "docker", "build", "--platform", "linux/"+runtime.GOARCH, "-t", agentImage, exampleDir)
 	build.Stdout, build.Stderr = os.Stdout, os.Stderr
@@ -370,6 +305,6 @@ func checkAgent(ctx context.Context, sb *m.Sandbox, policyPath string, policy ag
 	if _, err := checkedAgentShell(ctx, sb, "cd /workspace && go test ./internal/envref"); err != nil {
 		return fmt.Errorf("EnvVault package test: %w", err)
 	}
-	fmt.Println("PASS: the same VM stayed running; EnvVault's Go package test passed")
+	fmt.Println("PASS: the same VM stayed running; workspace Go package test passed")
 	return nil
 }

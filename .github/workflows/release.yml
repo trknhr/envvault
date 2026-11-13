@@ -24,8 +24,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  microsandbox-helper:
+    name: Build Microsandbox release helpers
+    uses: ./.github/workflows/microsandbox-helper.yml
+    with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      version: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
   release:
     name: Build and publish release
+    needs: microsandbox-helper
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -132,6 +140,16 @@ jobs:
             --base-url "$BASE_URL" \
             --dist dist
 
+      - name: Download native helper artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: microsandbox-helpers
+          path: dist
+
+      - name: Verify downloaded native helpers
+        working-directory: dist
+        run: sha256sum --check MICROSANDBOX_SHA256SUMS
+
       - name: Upload release artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -147,6 +165,10 @@ jobs:
             dist/envvault_"$VERSION"_linux_arm64.tar.gz
             dist/envvault_"$VERSION"_windows_amd64.zip
             dist/SHA256SUMS
+            dist/envvault-microsandbox_"$VERSION"_darwin_arm64
+            dist/envvault-microsandbox_"$VERSION"_linux_amd64
+            dist/envvault-microsandbox_"$VERSION"_linux_arm64
+            dist/MICROSANDBOX_SHA256SUMS
           )
 
           if gh release view "$VERSION" >/dev/null 2>&1; then

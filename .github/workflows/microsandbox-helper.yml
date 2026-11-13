@@ -1,0 +1,144 @@
+name: Build Microsandbox helpers
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Source ref to build; defaults to the caller's commit
+        required: false
+        type: string
+        default: ""
+      version:
+        description: Version used in helper release asset filenames
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Native helper (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            platform: darwin_arm64
+          - runner: ubuntu-22.04
+            platform: linux_amd64
+          - runner: ubuntu-22.04-arm
+            platform: linux_arm64
+    defaults:
+      run:
+        working-directory: examples/microsandbox
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: examples/microsandbox/go.mod
+          cache-dependency-path: examples/microsandbox/go.sum
+
+      - name: Test host proxy and project supervision without a VM
+        run: go test -race -timeout 120s ./...
+
+      - name: Run static analysis
+        run: go vet ./...
+
+      - name: Build native helper with release flags
+        env:
+          VERSION: ${{ inputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          CGO_ENABLED: "1"
+        run: |
+          set -euo pipefail
+          test "$(go env GOOS)_$(go env GOARCH)" = "$PLATFORM"
+          mkdir -p ../../helper-dist
+          go build -trimpath -ldflags '-s -w' \
+            -o "../../helper-dist/envvault-microsandbox_${VERSION}_${PLATFORM}" .
+
+      - name: Smoke-test helper without installing a runtime
+        env:
+          VERSION: ${{ inputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          "../../helper-dist/envvault-microsandbox_${VERSION}_${PLATFORM}" --licenses > ../../helper-dist/license.txt
+          cmp MICROSANDBOX_LICENSE ../../helper-dist/license.txt
+
+      - name: Checksum native helper
+        working-directory: helper-dist
+        env:
+          VERSION: ${{ inputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          name = f"envvault-microsandbox_{os.environ['VERSION']}_{os.environ['PLATFORM']}"
+          digest = hashlib.sha256(Path(name).read_bytes()).hexdigest()
+          Path(f"MICROSANDBOX_SHA256SUMS_{os.environ['PLATFORM']}").write_text(f"{digest}  {name}\n")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: microsandbox-platform-${{ matrix.platform }}
+          overwrite: true
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            helper-dist/envvault-microsandbox_*
+            helper-dist/MICROSANDBOX_SHA256SUMS_*
+
+  verify:
+    name: Verify helper release assets
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: microsandbox-platform-*
+          path: helper-dist
+          merge-multiple: true
+
+      - name: Verify every supported platform and combine checksums
+        working-directory: helper-dist
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          platforms = ("darwin_arm64", "linux_amd64", "linux_arm64")
+          expected = {f"envvault-microsandbox_{os.environ['VERSION']}_{platform}" for platform in platforms}
+          actual = {path.name for path in Path('.').glob('envvault-microsandbox_*')}
+          if actual != expected:
+              raise SystemExit(f"Unexpected helper assets: {sorted(actual)}; expected {sorted(expected)}")
+          checksums = []
+          for platform in platforms:
+              name = f"envvault-microsandbox_{os.environ['VERSION']}_{platform}"
+              digest = hashlib.sha256(Path(name).read_bytes()).hexdigest()
+              line = f"{digest}  {name}\n"
+              if Path(f"MICROSANDBOX_SHA256SUMS_{platform}").read_text() != line:
+                  raise SystemExit(f"Helper checksum mismatch: {name}")
+              checksums.append(line)
+          Path('MICROSANDBOX_SHA256SUMS').write_text(''.join(checksums))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: microsandbox-helpers
+          overwrite: true
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            helper-dist/envvault-microsandbox_*
+            helper-dist/MICROSANDBOX_SHA256SUMS

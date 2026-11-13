@@ -1,8 +1,11 @@
 #!/bin/sh
 set -eu
 example_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+workspace=$(pwd -P)
 cd "$example_dir"
 if [ "$#" -eq 0 ]; then
   set -- codex
 fi
-exec env -u GOROOT GOPROXY=https://proxy.golang.org,direct GOSUMDB=sum.golang.org go run . "$@"
+mode=$1
+shift
+exec env -u GOROOT GOPROXY=https://proxy.golang.org,direct GOSUMDB=sum.golang.org go run . "$mode" --workspace "$workspace" "$@"

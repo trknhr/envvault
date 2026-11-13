@@ -1,9 +1,111 @@
 # Codex in Microsandbox
 
-From this directory, launch the interactive coding agent:
+With an EnvVault build containing `sandbox codex` (unreleased; not in v0.7.0),
+install the optional native helper directly through the CLI:
 
 ```sh
-./agent codex
+envvault sandbox setup
+```
+
+For releases, setup downloads the helper from the same EnvVault release and
+verifies its SHA-256 checksum. No repository checkout, Go compiler, or helper
+PATH entry is needed. The CLI stores verified helpers under its private data
+directory (`~/Library/Application Support/envvault/microsandbox` on macOS).
+Apple Silicon macOS and amd64/arm64 Linux are supported. Intel macOS and Windows
+are not supported by this launcher.
+
+Setup is optional: the first launch installs a missing helper automatically.
+After upgrading EnvVault, launch again or rerun setup to obtain the matching
+helper. `envvault sandbox setup --force` downloads that version again for repair.
+Existing policy and project data are reused; setup does not restart an active VM.
+
+Then launch from any project directory:
+
+```sh
+cd /path/to/your/project
+envvault sandbox codex
+```
+
+Your current directory is mounted read/write at `/workspace`, and Codex arguments
+are forwarded unchanged:
+
+```sh
+envvault sandbox codex 'Explain this project without changing files.'
+envvault sandbox codex --version
+```
+
+Run `envvault sandbox codex` in several terminals to run agents in parallel.
+Terminals in the same workspace attach to one managed VM and share that project's
+Codex history, sign-in, configuration, and caches. Different workspaces have
+separate writable state. No storage names or paths need to be chosen.
+
+Codex guides you through device login when a project needs authentication.
+Parallel terminals reuse that project's sign-in. Host-managed EnvVault
+credentials and live host policy apply to all sessions, with each selected
+workspace's saved destination rules.
+
+Agents in the same project share the VM's CPU, RAM, and process limit as well as
+the workspace files. Use separate worktrees for independent edits and VM
+isolation. The project boundary is the exact canonical directory mounted at
+`/workspace`; symlink aliases reuse the same project, while other directories and
+worktrees get separate state.
+
+Resume from that same workspace with ordinary Codex arguments:
+
+```sh
+envvault sandbox codex resume
+envvault sandbox codex resume --last
+envvault sandbox codex resume <conversation-id>
+```
+
+History is available across parallel terminals and after a VM restart. A small
+host supervisor owns the VM, credential proxy, and live policy controllers, so
+closing one terminal leaves the others running. Shortly after the last terminal
+exits, the supervisor stops and removes the VM while retaining project data.
+On a later launch it starts a fresh VM with that project's state. A lost
+supervisor cancels connected terminals; the next launch destroys any orphaned
+project VM before reattaching its disk.
+
+The earlier trial's global and pooled homes remain intact, and its already
+running VMs are left alone. They are not automatically adopted by a project:
+their contents have no reliable workspace association, so copying or reusing
+them would expose another project's configuration or credentials. Existing trial
+data needs an explicit migration; new project state starts separately.
+
+For source development, build both binaries with:
+
+```sh
+./examples/microsandbox/install
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+This installs a development CLI into `~/.local/bin` (override with
+`ENVVAULT_BIN_DIR`) and uses `envvault sandbox setup --helper <built-binary>` to
+install the helper in managed storage. It leaves Homebrew's CLI installed
+separately. Once Homebrew includes this command, remove the local
+`~/.local/bin/envvault` binary to select Homebrew again. Development builds do
+not fetch an arbitrary release helper. A legacy development helper on PATH is
+used only when no managed helper exists.
+
+When using a separately installed development helper, inspect rules or open a
+shell from the same directory:
+
+```sh
+envvault-microsandbox rules
+envvault-microsandbox shell
+```
+
+The helper also accepts an explicit host workspace before `--`:
+
+```sh
+envvault-microsandbox codex --workspace /path/to/project -- --version
+```
+
+For development without installation, the source wrapper captures the caller's
+directory before changing to the Go module directory:
+
+```sh
+/path/to/envvault/examples/microsandbox/agent codex
 ```
 
 The first launch builds and imports the Codex image, then starts a Linux VM. If
@@ -12,7 +114,7 @@ URL in your Mac browser and enter its code. Codex starts when login completes.
 Device login may need enabling in your ChatGPT settings or workspace permissions;
 see the [official login guide](https://learn.chatgpt.com/docs/auth#login-on-headless-devices).
 
-This is a custom launcher for this repository. Docker prepares the OCI image;
+This is a custom experimental launcher. Docker prepares the OCI image;
 Microsandbox runs that image in a Linux microVM. Subsequent launches use the
 cached image. Docker is required for initial image preparation and rebuilds.
 
@@ -24,6 +126,20 @@ cached image. Docker is required for initial image preparation and rebuilds.
 ./agent agent-setup    # Rebuild and re-import the prepared image
 ```
 
+After installing the updated CLI, run the optional live session regression:
+
+```sh
+python3 examples/microsandbox/check-sessions.py
+```
+
+It checks project isolation, parallel terminal lifetimes, the interactive resume
+picker, `--last`, conversation IDs, history after VM restart, and recovery after
+an unexpected supervisor exit. It uses fresh
+temporary projects and an offline model-provider fixture, makes no model API
+calls, and removes its own test volumes and metadata. Existing sandboxes and
+policy are left intact. `go test -race ./...` in this example module exercises
+the host proxy, workspace identity, and supervisor protocol without booting a VM.
+
 The prepared image includes Codex 0.166.0, Go 1.27.3, Node.js 24.22.1, Git,
 GitHub CLI 2.102.0, curl, ripgrep, and C/C++ build tools. GitHub CLI uses official
 release binaries with pinned SHA-256 checksums. `./agent codex --version` checks Codex
@@ -33,20 +149,23 @@ without entering login. To start a simple first session:
 ./agent codex 'Explain this repository without changing files.'
 ```
 
-The repository is mounted in full at `/workspace`, **read/write**. Edits affect
-the Mac checkout immediately, including dotfiles. The normal Mac home and Codex
-configuration are not mounted. A separate Linux disk volume,
-`envvault-msb-codex-home`, persists `/home/agent`, including Codex login and caches.
-One launcher session may use this home at a time. VM root-disk changes are
-discarded when the session exits; the shared repository and home volume persist.
+The selected project directory is mounted in full at `/workspace`, **read/write**.
+Edits affect the host project immediately, including dotfiles. The normal Mac home and Codex
+configuration are not mounted. EnvVault manages persistent `/home/agent` storage,
+including Codex login and caches, and isolates it between projects.
+VM root-disk changes are discarded when the session exits; the shared repository
+and persistent session data remain. Storage allocation and locking are automatic.
 Codex authentication is readable inside the VM. Native agent login is separate
 from the host-held application credentials described below.
 
-The `./agent` wrapper compiles trusted host Go code from this checkout. Because
-the guest can edit that checkout, review launcher and dependency changes before
-running it again on the host. This development example does not protect its own
-source files from guest edits. A distributed launcher should be built and
-installed outside sandbox-writable mounts.
+The installed helper embeds its policy defaults and image build files. It does
+not load launcher code or build files from the mounted project. The CLI rejects
+a helper located inside that workspace, including symlinks into it. Host state
+and EnvVault configuration must also stay outside the workspace. Saved credential
+profiles are checked against the selected project's workspace binding.
+
+The development `./agent` wrapper compiles host Go code from the source checkout.
+Review launcher and dependency changes before rerunning that source wrapper.
 
 Codex runs with `--sandbox danger-full-access --ask-for-approval on-request`
 inside the VM. The microVM and host proxy enforce the outer boundary. The
@@ -306,10 +425,9 @@ gh api user --jq .login
 ```
 
 Complete device approval in your Mac browser. GitHub login and Git's credential
-helper are saved under the dedicated persistent `/home/agent`; new VMs from
-this launcher reuse the login without another approval. The Mac's normal GitHub
-configuration is not mounted. The home disk supports one active launcher
-session at a time.
+helper are saved under the project's persistent `/home/agent`; new VMs using
+that project reuse the login without another approval. The Mac's normal GitHub
+configuration is not mounted. Native logins are not copied between projects.
 
 For `native_auth_hosts`, requests without an EnvVault reference can use the
 guest's own credential. GitHub token permissions and the sandbox network
@@ -385,7 +503,8 @@ Only the `authorization` header is selected for substitution.
 
 This default smoke test checks the VM and native secret APIs. The `./agent`
 commands above provide the separate interactive Codex launcher. On 2026-11-06,
-`./agent agent-check` also passed real-VM checks for live host rules, blocked
+`./agent agent-check` (run from the EnvVault repository root through the wrapper's
+full path) also passed real-VM checks for live host rules, blocked
 direct egress, default enforcement of saved destination rules, a read-only
 reference catalog, live credential addition, rotation and revocation, explicit
 network mode with Bearer and API-key headers, and kernel process-limit
@@ -395,6 +514,9 @@ it does not access your OS credential store or sign in to Codex. On 2026-11-09,
 the check additionally passed managed-auth rotation/revocation, `gh api` through
 a placeholder, and actual Git clone/push against a disposable local HTTPS Git
 server with live repository read/write permissions. No GitHub writes occurred.
+The installed launcher also passed these VM checks from a separate temporary
+project with spaces in its path, confirming that its workspace follows the
+invocation directory rather than the EnvVault source checkout.
 
 The race-enabled proxy tests cover live stream and upgrade revocation, hostname
 binding, private-address rejection, scoped credential acquisition, rotation,

@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+example_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_dir=$(CDPATH= cd -- "$example_dir/../.." && pwd)
+bin_dir=${ENVVAULT_BIN_DIR:-"$HOME/.local/bin"}
+mkdir -p "$bin_dir"
+bin_dir=$(CDPATH= cd -- "$bin_dir" && pwd -P)
+case "$bin_dir/" in "$repo_dir/"*) printf '%s\n' 'Install outside the shared repository.' >&2; exit 1 ;; esac
+build_dir=$(mktemp -d "${TMPDIR:-/tmp}/envvault-launcher.XXXXXX")
+trap 'rm -rf "$build_dir"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' HUP TERM
+cd "$example_dir"
+env -u GOROOT GOPROXY=https://proxy.golang.org,direct GOSUMDB=sum.golang.org \
+  go build -trimpath -o "$build_dir/envvault-microsandbox" .
+cd "$repo_dir"
+env -u GOROOT CGO_ENABLED=0 GOPROXY=https://proxy.golang.org,direct GOSUMDB=sum.golang.org \
+  go build -trimpath -o "$build_dir/envvault" ./cmd/envvault
+"$build_dir/envvault" sandbox setup --helper "$build_dir/envvault-microsandbox"
+install -m 0755 "$build_dir/envvault" "$bin_dir/.envvault.new.$$"
+mv -f "$bin_dir/.envvault.new.$$" "$bin_dir/envvault"
+printf 'Installed local development CLI in %s; native helper is managed by EnvVault\n' "$bin_dir"
+case ":$PATH:" in
+  *":$bin_dir:"*) ;;
+  *) printf 'Add this directory to PATH: %s\n' "$bin_dir" ;;
+esac
+if [ "$(command -v envvault || true)" != "$bin_dir/envvault" ]; then
+  printf '%s\n' 'Put the install directory at the front of PATH so this local CLI is selected.'
+fi
+printf '%s\n' 'From your project directory, run: envvault sandbox codex'

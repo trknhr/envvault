@@ -6,6 +6,13 @@ Release packaging must include this file and preserve upstream `LICENSE`,
 `NOTICE`, `PATENTS`, and equivalent notice files from bundled source or
 vendored artifacts.
 
+The optional `envvault-microsandbox` helper also embeds
+github.com/superradcompany/microsandbox/sdk/go v0.7.13 (Apache-2.0 License),
+including its native FFI bundle. Its upstream `LICENSE` is retained as
+`examples/microsandbox/MICROSANDBOX_LICENSE` and embedded in the helper;
+invoke the helper with `--licenses` to print it. The SDK is not linked into the
+core EnvVault CLI.
+
 ## Go Modules
 
 - github.com/cpuguy83/go-md2man/v2 v2.0.6 - MIT License. Upstream notice file: `LICENSE.md`.
