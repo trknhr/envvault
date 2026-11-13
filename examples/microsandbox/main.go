@@ -25,14 +25,27 @@ func main() {
 		if errors.Is(err, errAgentInterrupted) {
 			os.Exit(130)
 		}
-		fmt.Fprintln(os.Stderr, "Microsandbox trial:", err)
+		fmt.Fprintln(os.Stderr, "Microsandbox:", err)
+		var commandExit *agentExitError
+		if errors.As(err, &commandExit) && commandExit.code > 0 && commandExit.code < 256 {
+			os.Exit(commandExit.code)
+		}
 		os.Exit(1)
 	}
 }
 
 func run() (resultErr error) {
 	setupOnly := flag.Bool("setup", false, "install/check the isolated native runtime only")
+	licenses := flag.Bool("licenses", false, "print the bundled Microsandbox SDK license")
 	flag.Parse()
+	if *licenses {
+		data, err := agentAssets.ReadFile("MICROSANDBOX_LICENSE")
+		if err != nil {
+			return err
+		}
+		fmt.Print(string(data))
+		return nil
+	}
 	if os.Getenv("MSB_HOME") == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {

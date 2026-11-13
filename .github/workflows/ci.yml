@@ -73,26 +73,10 @@ jobs:
         run: node --test examples/agent-infra-bridge/test/*.test.mjs
 
   microsandbox:
-    name: Microsandbox host proxy tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: examples/microsandbox
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: examples/microsandbox/go.mod
-          cache-dependency-path: examples/microsandbox/go.sum
-
-      - name: Test host proxy and credential boundaries without a VM
-        run: go test -race ./...
-
-      - name: Run static analysis
-        run: go vet ./...
+    name: Microsandbox helper builds
+    uses: ./.github/workflows/microsandbox-helper.yml
+    with:
+      version: v0.0.0-ci
 
   sandbox-scripts:
     name: Sandbox script syntax
@@ -113,6 +97,8 @@ jobs:
           node --check examples/microsandbox/git-credential-envvault
           sh -n examples/microsandbox/agent
           sh -n examples/microsandbox/agent-entrypoint
+          sh -n examples/microsandbox/install
+          python3 -c 'import ast; ast.parse(open("examples/microsandbox/check-sessions.py").read())'
 
   docs:
     name: Build docs

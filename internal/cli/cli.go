@@ -103,6 +103,7 @@ type ConfigSaver func(path string, cfg config.File) error
 
 type Options struct {
 	AuthHTTP                *http.Client
+	SandboxHelperHTTP       *http.Client
 	Paths                   config.Paths
 	AgentSkillHomeDir       string
 	Initializer             Initializer
@@ -133,6 +134,7 @@ type Options struct {
 
 type App struct {
 	authHTTP                *http.Client
+	sandboxHelperHTTP       *http.Client
 	paths                   config.Paths
 	agentSkillHomeDir       string
 	initializer             Initializer
@@ -164,6 +166,7 @@ type App struct {
 func New(options Options) App {
 	return App{
 		authHTTP:                options.AuthHTTP,
+		sandboxHelperHTTP:       options.SandboxHelperHTTP,
 		paths:                   options.Paths,
 		agentSkillHomeDir:       options.AgentSkillHomeDir,
 		initializer:             options.Initializer,

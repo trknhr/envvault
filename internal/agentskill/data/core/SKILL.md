@@ -10,6 +10,28 @@ repository-safe `envvault://` references only when launching a child process.
 
 ## Commands
 
+- Install the optional native Microsandbox helper: `envvault sandbox setup`.
+  Released CLIs download their matching helper and verify its release checksum.
+  Launch also installs it automatically when missing; after a CLI upgrade, the
+  next launch selects the new version. Use `--force` to repair an installation.
+  Development builds use `envvault sandbox setup --helper /trusted/path/envvault-microsandbox`.
+- Launch Codex in Microsandbox from the current project: `envvault sandbox codex [Codex arguments]`.
+  Apple Silicon macOS and amd64/arm64 Linux are supported. Docker is needed to
+  prepare the initial image. The current
+  directory is mounted read/write at `/workspace`; host state and helper binaries
+  must remain outside that directory. Run the same command in multiple terminals
+  for parallel sessions. One managed VM and persistent Codex history belong to
+  each canonical mounted workspace. Parallel terminals in that workspace share
+  its sign-in, caches, and VM resource/process budget; other workspaces and Git
+  worktrees have separate writable state. Do not ask users to select home names
+  or paths. Use `envvault sandbox codex resume`, `resume --last`, or `resume <id>`
+  from the same workspace. History persists after the last terminal exits and
+  the VM shuts down. A supervisor owns policy/proxy lifetimes independently of
+  terminals. Never delete lock files to bypass an active session. Older unbound
+  trial data is retained and needs explicit migration rather than automatic reuse.
+  Sessions in the same workspace share its files. Saved credential workspace bindings still
+  apply. The core CLI does not include the native Microsandbox SDK.
+
 - Host-only structured auth: `envvault auth import <name> --file <json-or-yaml> --token-field /access_token`
 - Host GitHub login: `envvault auth login github --name <name>` (isolated host gh); use an owned app's `--client-id` for supported OAuth refresh.
 - Inspect/remove managed auth: `envvault auth list`, `envvault auth status <name>`, `envvault auth logout <name>`.

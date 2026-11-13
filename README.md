@@ -156,8 +156,25 @@ intentionally separate steps.
 For the separate Microsandbox microVM trial, see the
 [Codex launcher](examples/microsandbox/README.md). It supports live host network
 rules, process/thread limits, and automatic EnvVault credential discovery with
-saved destination rules. It runs
-as an example module with `./examples/microsandbox/agent codex`.
+saved destination rules. With a CLI build that includes this command (unreleased;
+not in v0.7.0), install the optional native helper through EnvVault:
+
+```sh
+envvault sandbox setup
+envvault sandbox codex
+```
+
+Launch from any project directory; it becomes `/workspace`. The first launch can
+also install the matching helper automatically. After upgrading EnvVault, the next
+launch selects the new version's helper. Apple Silicon macOS and amd64/arm64 Linux
+are supported; Docker prepares the initial image. For source development, use
+`./examples/microsandbox/install`. The source wrapper
+`./examples/microsandbox/agent codex` also mounts the caller's current directory.
+Run `envvault sandbox codex` in multiple terminals for parallel sessions. Terminals
+in the same workspace share its managed sandbox and persistent Codex history;
+other workspaces have separate writable state. Resume with
+`envvault sandbox codex resume`, `resume --last`, or `resume <id>`. EnvVault manages
+storage and VM cleanup automatically.
 
 ## Experimental Docker Sandbox
 
