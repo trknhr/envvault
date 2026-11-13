@@ -1,7 +1,7 @@
 # Codex in Microsandbox
 
-With an EnvVault build containing `sandbox codex` (unreleased; not in v0.7.0),
-install the optional native helper directly through the CLI:
+With EnvVault v0.8.0 or later, install the optional native helper directly
+through the CLI:
 
 ```sh
 envvault sandbox setup

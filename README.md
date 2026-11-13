@@ -156,8 +156,8 @@ intentionally separate steps.
 For the separate Microsandbox microVM trial, see the
 [Codex launcher](examples/microsandbox/README.md). It supports live host network
 rules, process/thread limits, and automatic EnvVault credential discovery with
-saved destination rules. With a CLI build that includes this command (unreleased;
-not in v0.7.0), install the optional native helper through EnvVault:
+saved destination rules. With EnvVault v0.8.0 or later, install the optional
+native helper through EnvVault:
 
 ```sh
 envvault sandbox setup
